@@ -1,0 +1,43 @@
+{
+	"schemaVersion": 1,
+	"id": "refugee",
+	"version": "${version}",
+	"name": "Refugee",
+	"description": "Zombie villages, refugee immigration on PBS territory, and villager build/guard AI.",
+	"authors": [
+		"luoweifengx"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/refugee/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"luowei.refugee.Refugee"
+		],
+		"client": [
+			"luowei.refugee.client.RefugeeClient"
+		]
+	},
+	"mixins": [
+		"refugee.mixins.json",
+		{
+			"config": "refugee.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~1.21.5",
+		"java": ">=21",
+		"fabric-api": "*",
+		"player-block-status": ">=0.2.8"
+	},
+	"suggests": {
+		"food-health-hunger": "*",
+		"travel-business-team": "*"
+	}
+}

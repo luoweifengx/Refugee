@@ -1,0 +1,20 @@
+pluginManagement {
+	repositories {
+		maven {
+			name = 'Fabric'
+			url = 'https://maven.fabricmc.net/'
+		}
+		mavenCentral()
+		gradlePluginPortal()
+	}
+}
+
+// Should match your modid
+rootProject.name = 'refugee'
+
+// 同目录 PBS：不依赖 mavenLocal 已发布产物，直接组合构建
+includeBuild('../player-block-status-template-1.21.5') {
+	dependencySubstitution {
+		substitute module('luowei.player_block_status:player-block-status') using project(':')
+	}
+}

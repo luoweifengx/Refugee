@@ -1,0 +1,19 @@
+{
+	"required": true,
+	"package": "luowei.refugee.client.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"client": [
+		"ExampleClientMixin",
+		"KeyboardHandlerMixin",
+		"LivingEntityRendererMixin",
+		"MouseHandlerMixin",
+		"VillagerRendererMixin",
+		"VillagerRenderStateMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}
