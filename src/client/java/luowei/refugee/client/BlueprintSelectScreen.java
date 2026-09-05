@@ -18,7 +18,7 @@ import luowei.refugee.blueprint.BlueprintCatalogEntry;
 import luowei.refugee.network.BlueprintSelectPayload;
 
 /**
- * 蓝图目录选择：仅列出本模组 {@code config/refugee/blueprints} 中的条目。
+ * 蓝图目录选择：基础可造建筑与当前玩家导入的结构。
  */
 public class BlueprintSelectScreen extends Screen {
 	private final InteractionHand hand;

@@ -43,7 +43,7 @@ import luowei.refugee.config.RefugeeConfig;
 import luowei.refugee.zone.AreaBox;
 
 /**
- * 玩家导入的结构：按 UUID 分目录，与全局自带蓝图分开。
+ * 玩家导入的结构：世界存档 {@code refugee/blueprints/<UUID>/}，与基础目录、世界生成目录分开。
  */
 public final class PlayerBlueprints {
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();

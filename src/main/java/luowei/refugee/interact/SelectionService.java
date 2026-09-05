@@ -18,9 +18,10 @@ import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.item.ItemData;
 import luowei.refugee.pbs.PbsAdapter;
+import luowei.refugee.talk.RefugeeBubble;
 
 /**
- * 按玩家选中表切换跟随；表从空变非空发一面旗，表空则收旗。
+ * 按玩家选中表切换跟随；右键选中时没有安顿旗则发一面，选中表空则收旗。
  */
 public final class SelectionService {
 	private SelectionService() {
@@ -70,11 +71,8 @@ public final class SelectionService {
 			player.displayClientMessage(Component.translatable("message.refugee.follow.stop"), true);
 			return true;
 		}
-		boolean wasEmpty = selection.selectedVillagers().isEmpty();
 		selectFollow(player, villager, data, selection);
-		if (wasEmpty) {
-			giveBanner(player);
-		}
+		giveBanner(player);
 		player.displayClientMessage(Component.translatable("message.refugee.follow.start"), true);
 		return true;
 	}
@@ -124,6 +122,7 @@ public final class SelectionService {
 		selection.addSelected(villager.getUUID());
 		RefugeeAttachments.markDirty(villager, data);
 		RefugeeAttachments.markDirty(player, selection);
+		RefugeeBubble.onSelect(villager);
 	}
 
 	private static void removeFromOtherSelections(ServerPlayer newOwner, UUID villagerId) {

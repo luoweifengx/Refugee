@@ -39,7 +39,7 @@ public final class BuiltinBlueprints {
 		DISPLAY_NAMES.put("road_cross", "十字路口");
 		DISPLAY_NAMES.put("watchtower_wood", "木哨塔");
 		DISPLAY_NAMES.put("watchtower_stone", "石哨塔");
-		DISPLAY_NAMES.putAll(LandmarkBlueprints.displayNames());
+		DISPLAY_NAMES.putAll(SettlementBlueprints.displayNames());
 	}
 
 	private BuiltinBlueprints() {
@@ -63,7 +63,7 @@ public final class BuiltinBlueprints {
 		writeRoadCross(dir.resolve("road_cross.nbt"));
 		writeWatchtowerWood(dir.resolve("watchtower_wood.nbt"));
 		writeWatchtowerStone(dir.resolve("watchtower_stone.nbt"));
-		LandmarkBlueprints.writeAll(dir);
+		SettlementBlueprints.writeAll(dir);
 	}
 
 	/** 7×6×3，沿 +X。下层实心圆石，Y=4 走道，Y=5 垛口隔一空一。 */

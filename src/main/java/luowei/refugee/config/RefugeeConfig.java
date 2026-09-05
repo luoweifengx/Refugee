@@ -37,7 +37,7 @@ import luowei.refugee.Refugee;
 import luowei.refugee.ai.RefugeeBuffState;
 
 /**
- * {@code config/refugee.json}：入境、号角/钟、守卫、安顿与村民 buff。缺文件时写出默认值。
+ * {@code config/refugee.json}：入境、号角/钟、守卫、安顿、干活距离、仓库合并与村民 buff。缺文件时写出默认值。
  */
 public final class RefugeeConfig {
 	public static final String FILE_NAME = "refugee.json";
@@ -75,12 +75,26 @@ public final class RefugeeConfig {
 	public static int buildPlaceIntervalTicks = 20;
 	public static double followSpeed = 0.55;
 	public static double guardWalkSpeed = 0.5;
+	public static double combatRangedDistance = 8.0;
+	public static double dualRangedFleeDistance = 5.0;
+	public static double shieldTauntRadius = 5.0;
+	public static double panicClearRadius = 16.0;
+	public static double panicHealthRatio = 0.30;
+	public static double recoverHealthRatio = 0.70;
+	public static double foodHealFraction = 0.40;
+	public static int eatIntervalTicks = 16;
 	public static int rangedAttackIntervalTicks = 40;
 	public static int meleeAttackIntervalTicks = 10;
 	public static double builderWalkSpeed = 0.45;
 	public static int starterRefugeeCount = 8;
 	public static int importMaxAxis = 32;
 	public static int importMaxVolume = 4096;
+	/** true：挖/放须走到 4 格内；false：找到目标就动手。 */
+	public static boolean workReachLimit = false;
+	/** true：仓库按大类记账，建筑可拿同类方块；false：按精确物品取料。 */
+	public static boolean warehouseMergeCategories = true;
+	/** true：按职业给村民常驻 buff；false：不施加并清掉本模组管理的效果。 */
+	public static boolean villagerBuffsEnabled = false;
 
 	public static List<BuffSpec> idleBuffs = DEFAULT_IDLE_BUFFS;
 	public static List<BuffSpec> rangedBuffs = DEFAULT_RANGED_BUFFS;
@@ -98,7 +112,7 @@ public final class RefugeeConfig {
 		try {
 			if (!Files.isRegularFile(path)) {
 				write(path);
-				Refugee.LOGGER.info("Wrote default refugee config to {}", path);
+				Refugee.LOGGER.debug("Wrote default refugee config to {}", path);
 			} else {
 				try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
 					JsonElement parsed = JsonParser.parseReader(reader);
@@ -107,7 +121,7 @@ public final class RefugeeConfig {
 					}
 				}
 				write(path);
-				Refugee.LOGGER.info("Loaded refugee config from {}", path);
+				Refugee.LOGGER.debug("Loaded refugee config from {}", path);
 			}
 		} catch (Exception exception) {
 			Refugee.LOGGER.warn("Failed to load {}; using defaults", FILE_NAME, exception);
@@ -159,12 +173,23 @@ public final class RefugeeConfig {
 		buildPlaceIntervalTicks = readIntAtLeast(json, "buildPlaceIntervalTicks", buildPlaceIntervalTicks, 1);
 		followSpeed = readDoubleAtLeast(json, "followSpeed", followSpeed, 0.05);
 		guardWalkSpeed = readDoubleAtLeast(json, "guardWalkSpeed", guardWalkSpeed, 0.05);
+		combatRangedDistance = readDoubleAtLeast(json, "combatRangedDistance", combatRangedDistance, 1.0);
+		dualRangedFleeDistance = readDoubleAtLeast(json, "dualRangedFleeDistance", dualRangedFleeDistance, 1.0);
+		shieldTauntRadius = readDoubleAtLeast(json, "shieldTauntRadius", shieldTauntRadius, 1.0);
+		panicClearRadius = readDoubleAtLeast(json, "panicClearRadius", panicClearRadius, 1.0);
+		panicHealthRatio = readChance(json, "panicHealthRatio", panicHealthRatio);
+		recoverHealthRatio = readChance(json, "recoverHealthRatio", recoverHealthRatio);
+		foodHealFraction = readChance(json, "foodHealFraction", foodHealFraction);
+		eatIntervalTicks = readIntAtLeast(json, "eatIntervalTicks", eatIntervalTicks, 1);
 		rangedAttackIntervalTicks = readIntAtLeast(json, "rangedAttackIntervalTicks", rangedAttackIntervalTicks, 1);
 		meleeAttackIntervalTicks = readIntAtLeast(json, "meleeAttackIntervalTicks", meleeAttackIntervalTicks, 1);
 		builderWalkSpeed = readDoubleAtLeast(json, "builderWalkSpeed", builderWalkSpeed, 0.05);
 		starterRefugeeCount = readIntAtLeast(json, "starterRefugeeCount", starterRefugeeCount, 0);
 		importMaxAxis = readIntAtLeast(json, "importMaxAxis", importMaxAxis, 1);
 		importMaxVolume = readIntAtLeast(json, "importMaxVolume", importMaxVolume, 1);
+		workReachLimit = readBoolean(json, "workReachLimit", workReachLimit);
+		warehouseMergeCategories = readBoolean(json, "warehouseMergeCategories", warehouseMergeCategories);
+		villagerBuffsEnabled = readBoolean(json, "villagerBuffsEnabled", villagerBuffsEnabled);
 		applyBuffs(json);
 	}
 
@@ -184,12 +209,23 @@ public final class RefugeeConfig {
 		json.addProperty("buildPlaceIntervalTicks", buildPlaceIntervalTicks);
 		json.addProperty("followSpeed", followSpeed);
 		json.addProperty("guardWalkSpeed", guardWalkSpeed);
+		json.addProperty("combatRangedDistance", combatRangedDistance);
+		json.addProperty("dualRangedFleeDistance", dualRangedFleeDistance);
+		json.addProperty("shieldTauntRadius", shieldTauntRadius);
+		json.addProperty("panicClearRadius", panicClearRadius);
+		json.addProperty("panicHealthRatio", panicHealthRatio);
+		json.addProperty("recoverHealthRatio", recoverHealthRatio);
+		json.addProperty("foodHealFraction", foodHealFraction);
+		json.addProperty("eatIntervalTicks", eatIntervalTicks);
 		json.addProperty("rangedAttackIntervalTicks", rangedAttackIntervalTicks);
 		json.addProperty("meleeAttackIntervalTicks", meleeAttackIntervalTicks);
 		json.addProperty("builderWalkSpeed", builderWalkSpeed);
 		json.addProperty("starterRefugeeCount", starterRefugeeCount);
 		json.addProperty("importMaxAxis", importMaxAxis);
 		json.addProperty("importMaxVolume", importMaxVolume);
+		json.addProperty("workReachLimit", workReachLimit);
+		json.addProperty("warehouseMergeCategories", warehouseMergeCategories);
+		json.addProperty("villagerBuffsEnabled", villagerBuffsEnabled);
 		JsonObject villagerBuffs = new JsonObject();
 		villagerBuffs.add("idle", writeBuffList(idleBuffs));
 		villagerBuffs.add("ranged", writeBuffList(rangedBuffs));
@@ -200,6 +236,16 @@ public final class RefugeeConfig {
 			GSON.toJson(json, writer);
 			writer.write(System.lineSeparator());
 		}
+	}
+
+	private static boolean readBoolean(JsonObject json, String key, boolean fallback) {
+		if (!json.has(key) || !json.get(key).isJsonPrimitive()) {
+			return fallback;
+		}
+		if (!json.get(key).getAsJsonPrimitive().isBoolean()) {
+			return fallback;
+		}
+		return json.get(key).getAsBoolean();
 	}
 
 	private static int readIntAtLeast(JsonObject json, String key, int fallback, int min) {

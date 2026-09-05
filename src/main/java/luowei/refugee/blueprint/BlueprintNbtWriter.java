@@ -86,6 +86,14 @@ public final class BlueprintNbtWriter {
 	}
 
 	public void write(Path path, boolean rewriteConnections) throws IOException {
+		NbtIo.writeCompressed(toNbt(rewriteConnections), path);
+	}
+
+	public CompoundTag toNbt() {
+		return toNbt(true);
+	}
+
+	public CompoundTag toNbt(boolean rewriteConnections) {
 		if (rewriteConnections) {
 			fillConnections();
 		}
@@ -125,7 +133,7 @@ public final class BlueprintNbtWriter {
 		nbt.put("blocks", blocks);
 		nbt.put("entities", new ListTag());
 		nbt.putInt("DataVersion", SharedConstants.getCurrentVersion().getDataVersion().getVersion());
-		NbtIo.writeCompressed(nbt, path);
+		return nbt;
 	}
 
 	public static CompoundTag props(String... pairs) {
@@ -148,11 +156,58 @@ public final class BlueprintNbtWriter {
 	}
 
 	public static CompoundTag stairs(String facing) {
-		return props("facing", facing, "half", "bottom", "shape", "straight", "waterlogged", "false");
+		return stairs(facing, "bottom");
+	}
+
+	public static CompoundTag stairs(String facing, String half) {
+		return props("facing", facing, "half", half, "shape", "straight", "waterlogged", "false");
 	}
 
 	public static CompoundTag slabBottom() {
 		return props("type", "bottom", "waterlogged", "false");
+	}
+
+	public static CompoundTag chest(String facing) {
+		return props("facing", facing, "type", "single", "waterlogged", "false");
+	}
+
+	public static CompoundTag bed(String facing, String part) {
+		return props("facing", facing, "occupied", "false", "part", part);
+	}
+
+	public static CompoundTag fenceGate(String facing) {
+		return props("facing", facing, "in_wall", "false", "open", "false", "powered", "false");
+	}
+
+	public static CompoundTag anvil(String facing) {
+		return props("facing", facing);
+	}
+
+	public static CompoundTag cauldronLevel(int level) {
+		return props("level", Integer.toString(Math.max(0, Math.min(3, level))));
+	}
+
+	public static CompoundTag farmland(int moisture) {
+		return props("moisture", Integer.toString(Math.max(0, Math.min(7, moisture))));
+	}
+
+	public static CompoundTag vine(String... faces) {
+		CompoundTag tag = props(
+				"east", "false",
+				"north", "false",
+				"south", "false",
+				"up", "false",
+				"west", "false",
+				"waterlogged", "false"
+		);
+		if (faces != null) {
+			for (String face : faces) {
+				if (face != null && !face.isBlank()) {
+					tag.putString(face, "true");
+				}
+			}
+		}
+		return tag;
 	}
 
 	public static CompoundTag doorLower(String facing, String hinge) {
@@ -279,12 +334,17 @@ public final class BlueprintNbtWriter {
 				|| name.contains("door")
 				|| name.contains("trapdoor")
 				|| name.contains("sign")
+				|| name.contains("vine")
+				|| name.contains("cobweb")
+				|| name.contains("farmland")
 				|| name.equals("minecraft:ladder")
 				|| name.equals("minecraft:chain")
 				|| name.equals("minecraft:lectern")
 				|| name.equals("minecraft:enchanting_table")
 				|| name.equals("minecraft:brewing_stand")
 				|| name.equals("minecraft:lightning_rod")
+				|| name.equals("minecraft:moss_carpet")
+				|| name.equals("minecraft:water")
 				|| isPaneLike(name)
 				|| isFenceLike(name)
 				|| name.endsWith("_slab")) {

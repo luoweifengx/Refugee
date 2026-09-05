@@ -40,7 +40,7 @@ public class EnchanterTableRoamGoal extends Goal {
 
 	@Override
 	public boolean canUse() {
-		if (!RefugeeSpecialRole.is(villager, RefugeeSpecialRole.ENCHANTER)) {
+		if (villager.isBaby() || !RefugeeSpecialRole.is(villager, RefugeeSpecialRole.ENCHANTER)) {
 			return false;
 		}
 		if (RefugeeAttachments.get(villager).isFollowing() || villager.getTradingPlayer() != null) {

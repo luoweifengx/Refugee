@@ -16,7 +16,8 @@ public enum RefugeeBuffState {
 
 	public static RefugeeBuffState of(Villager villager) {
 		if (RefugeeRoles.isGuard(villager)) {
-			if (RefugeeRoles.isRangedWeapon(villager.getMainHandItem())) {
+			if (RefugeeRoles.isRangedWeapon(villager.getMainHandItem())
+					|| RefugeeRoles.isRangedWeapon(villager.getOffhandItem())) {
 				return RANGED;
 			}
 			return MELEE;

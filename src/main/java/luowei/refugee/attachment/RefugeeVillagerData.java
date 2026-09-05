@@ -10,9 +10,12 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.UUIDUtil;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.ItemStack;
 
+import luowei.refugee.ai.RefugeeCombat;
 import luowei.refugee.special.RefugeeSpecialRole;
 
 /**
@@ -32,7 +35,13 @@ public final class RefugeeVillagerData {
 			UUIDUtil.CODEC.optionalFieldOf("job_id").forGetter(data -> Optional.ofNullable(data.jobId)),
 			Codec.STRING.optionalFieldOf("role", "").forGetter(data -> data.role == null ? "" : data.role),
 			Codec.INT.optionalFieldOf("enchant_day", Integer.MIN_VALUE).forGetter(data -> data.enchantDay),
-			ItemStack.OPTIONAL_CODEC.listOf().optionalFieldOf("enchant_books", List.of()).forGetter(data -> List.copyOf(data.enchantBooks))
+			ItemStack.OPTIONAL_CODEC.listOf().optionalFieldOf("enchant_books", List.of()).forGetter(data -> List.copyOf(data.enchantBooks)),
+			ItemStack.OPTIONAL_CODEC.optionalFieldOf("resource").forGetter(data -> {
+				ItemStack stack = data.resourceItem;
+				return stack == null || stack.isEmpty() ? Optional.empty() : Optional.of(stack);
+			}),
+			Codec.BOOL.optionalFieldOf("eating", false).forGetter(data -> data.eating),
+			ItemStack.OPTIONAL_CODEC.optionalFieldOf("eat_stash").forGetter(data -> Optional.empty())
 	).apply(instance, RefugeeVillagerData::fromCodec));
 
 	private UUID subjectId;
@@ -57,6 +66,14 @@ public final class RefugeeVillagerData {
 	private long selectUntilGameTime;
 	private byte selectIconId;
 	private boolean healthWasDamaged;
+	private ItemStack resourceItem = ItemStack.EMPTY;
+	private boolean eating;
+	private int eatWatchCount;
+	private FoodProperties eatWatchFood;
+	private RefugeeCombat.Mood combatMood = RefugeeCombat.Mood.IDLE;
+	private int eatCooldown;
+	private int mainAttackCooldown;
+	private int offAttackCooldown;
 
 	public RefugeeVillagerData() {
 	}
@@ -74,7 +91,10 @@ public final class RefugeeVillagerData {
 			Optional<UUID> jobId,
 			String role,
 			int enchantDay,
-			List<ItemStack> enchantBooks
+			List<ItemStack> enchantBooks,
+			Optional<ItemStack> resource,
+			boolean eating,
+			Optional<ItemStack> eatStash
 	) {
 		RefugeeVillagerData data = new RefugeeVillagerData();
 		data.subjectId = subject.orElse(null);
@@ -94,6 +114,13 @@ public final class RefugeeVillagerData {
 					data.enchantBooks.add(book.copy());
 				}
 			}
+		}
+		if (resource != null && resource.isPresent() && !resource.get().isEmpty()) {
+			data.resourceItem = resource.get().copy();
+		}
+		data.eating = eating;
+		if (eating && eatStash != null && eatStash.isPresent() && !eatStash.get().isEmpty()) {
+			data.resourceItem = eatStash.get().copy();
 		}
 		return data;
 	}
@@ -308,5 +335,95 @@ public final class RefugeeVillagerData {
 
 	public byte selectIconId() {
 		return selectIconId;
+	}
+
+	public ItemStack resourceItem() {
+		return resourceItem == null ? ItemStack.EMPTY : resourceItem;
+	}
+
+	public void setResourceItem(ItemStack stack) {
+		this.resourceItem = stack == null || stack.isEmpty() ? ItemStack.EMPTY : stack.copy();
+	}
+
+	public boolean isEating() {
+		return eating;
+	}
+
+	public void setEating(boolean eating) {
+		this.eating = eating;
+		if (!eating) {
+			clearEatWatch();
+		}
+	}
+
+	public int eatWatchCount() {
+		return eatWatchCount;
+	}
+
+	public FoodProperties eatWatchFood() {
+		return eatWatchFood;
+	}
+
+	public void syncEatWatch(ItemStack eatingStack) {
+		if (!eating) {
+			return;
+		}
+		if (eatingStack != null && !eatingStack.isEmpty() && eatingStack.has(DataComponents.FOOD)) {
+			eatWatchCount = eatingStack.getCount();
+			eatWatchFood = eatingStack.get(DataComponents.FOOD);
+		} else {
+			clearEatWatch();
+		}
+	}
+
+	public void clearEatWatch() {
+		eatWatchCount = 0;
+		eatWatchFood = null;
+	}
+
+	public void clearEating() {
+		this.eating = false;
+		clearEatWatch();
+	}
+
+	public RefugeeCombat.Mood combatMood() {
+		return combatMood == null ? RefugeeCombat.Mood.IDLE : combatMood;
+	}
+
+	public void setCombatMood(RefugeeCombat.Mood mood) {
+		this.combatMood = mood == null ? RefugeeCombat.Mood.IDLE : mood;
+	}
+
+	public int eatCooldown() {
+		return eatCooldown;
+	}
+
+	public void setEatCooldown(int eatCooldown) {
+		this.eatCooldown = Math.max(0, eatCooldown);
+	}
+
+	public int mainAttackCooldown() {
+		return mainAttackCooldown;
+	}
+
+	public void setMainAttackCooldown(int mainAttackCooldown) {
+		this.mainAttackCooldown = Math.max(0, mainAttackCooldown);
+	}
+
+	public int offAttackCooldown() {
+		return offAttackCooldown;
+	}
+
+	public void setOffAttackCooldown(int offAttackCooldown) {
+		this.offAttackCooldown = Math.max(0, offAttackCooldown);
+	}
+
+	public void tickCombatCooldowns() {
+		if (mainAttackCooldown > 0) {
+			mainAttackCooldown--;
+		}
+		if (offAttackCooldown > 0) {
+			offAttackCooldown--;
+		}
 	}
 }

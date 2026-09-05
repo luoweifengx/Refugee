@@ -18,6 +18,7 @@ import luowei.refugee.logistics.OrgLogisticsData.ContainerRef;
 
 /**
  * 组织仓库的内存槽位账本。不写存档；按 subject UUID 分账。
+ * 大类表用于合并取料；物品索引含数量与容器槽位，供精确检索。
  */
 public final class WarehouseLedger {
 	private static final WarehouseLedger INSTANCE = new WarehouseLedger();
@@ -68,15 +69,8 @@ public final class WarehouseLedger {
 		if (org == null) {
 			return 0;
 		}
-		List<SlotEntry> list = org.exact.get(item);
-		if (list == null) {
-			return 0;
-		}
-		int total = 0;
-		for (SlotEntry entry : list) {
-			total += entry.count;
-		}
-		return total;
+		ItemIndex index = org.items.get(item);
+		return index == null ? 0 : index.total;
 	}
 
 	public SlotLoc first(UUID subjectId, MaterialCategory category) {
@@ -118,11 +112,11 @@ public final class WarehouseLedger {
 		if (org == null) {
 			return null;
 		}
-		List<SlotEntry> list = org.exact.get(item);
-		if (list == null || list.isEmpty()) {
+		ItemIndex index = org.items.get(item);
+		if (index == null || index.slots.isEmpty()) {
 			return null;
 		}
-		for (SlotEntry entry : list) {
+		for (SlotEntry entry : index.slots) {
 			if (exclude != null && exclude.test(entry.ref)) {
 				continue;
 			}
@@ -153,6 +147,10 @@ public final class WarehouseLedger {
 		Item item = stack.getItem();
 		int count = stack.getCount();
 		if (existing != null && existing.category == category && existing.item == item) {
+			ItemIndex index = org.items.get(item);
+			if (index != null) {
+				index.total += count - existing.count;
+			}
 			existing.count = count;
 			return;
 		}
@@ -216,25 +214,23 @@ public final class WarehouseLedger {
 	}
 
 	private static void addToLists(OrgIndex org, SlotEntry entry) {
+		org.items.computeIfAbsent(entry.item, key -> new ItemIndex()).add(entry);
 		if (entry.category.isWarehouseCategory()) {
 			org.categories.get(entry.category).add(entry);
-		} else {
-			org.exact.computeIfAbsent(entry.item, key -> new ArrayList<>()).add(entry);
 		}
 	}
 
 	private static void removeFromLists(OrgIndex org, SlotEntry entry) {
 		if (entry.category.isWarehouseCategory()) {
 			org.categories.get(entry.category).remove(entry);
+		}
+		ItemIndex index = org.items.get(entry.item);
+		if (index == null) {
 			return;
 		}
-		List<SlotEntry> list = org.exact.get(entry.item);
-		if (list == null) {
-			return;
-		}
-		list.remove(entry);
-		if (list.isEmpty()) {
-			org.exact.remove(entry.item);
+		index.remove(entry);
+		if (index.slots.isEmpty()) {
+			org.items.remove(entry.item);
 		}
 	}
 
@@ -264,9 +260,28 @@ public final class WarehouseLedger {
 		}
 	}
 
+	/**
+	 * 每种物品的数量与所在容器槽位，供精确取料。
+	 */
+	private static final class ItemIndex {
+		private int total;
+		private final List<SlotEntry> slots = new ArrayList<>();
+
+		private void add(SlotEntry entry) {
+			slots.add(entry);
+			total += entry.count;
+		}
+
+		private void remove(SlotEntry entry) {
+			if (slots.remove(entry)) {
+				total -= entry.count;
+			}
+		}
+	}
+
 	private static final class OrgIndex {
 		private final EnumMap<MaterialCategory, List<SlotEntry>> categories = new EnumMap<>(MaterialCategory.class);
-		private final Map<Item, List<SlotEntry>> exact = new HashMap<>();
+		private final Map<Item, ItemIndex> items = new HashMap<>();
 		private final Map<ContainerRef, Map<Integer, SlotEntry>> byChest = new HashMap<>();
 
 		private OrgIndex() {

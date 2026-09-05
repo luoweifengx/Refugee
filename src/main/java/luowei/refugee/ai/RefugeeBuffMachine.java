@@ -20,7 +20,7 @@ public final class RefugeeBuffMachine {
 	}
 
 	public static void tick(Villager villager) {
-		if (!RefugeeAttachments.isRefugee(villager)) {
+		if (villager.isBaby() || !RefugeeConfig.villagerBuffsEnabled || !RefugeeAttachments.isRefugee(villager)) {
 			stripManaged(villager, Set.of());
 			return;
 		}

@@ -18,7 +18,6 @@ import luowei.refugee.special.SpecialRefugeeService;
 import luowei.refugee.staff.CommandStaffItem;
 import luowei.refugee.staff.StaffPage;
 import luowei.refugee.staff.StaffService;
-import luowei.refugee.talk.RefugeeBubble;
 
 /**
  * 玩家对村民 / 方块 / 号角的交互。PBS 没有旗帜、号角、钟钩子，全部在此实现。
@@ -47,10 +46,7 @@ public final class RefugeeInteractions {
 			}
 			if (serverPlayer.isShiftKeyDown()) {
 				if (held.isEmpty() && RefugeeSpecialRole.isSpecial(villager)) {
-					boolean toggled = SelectionService.toggleFollow(serverPlayer, villager);
-					if (toggled) {
-						RefugeeBubble.onSelect(villager);
-					}
+					SelectionService.toggleFollow(serverPlayer, villager);
 					return InteractionResult.SUCCESS;
 				}
 				return EquipmentService.handleShiftUse(serverPlayer, villager, hand)
@@ -63,10 +59,7 @@ public final class RefugeeInteractions {
 			if (!held.isEmpty()) {
 				return InteractionResult.PASS;
 			}
-			boolean toggled = SelectionService.toggleFollow(serverPlayer, villager);
-			if (toggled) {
-				RefugeeBubble.onSelect(villager);
-			}
+			SelectionService.toggleFollow(serverPlayer, villager);
 			return InteractionResult.SUCCESS;
 		});
 

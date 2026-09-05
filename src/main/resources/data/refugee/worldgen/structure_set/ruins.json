@@ -1,0 +1,27 @@
+{
+	"structures": [
+		{
+			"structure": "refugee:ruin_arrow_tower",
+			"weight": 1
+		},
+		{
+			"structure": "refugee:ruin_wall",
+			"weight": 1
+		},
+		{
+			"structure": "refugee:ruin_gate",
+			"weight": 1
+		},
+		{
+			"structure": "refugee:ruin_hut",
+			"weight": 1
+		}
+	],
+	"placement": {
+		"type": "minecraft:random_spread",
+		"salt": 184027561,
+		"spacing": 14,
+		"separation": 7,
+		"spread_type": "linear"
+	}
+}

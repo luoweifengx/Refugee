@@ -1,17 +1,22 @@
 package luowei.refugee.client;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.rendering.v1.EntityModelLayerRegistry;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseItemCallback;
 
+import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionResult;
 
+import luowei.refugee.client.model.RefugeeVillagerModel;
+import luowei.refugee.interact.VillagerKitMenus;
 import luowei.refugee.network.BlueprintCatalogPayload;
 import luowei.refugee.network.BlueprintSelectPayload;
 import luowei.refugee.network.BlueprintSelectionPayload;
@@ -32,6 +37,8 @@ import luowei.refugee.staff.StaffPage;
 public class RefugeeClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
+		EntityModelLayerRegistry.registerModelLayer(RefugeeVillagerModel.LAYER, RefugeeVillagerModel::createBodyLayer);
+		MenuScreens.register(VillagerKitMenus.KIT, VillagerKitScreen::new);
 		BlueprintPreviewRenderer.register();
 		StaffOverlayRenderer.register();
 		HudRenderCallback.EVENT.register(RefugeeClient::renderPreviewHud);
@@ -43,9 +50,21 @@ public class RefugeeClient implements ClientModInitializer {
 				return InteractionResult.PASS;
 			}
 			if (StaffClientNav.isPreview()) {
-				StaffClientNav.confirmPreviewPlace();
+				StaffClientNav.handlePreviewUse(hit.getBlockPos());
 			}
 			return InteractionResult.SUCCESS;
+		});
+		UseItemCallback.EVENT.register((player, level, hand) -> {
+			if (!level.isClientSide()) {
+				return InteractionResult.PASS;
+			}
+			if (!(player.getItemInHand(hand).getItem() instanceof CommandStaffItem)) {
+				return InteractionResult.PASS;
+			}
+			if (StaffClientNav.handlePreviewAirUse()) {
+				return InteractionResult.SUCCESS;
+			}
+			return InteractionResult.PASS;
 		});
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
 			ClientBlueprintTemplates.clear();

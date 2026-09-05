@@ -30,13 +30,14 @@ import net.minecraft.world.level.block.entity.BaseContainerBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
+import luowei.refugee.config.RefugeeConfig;
 import luowei.refugee.logistics.OrgLogisticsData;
 import luowei.refugee.logistics.OrgLogisticsData.ContainerRef;
 import luowei.refugee.staff.StaffService;
 import luowei.refugee.warehouse.WarehouseLedger.SlotLoc;
 
 /**
- * 组织仓库：存按漏斗逻辑，取按分类宽松扣除（珍贵物精确物品；种子建筑取料精确）。
+ * 组织仓库：存按漏斗逻辑；取料在合并大类时宽松，关闭合并时按精确物品。
  * 槽位账本与区块强制加载均经由此类，避免热路径全表扫描。
  */
 public final class WarehouseService {
@@ -159,17 +160,16 @@ public final class WarehouseService {
 		if (level == null || subjectId == null || item == null) {
 			return false;
 		}
-		MaterialCategory category = MaterialCategory.of(item);
-		if (category.isWarehouseCategory()) {
-			return consumeFirst(level, subjectId, category, item);
-		}
 		return consumeFirst(level, subjectId, null, item);
 	}
 
 	/**
-	 * 建筑取料：木头/木板/石头/泥沙/杂项宽松，种子与珍贵物精确。
+	 * 建筑取料：合并大类时木头/木板/石头/泥沙/杂项宽松，种子与珍贵物精确；关闭合并时一律精确。
 	 */
 	public static boolean tryConsumeForBuild(ServerLevel level, UUID subjectId, Item material) {
+		if (!RefugeeConfig.warehouseMergeCategories) {
+			return tryConsume(level, subjectId, material);
+		}
 		MaterialCategory category = MaterialCategory.of(material);
 		if (category == MaterialCategory.SEED) {
 			return tryConsume(level, subjectId, material);
@@ -183,6 +183,9 @@ public final class WarehouseService {
 	public static boolean hasForBuild(ServerLevel level, UUID subjectId, Item material) {
 		if (level == null || subjectId == null || material == null) {
 			return false;
+		}
+		if (!RefugeeConfig.warehouseMergeCategories) {
+			return countExact(level.getServer(), subjectId, material) > 0;
 		}
 		MaterialCategory category = MaterialCategory.of(material);
 		if (category == MaterialCategory.SEED) {
@@ -203,40 +206,19 @@ public final class WarehouseService {
 	}
 
 	/**
-	 * 加入箱子后按分类整理：同类归堆；珍贵物与其它物品不并入仓库分类。
+	 * 加入箱子后整理：合并大类时按分类归堆；关闭合并时只把相同物品压叠。
 	 */
 	public static void organize(ServerLevel level, BlockPos pos) {
 		if (level == null || pos == null || !(level.getBlockEntity(pos) instanceof Container container)) {
 			return;
 		}
 		runSilent(() -> {
-			EnumMap<MaterialCategory, List<ItemStack>> buckets = new EnumMap<>(MaterialCategory.class);
-			List<ItemStack> rest = new ArrayList<>();
-			for (int i = 0; i < container.getContainerSize(); i++) {
-				ItemStack stack = container.getItem(i);
-				if (stack.isEmpty()) {
-					continue;
-				}
-				MaterialCategory category = MaterialCategory.of(stack);
-				if (category.isWarehouseCategory()) {
-					buckets.computeIfAbsent(category, key -> new ArrayList<>()).add(stack.copy());
-				} else {
-					rest.add(stack.copy());
-				}
-				container.setItem(i, ItemStack.EMPTY);
+			List<ItemStack> ordered;
+			if (RefugeeConfig.warehouseMergeCategories) {
+				ordered = organizeByCategory(container);
+			} else {
+				ordered = organizeExact(container);
 			}
-			List<ItemStack> ordered = new ArrayList<>();
-			for (MaterialCategory category : List.of(
-					MaterialCategory.LOG,
-					MaterialCategory.PLANKS,
-					MaterialCategory.STONE,
-					MaterialCategory.SOIL,
-					MaterialCategory.SEED,
-					MaterialCategory.MISC
-			)) {
-				ordered.addAll(compact(buckets.getOrDefault(category, List.of())));
-			}
-			ordered.addAll(compact(rest));
 			int slot = 0;
 			for (ItemStack stack : ordered) {
 				if (slot >= container.getContainerSize()) {
@@ -277,7 +259,7 @@ public final class WarehouseService {
 	}
 
 	/**
-	 * 最后一人关箱后按分类整理并重建账本。
+	 * 最后一人关箱后整理并重建账本。
 	 */
 	public static void onStopOpen(ServerLevel level, BlockPos pos) {
 		if (level == null || pos == null) {
@@ -367,6 +349,50 @@ public final class WarehouseService {
 				WarehouseLedger.instance().rebuildChest(subjectId, ref, container);
 			}
 		}
+	}
+
+	private static List<ItemStack> organizeByCategory(Container container) {
+		EnumMap<MaterialCategory, List<ItemStack>> buckets = new EnumMap<>(MaterialCategory.class);
+		List<ItemStack> rest = new ArrayList<>();
+		for (int i = 0; i < container.getContainerSize(); i++) {
+			ItemStack stack = container.getItem(i);
+			if (stack.isEmpty()) {
+				continue;
+			}
+			MaterialCategory category = MaterialCategory.of(stack);
+			if (category.isWarehouseCategory()) {
+				buckets.computeIfAbsent(category, key -> new ArrayList<>()).add(stack.copy());
+			} else {
+				rest.add(stack.copy());
+			}
+			container.setItem(i, ItemStack.EMPTY);
+		}
+		List<ItemStack> ordered = new ArrayList<>();
+		for (MaterialCategory category : List.of(
+				MaterialCategory.LOG,
+				MaterialCategory.PLANKS,
+				MaterialCategory.STONE,
+				MaterialCategory.SOIL,
+				MaterialCategory.SEED,
+				MaterialCategory.MISC
+		)) {
+			ordered.addAll(compact(buckets.getOrDefault(category, List.of())));
+		}
+		ordered.addAll(compact(rest));
+		return ordered;
+	}
+
+	private static List<ItemStack> organizeExact(Container container) {
+		List<ItemStack> stacks = new ArrayList<>();
+		for (int i = 0; i < container.getContainerSize(); i++) {
+			ItemStack stack = container.getItem(i);
+			if (stack.isEmpty()) {
+				continue;
+			}
+			stacks.add(stack.copy());
+			container.setItem(i, ItemStack.EMPTY);
+		}
+		return compact(stacks);
 	}
 
 	private static List<ItemStack> compact(List<ItemStack> items) {

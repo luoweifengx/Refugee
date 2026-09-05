@@ -1,6 +1,5 @@
 package luowei.refugee.settle;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -19,7 +18,7 @@ import luowei.refugee.interact.RefugeeRoles;
 import luowei.refugee.interact.SelectionService;
 
 /**
- * 放置安顿旗帜后，按旗帜原点 BFS 传送选中村民，并销毁旗帜方块。
+ * 放置安顿旗帜后先拆旗，再以旗帜格为第一落脚点三维 BFS 传送选中村民。
  */
 public final class SettlementService {
 	private SettlementService() {
@@ -37,9 +36,8 @@ public final class SettlementService {
 			player.displayClientMessage(Component.translatable("message.refugee.settle.none"), true);
 			return;
 		}
-		Set<BlockPos> reserved = new HashSet<>();
-		reserved.add(bannerPos);
-		List<BlockPos> spots = StandableFinder.findStandable(level, bannerPos, reserved, selected.size());
+		destroyBanner(level, bannerPos);
+		List<BlockPos> spots = StandableFinder.findStandable(level, bannerPos, Set.of(), selected.size());
 		int teleported = 0;
 		for (int i = 0; i < selected.size(); i++) {
 			Entity entity = findLoaded(level, selected.get(i));
@@ -62,7 +60,6 @@ public final class SettlementService {
 		}
 		selection.clearSelected();
 		RefugeeAttachments.markDirty(player, selection);
-		destroyBanner(level, bannerPos);
 		SelectionService.removeSettlementBanners(player);
 		player.displayClientMessage(Component.translatable("message.refugee.settle.done", teleported), true);
 	}

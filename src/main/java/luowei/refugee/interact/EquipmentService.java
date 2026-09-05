@@ -12,7 +12,7 @@ import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.special.SpecialRefugeeService;
 
 /**
- * Shift+右键给予工具/盔甲；取下工具；停止建造。盔甲不可取下。
+ * Shift+右键给予盔甲/主副手/食物；空手打开装具界面。盔甲仍不可用空手直接扯下。
  */
 public final class EquipmentService {
 	private EquipmentService() {
@@ -43,15 +43,8 @@ public final class EquipmentService {
 			player.displayClientMessage(Component.translatable("message.refugee.staff.build.stopped"), true);
 			return true;
 		}
-		ItemStack tool = villager.getMainHandItem();
-		if (!tool.isEmpty() && RefugeeRoles.isGiveableTool(tool)) {
-			villager.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
-			if (!player.getInventory().add(tool.copy())) {
-				player.drop(tool.copy(), false);
-			}
-			luowei.refugee.staff.StaffService.unbindWorker(villager);
-			player.displayClientMessage(Component.translatable("message.refugee.tool.taken"), true);
-			return true;
+		if (held.isEmpty()) {
+			return VillagerKitMenus.open(player, villager);
 		}
 		return false;
 	}
@@ -59,30 +52,96 @@ public final class EquipmentService {
 	private static boolean give(ServerPlayer player, Villager villager, InteractionHand hand, ItemStack held) {
 		if (RefugeeRoles.isGiveableArmor(held)) {
 			EquipmentSlot slot = RefugeeRoles.armorSlot(villager, held);
-			ItemStack previous = villager.getItemBySlot(slot);
-			villager.setItemSlot(slot, held.copyWithCount(1));
-			held.shrink(1);
-			if (!previous.isEmpty() && !player.getInventory().add(previous)) {
-				player.drop(previous, false);
-			}
-			player.displayClientMessage(Component.translatable("message.refugee.armor.given"), true);
-			return true;
+			return swapSlot(player, villager, slot, held, "message.refugee.armor.given");
 		}
-		ItemStack previous = villager.getMainHandItem();
-		villager.setItemSlot(EquipmentSlot.MAINHAND, held.copyWithCount(1));
-		held.shrink(1);
-		if (RefugeeRoles.isGuard(villager)) {
+		if (RefugeeRoles.isFood(held)) {
+			return giveFood(player, villager, held);
+		}
+		if (RefugeeRoles.isShield(held)) {
+			return swapSlot(player, villager, EquipmentSlot.OFFHAND, held, "message.refugee.shield.given");
+		}
+		ItemStack logicalMain = RefugeeRoles.logicalMainHand(villager);
+		boolean given;
+		if (logicalMain.isEmpty() || !villager.getOffhandItem().isEmpty()) {
+			given = swapLogicalMain(player, villager, held, "message.refugee.tool.given");
+		} else {
+			given = swapSlot(player, villager, EquipmentSlot.OFFHAND, held, "message.refugee.tool.given");
+		}
+		if (given && RefugeeRoles.isGuard(villager)) {
 			RefugeeVillagerData data = RefugeeAttachments.get(villager);
 			if (!data.isFollowing() && data.guardCenter() == null) {
 				data.setGuardCenter(villager.blockPosition());
 				RefugeeAttachments.markDirty(villager, data);
 			}
 		}
-		if (!previous.isEmpty() && !player.getInventory().add(previous)) {
-			player.drop(previous, false);
+		return given;
+	}
+
+	private static boolean giveFood(ServerPlayer player, Villager villager, ItemStack held) {
+		ItemStack current = RefugeeRoles.logicalFood(villager);
+		if (!current.isEmpty() && ItemStack.isSameItemSameComponents(current, held)) {
+			int space = current.getMaxStackSize() - current.getCount();
+			int moved = Math.min(space, held.getCount());
+			if (moved > 0) {
+				current.grow(moved);
+				held.shrink(moved);
+				if (RefugeeRoles.isEating(villager)) {
+					RefugeeVillagerData data = RefugeeAttachments.get(villager);
+					data.syncEatWatch(villager.getMainHandItem());
+					RefugeeAttachments.markDirty(villager, data);
+				} else {
+					RefugeeVillagerData data = RefugeeAttachments.get(villager);
+					data.setResourceItem(current);
+					RefugeeAttachments.markDirty(villager, data);
+				}
+			}
+			player.displayClientMessage(Component.translatable("message.refugee.food.given"), true);
+			return true;
 		}
-		player.displayClientMessage(Component.translatable("message.refugee.tool.given"), true);
-		BuildReadyDebug.report(player, villager, "give-tool");
+		ItemStack previous = current.copy();
+		ItemStack given = held.split(held.getCount());
+		RefugeeRoles.setLogicalFood(villager, given);
+		if (RefugeeRoles.isEating(villager)) {
+			villager.stopUsingItem();
+			if (RefugeeRoles.isFood(villager.getMainHandItem())) {
+				villager.startUsingItem(InteractionHand.MAIN_HAND);
+			}
+		}
+		giveBack(player, previous);
+		player.displayClientMessage(Component.translatable("message.refugee.food.given"), true);
 		return true;
+	}
+
+	private static boolean swapLogicalMain(ServerPlayer player, Villager villager, ItemStack held, String message) {
+		ItemStack previous = RefugeeRoles.logicalMainHand(villager);
+		RefugeeRoles.setLogicalMainHand(villager, held.copyWithCount(1));
+		held.shrink(1);
+		giveBack(player, previous);
+		player.displayClientMessage(Component.translatable(message), true);
+		return true;
+	}
+
+	private static boolean swapSlot(
+			ServerPlayer player,
+			Villager villager,
+			EquipmentSlot slot,
+			ItemStack held,
+			String message
+	) {
+		ItemStack previous = villager.getItemBySlot(slot);
+		villager.setItemSlot(slot, held.copyWithCount(1));
+		held.shrink(1);
+		giveBack(player, previous);
+		player.displayClientMessage(Component.translatable(message), true);
+		return true;
+	}
+
+	private static void giveBack(ServerPlayer player, ItemStack previous) {
+		if (previous == null || previous.isEmpty()) {
+			return;
+		}
+		if (!player.getInventory().add(previous.copy())) {
+			player.drop(previous.copy(), false);
+		}
 	}
 }

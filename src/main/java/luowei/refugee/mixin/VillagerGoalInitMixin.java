@@ -29,11 +29,11 @@ public abstract class VillagerGoalInitMixin extends AbstractVillager {
 	)
 	private void refugee$addGoals(EntityType<? extends Villager> type, Level level, CallbackInfo ci) {
 		Villager self = (Villager) (Object) this;
-		this.goalSelector.addGoal(1, new RefugeeFollowGoal(self));
-		this.goalSelector.addGoal(2, new RefugeeBuildGoal(self));
-		this.goalSelector.addGoal(3, new RefugeeMineGoal(self));
-		this.goalSelector.addGoal(4, new RefugeeGuardGoal(self));
-		this.goalSelector.addGoal(5, new EnchanterTableRoamGoal(self));
 		this.targetSelector.addGoal(1, new RefugeeGuardTargetGoal(self));
+		this.goalSelector.addGoal(1, new RefugeeFollowGoal(self));
+		this.goalSelector.addGoal(2, new RefugeeGuardGoal(self));
+		this.goalSelector.addGoal(3, new RefugeeBuildGoal(self));
+		this.goalSelector.addGoal(4, new RefugeeMineGoal(self));
+		this.goalSelector.addGoal(5, new EnchanterTableRoamGoal(self));
 	}
 }

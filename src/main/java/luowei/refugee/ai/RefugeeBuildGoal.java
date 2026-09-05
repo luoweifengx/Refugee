@@ -5,7 +5,9 @@ import java.util.List;
 import java.util.UUID;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -33,7 +35,7 @@ import luowei.refugee.staff.StaffService;
 import luowei.refugee.warehouse.WarehouseService;
 
 /**
- * 建筑：不靠近箱子，从组织仓库宽松取料，按组织级任务的共享光标放置。
+ * 建筑：不靠近箱子，从组织仓库取料，按组织级任务的共享光标放置。
  */
 public class RefugeeBuildGoal extends Goal {
 	private static final int SWING_INTERVAL = 6;
@@ -43,6 +45,7 @@ public class RefugeeBuildGoal extends Goal {
 	private BlockPos minePos;
 	private float mineProgress;
 	private int lastCrack = -1;
+	private Item shortageNotice;
 
 	public RefugeeBuildGoal(Villager villager) {
 		this.villager = villager;
@@ -51,7 +54,7 @@ public class RefugeeBuildGoal extends Goal {
 
 	@Override
 	public boolean canUse() {
-		return RefugeeRoles.isBuilder(villager) && RefugeeAttachments.get(villager).isBuilding();
+		return !villager.isBaby() && RefugeeRoles.isBuilder(villager) && RefugeeAttachments.get(villager).isBuilding();
 	}
 
 	@Override
@@ -68,6 +71,7 @@ public class RefugeeBuildGoal extends Goal {
 			lastCrack = -1;
 			minePos = null;
 		}
+		shortageNotice = null;
 	}
 
 	@Override
@@ -120,9 +124,9 @@ public class RefugeeBuildGoal extends Goal {
 				OrgLogisticsData.get(level.getServer()).setDirty();
 				continue;
 			}
-			if (villager.distanceToSqr(dest.getX() + 0.5, dest.getY(), dest.getZ() + 0.5) > 9.0) {
+			WorkMove.moveToward(villager, dest);
+			if (RefugeeConfig.workReachLimit && !WorkMove.inReach(villager, dest)) {
 				abortMining(level);
-				villager.getNavigation().moveTo(dest.getX() + 0.5, dest.getY(), dest.getZ() + 0.5, RefugeeConfig.builderWalkSpeed);
 				return;
 			}
 			Item material = target.getBlock().asItem();
@@ -144,6 +148,7 @@ public class RefugeeBuildGoal extends Goal {
 			UUID subjectId = data.subjectId();
 			if (subjectId == null || !WarehouseService.hasForBuild(level, subjectId, material)) {
 				abortMining(level);
+				notifyShortage(level, subjectId, material);
 				placeCooldown = RefugeeConfig.buildPlaceIntervalTicks;
 				return;
 			}
@@ -156,7 +161,7 @@ public class RefugeeBuildGoal extends Goal {
 					continue;
 				}
 				villager.getLookControl().setLookAt(dest.getX() + 0.5, dest.getY() + 0.5, dest.getZ() + 0.5);
-				villager.getNavigation().stop();
+				WorkMove.moveToward(villager, dest);
 				if (!tickBreakObstacle(level, dest, current, subjectId)) {
 					return;
 				}
@@ -171,9 +176,11 @@ public class RefugeeBuildGoal extends Goal {
 				}
 			}
 			if (!WarehouseService.tryConsumeForBuild(level, subjectId, material)) {
+				notifyShortage(level, subjectId, material);
 				placeCooldown = RefugeeConfig.buildPlaceIntervalTicks;
 				return;
 			}
+			shortageNotice = null;
 			level.setBlock(dest, target, 3);
 			if (info.nbt() != null) {
 				BlockEntity blockEntity = level.getBlockEntity(dest);
@@ -194,6 +201,34 @@ public class RefugeeBuildGoal extends Goal {
 		StaffService.finishWorker(level, villager, job);
 	}
 
+	/** 缺料停工时通知组织者；同一物品只报一次，直到再次成功取料。 */
+	private void notifyShortage(ServerLevel level, UUID subjectId, Item material) {
+		if (level == null || subjectId == null || material == null || material == Items.AIR) {
+			return;
+		}
+		if (material == shortageNotice) {
+			return;
+		}
+		shortageNotice = material;
+		BlockPos pos = villager.blockPosition();
+		Component posText = Component.translatable(
+				"message.refugee.roster.pos",
+				pos.getX(),
+				pos.getY(),
+				pos.getZ()
+		);
+		Component message = Component.translatable(
+				"message.refugee.build.missing",
+				posText,
+				new ItemStack(material).getHoverName()
+		);
+		for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
+			if (subjectId.equals(player.getUUID()) || subjectId.equals(PbsAdapter.resolveSubject(player))) {
+				player.sendSystemMessage(message);
+			}
+		}
+	}
+
 	/**
 	 * 按玩家破坏公式清障；未挖完返回 false，本 tick 不放置。
 	 */
@@ -202,7 +237,7 @@ public class RefugeeBuildGoal extends Goal {
 			abortMining(level);
 			minePos = pos.immutable();
 		}
-		ItemStack tool = villager.getMainHandItem();
+		ItemStack tool = RefugeeRoles.workTool(villager);
 		float hardness = state.getDestroySpeed(level, pos);
 		if (hardness < 0.0f) {
 			abortMining(level);
@@ -231,7 +266,7 @@ public class RefugeeBuildGoal extends Goal {
 			lastCrack = stage;
 		}
 		if (mineProgress == perTick || villager.tickCount % SWING_INTERVAL == 0) {
-			villager.swing(InteractionHand.MAIN_HAND);
+			villager.swing(RefugeeRoles.workHand(villager));
 			playHitSound(level, pos, state);
 		}
 		if (mineProgress >= 1.0f) {
@@ -279,7 +314,7 @@ public class RefugeeBuildGoal extends Goal {
 				dest,
 				blockEntity,
 				villager,
-				villager.getMainHandItem()
+				RefugeeRoles.workTool(villager)
 		);
 		level.destroyBlock(dest, false);
 		WarehouseService.depositLoot(level, villager, subjectId, drops);

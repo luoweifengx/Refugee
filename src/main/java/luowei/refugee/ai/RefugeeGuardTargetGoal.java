@@ -66,6 +66,9 @@ public class RefugeeGuardTargetGoal extends NearestAttackableTargetGoal<Monster>
 
 	@Override
 	public boolean canUse() {
+		if (villager.isBaby() || !RefugeeCombat.mood(villager).canAcquireTarget()) {
+			return false;
+		}
 		if (!RefugeeRoles.isGuard(villager) || RefugeeGuardGoal.resolveGuardCenter(villager) == null) {
 			return false;
 		}
@@ -75,7 +78,7 @@ public class RefugeeGuardTargetGoal extends NearestAttackableTargetGoal<Monster>
 
 	@Override
 	public boolean canContinueToUse() {
-		if (!RefugeeRoles.isGuard(villager)) {
+		if (!RefugeeCombat.mood(villager).canAcquireTarget() || !RefugeeRoles.isGuard(villager)) {
 			return false;
 		}
 		Vec3 center = RefugeeGuardGoal.resolveGuardCenter(villager);

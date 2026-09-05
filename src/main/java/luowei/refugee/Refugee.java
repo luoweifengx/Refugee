@@ -18,10 +18,13 @@ import luowei.refugee.interact.DeathDropService;
 import luowei.refugee.interact.RefugeeInteractions;
 import luowei.refugee.interact.RosterService;
 import luowei.refugee.interact.SelectionService;
+import luowei.refugee.interact.VillagerKitMenus;
+import luowei.refugee.ai.RefugeeCombat;
 import luowei.refugee.item.ModItems;
 import luowei.refugee.network.RefugeeNetworking;
 import luowei.refugee.spawn.LandmarkSpawnService;
 import luowei.refugee.spawn.RefugeeImmigration;
+import luowei.refugee.spawn.RefugeeStructures;
 import luowei.refugee.special.SpecialRefugeeService;
 
 public class Refugee implements ModInitializer {
@@ -31,8 +34,10 @@ public class Refugee implements ModInitializer {
 	@Override
 	public void onInitialize() {
 		RefugeeConfig.load();
+		RefugeeStructures.register();
 		RefugeeAttachments.register();
 		ModItems.register();
+		VillagerKitMenus.register();
 		BlueprintRegistry.register();
 		RefugeeNetworking.register();
 		RefugeeInteractions.register();
@@ -44,13 +49,18 @@ public class Refugee implements ModInitializer {
 		luowei.refugee.pbs.OrgMergeService.register();
 		RefugeeImmigration.register();
 		RefugeeCommands.register();
+		ServerLivingEntityEvents.AFTER_DAMAGE.register((entity, source, base, taken, blocked) -> {
+			if (entity instanceof Villager villager) {
+				RefugeeCombat.onDamaged(villager);
+			}
+		});
 		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
 			if (entity instanceof Villager villager && entity.level() instanceof ServerLevel level) {
 				DeathDropService.dropOnDeath(villager, level);
 				SelectionService.onVillagerRemoved(villager.getUUID(), level);
 			}
 		});
-		LOGGER.info("Refugee initialized (PBS territory + zombie villages + immigration)");
+		LOGGER.debug("Refugee initialized (PBS territory + zombie villages + immigration)");
 	}
 
 	public static ResourceLocation id(String path) {

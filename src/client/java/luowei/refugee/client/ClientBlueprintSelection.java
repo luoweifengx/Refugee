@@ -12,10 +12,12 @@ import luowei.refugee.staff.PreviewChannel;
 
 /**
  * 客户端持有的结构选定与建造预览变换（确认前为会话状态）。
+ * 右键钉住的原点只存在客户端，不跟准星走，Tab / 滚轮仍改偏移与旋转。
  */
 public final class ClientBlueprintSelection {
 	private static ResourceLocation structureId;
 	private static BlockPos buildOrigin;
+	private static BlockPos lockedOrigin;
 	private static int offsetX;
 	private static int offsetY;
 	private static int offsetZ;
@@ -26,7 +28,11 @@ public final class ClientBlueprintSelection {
 	}
 
 	public static void apply(Optional<ResourceLocation> structure, Optional<BlockPos> origin) {
-		structureId = structure == null ? null : structure.orElse(null);
+		ResourceLocation next = structure == null ? null : structure.orElse(null);
+		if (next == null || !next.equals(structureId)) {
+			lockedOrigin = null;
+		}
+		structureId = next;
 		buildOrigin = origin == null ? null : origin.orElse(null);
 	}
 
@@ -35,7 +41,15 @@ public final class ClientBlueprintSelection {
 	}
 
 	public static BlockPos buildOrigin() {
-		return buildOrigin;
+		return lockedOrigin != null ? lockedOrigin : buildOrigin;
+	}
+
+	public static boolean originLocked() {
+		return lockedOrigin != null;
+	}
+
+	public static void lockOrigin(BlockPos origin) {
+		lockedOrigin = origin == null ? null : origin.immutable();
 	}
 
 	public static int offsetX() {
@@ -80,6 +94,7 @@ public final class ClientBlueprintSelection {
 	}
 
 	public static void clearPreview() {
+		lockedOrigin = null;
 		offsetX = 0;
 		offsetY = 0;
 		offsetZ = 0;
@@ -106,7 +121,11 @@ public final class ClientBlueprintSelection {
 	}
 
 	public static Component hintLabel() {
-		return Component.translatable("message.refugee.staff.preview.hint");
+		return Component.translatable(
+				originLocked()
+						? "message.refugee.staff.preview.hint.locked"
+						: "message.refugee.staff.preview.hint"
+		);
 	}
 
 	private static String signed(int value) {

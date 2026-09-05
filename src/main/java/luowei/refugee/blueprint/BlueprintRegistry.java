@@ -34,13 +34,13 @@ import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemp
 import luowei.refugee.Refugee;
 
 /**
- * 蓝图目录：{@code config/refugee/blueprints} 下的原版结构模板 {@code .nbt}。
+ * 基础可造蓝图：{@code config/refugee/blueprints} 下的原版结构模板 {@code .nbt}。
+ * 世界生成建筑在 {@link WorldgenBlueprints}，玩家导入在 {@link PlayerBlueprints}。
  */
 public final class BlueprintRegistry {
 	public static final String DIRECTORY_NAME = "blueprints";
 	public static final String CATALOG_FILE = "catalog.json";
-	public static final String SAMPLE_FILE = "cobble_pad.nbt";
-	public static final String OAK_CHECKER_FILE = "oak_checker.nbt";
+	private static final List<String> DEBUG_STEMS = List.of("cobble_pad", "oak_checker");
 
 	private static final Map<ResourceLocation, StructureTemplate> TEMPLATES = new LinkedHashMap<>();
 	private static final Map<ResourceLocation, CompoundTag> TEMPLATE_NBTS = new LinkedHashMap<>();
@@ -51,6 +51,7 @@ public final class BlueprintRegistry {
 
 	public static void register() {
 		ensureDirectory();
+		WorldgenBlueprints.ensureDirectory();
 		ServerLifecycleEvents.SERVER_STARTED.register(BlueprintRegistry::reload);
 		ServerLifecycleEvents.SERVER_STOPPED.register(server -> clear());
 	}
@@ -67,14 +68,10 @@ public final class BlueprintRegistry {
 			if (created) {
 				writeReadme(dir);
 				writeDefaultCatalog(dir);
-				Refugee.LOGGER.info("Created blueprint directory {}", dir);
+				Refugee.LOGGER.debug("Created blueprint directory {}", dir);
 			}
-			// Always rewrite known-generated samples so pos/size stay vanilla List-of-Int format.
-			writeSampleNbt(dir.resolve(SAMPLE_FILE));
-			writeOakCheckerNbt(dir.resolve(OAK_CHECKER_FILE));
 			BuiltinBlueprints.writeAll(dir);
-			ensureCatalogEntry(dir, "cobble_pad", "圆石垫（示例）");
-			ensureCatalogEntry(dir, "oak_checker", "橡木棋盘 3x3");
+			removeExcludedBlueprints(dir);
 			for (Map.Entry<String, String> entry : BuiltinBlueprints.displayNames().entrySet()) {
 				ensureCatalogEntry(dir, entry.getKey(), entry.getValue());
 			}
@@ -105,7 +102,8 @@ public final class BlueprintRegistry {
 		} catch (Exception exception) {
 			Refugee.LOGGER.warn("Failed to scan blueprint directory {}", dir, exception);
 		}
-		Refugee.LOGGER.info("Loaded {} blueprint(s) from {}", loaded, dir);
+		Refugee.LOGGER.debug("Loaded {} blueprint(s) from {}", loaded, dir);
+		WorldgenBlueprints.reload(server);
 		PlayerBlueprints.reload(server);
 		return loaded + PlayerBlueprints.catalog(null).size();
 	}
@@ -167,12 +165,16 @@ public final class BlueprintRegistry {
 		TEMPLATES.clear();
 		TEMPLATE_NBTS.clear();
 		CATALOG.clear();
+		WorldgenBlueprints.clear();
 		PlayerBlueprints.clear();
 	}
 
 	private static boolean loadFile(Path file, HolderGetter<Block> blocks, Map<String, String> names) {
 		String filename = file.getFileName().toString();
 		String stem = stem(filename);
+		if (isExcludedStem(stem)) {
+			return false;
+		}
 		ResourceLocation id = idForStem(stem);
 		if (id == null) {
 			Refugee.LOGGER.warn("Skip blueprint with invalid name: {}", filename);
@@ -269,7 +271,8 @@ public final class BlueprintRegistry {
 		Path readme = dir.resolve("README.txt");
 		String text = """
 				把原版结构方块导出的 .nbt 放到本目录，然后执行 /refugee blueprint reload。
-				目录会自带一批基础城墙/房屋/道路/哨塔。
+				本目录只放基础可造建筑（城墙/房屋/道路/哨塔/仓库/农田等）。
+				世界生成建筑在 config/refugee/worldgen/。
 				玩家导入的结构存在世界存档 refugee/blueprints/<玩家UUID>/，互不可见。
 				Drop vanilla structure-block .nbt files here, then run /refugee blueprint reload.
 
@@ -284,8 +287,6 @@ public final class BlueprintRegistry {
 		Path catalog = dir.resolve(CATALOG_FILE);
 		JsonObject json = new JsonObject();
 		json.addProperty("_comment", "Keys are file names without .nbt (or refugee:id). Values are display names.");
-		json.addProperty("cobble_pad", "圆石垫（示例）");
-		json.addProperty("oak_checker", "橡木棋盘 3x3");
 		for (Map.Entry<String, String> entry : BuiltinBlueprints.displayNames().entrySet()) {
 			json.addProperty(entry.getKey(), entry.getValue());
 		}
@@ -321,26 +322,51 @@ public final class BlueprintRegistry {
 		}
 	}
 
-	private static void writeSampleNbt(Path path) throws IOException {
-		BlueprintNbtWriter writer = new BlueprintNbtWriter(2, 1, 2);
-		writer.fill(0, 0, 0, 1, 0, 1, BuiltinBlueprints.COBBLE);
-		writer.write(path);
+	private static boolean isExcludedStem(String stem) {
+		return DEBUG_STEMS.contains(stem) || WorldgenBlueprints.isStem(stem);
 	}
 
-	/**
-	 * 3×3 地面：橡木原木与橡木木板交错（俯视 101 / 010 / 101，1=原木，0=木板）。
-	 */
-	private static void writeOakCheckerNbt(Path path) throws IOException {
-		BlueprintNbtWriter writer = new BlueprintNbtWriter(3, 1, 3);
-		for (int z = 0; z < 3; z++) {
-			for (int x = 0; x < 3; x++) {
-				if ((x + z) % 2 == 0) {
-					writer.set(x, 0, z, BuiltinBlueprints.LOG, BlueprintNbtWriter.axisY());
-				} else {
-					writer.set(x, 0, z, BuiltinBlueprints.PLANKS);
-				}
+	private static List<String> excludedStems() {
+		List<String> stems = new ArrayList<>(DEBUG_STEMS);
+		stems.addAll(WorldgenBlueprints.stems());
+		return stems;
+	}
+
+	private static void removeExcludedBlueprints(Path dir) {
+		for (String stem : excludedStems()) {
+			try {
+				Files.deleteIfExists(dir.resolve(stem + ".nbt"));
+			} catch (IOException exception) {
+				Refugee.LOGGER.warn("Failed to delete non-catalog blueprint {}.nbt", stem, exception);
 			}
 		}
-		writer.write(path);
+		Path catalog = dir.resolve(CATALOG_FILE);
+		if (!Files.isRegularFile(catalog)) {
+			return;
+		}
+		try {
+			JsonObject json;
+			try (Reader reader = Files.newBufferedReader(catalog, StandardCharsets.UTF_8)) {
+				JsonElement parsed = JsonParser.parseReader(reader);
+				json = parsed != null && parsed.isJsonObject() ? parsed.getAsJsonObject() : null;
+			}
+			if (json == null) {
+				return;
+			}
+			boolean changed = false;
+			for (String stem : excludedStems()) {
+				changed |= json.remove(stem) != null;
+				changed |= json.remove(Refugee.id(stem).toString()) != null;
+			}
+			if (!changed) {
+				return;
+			}
+			try (Writer writer = Files.newBufferedWriter(catalog, StandardCharsets.UTF_8)) {
+				new com.google.gson.GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(json, writer);
+				writer.write(System.lineSeparator());
+			}
+		} catch (Exception exception) {
+			Refugee.LOGGER.warn("Failed to strip non-catalog entries from {}", catalog, exception);
+		}
 	}
 }

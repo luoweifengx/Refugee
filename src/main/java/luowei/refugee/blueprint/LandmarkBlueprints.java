@@ -9,7 +9,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Vec3i;
 
 /**
- * 世界地标蓝图：法师塔、地狱熔炉。由 {@link BuiltinBlueprints} 一并写出。
+ * 世界地标蓝图：法师塔、地狱熔炉。由 {@link WorldgenBlueprints} 写出到世界生成目录。
  */
 public final class LandmarkBlueprints {
 	public static final String MAGE_TOWER = "mage_tower";

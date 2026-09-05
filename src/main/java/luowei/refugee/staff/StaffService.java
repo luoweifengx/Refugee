@@ -22,7 +22,6 @@ import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BaseContainerBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
-import luowei.refugee.Refugee;
 import luowei.refugee.attachment.PlayerSelectionData;
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
@@ -339,23 +338,12 @@ public final class StaffService {
 		if (session.zoneCorner() == null || !dimension.equals(session.zoneDimension())) {
 			session.setZoneCorner(dimension, pos);
 			sync(player);
-			Refugee.LOGGER.info("[zone-corner1] pos={} dim={}", pos.toShortString(), dimension);
 			player.displayClientMessage(Component.translatable("message.refugee.staff.zone.corner1"), true);
 			return true;
 		}
 		AreaBox box = AreaBox.of(session.zoneCorner(), pos);
 		session.clearZoneCorner();
 		int assigned = assignZone(player, dimension, box);
-		Refugee.LOGGER.info(
-				"[zone-assign] result={} box={}..{} size={}x{}x{} dim={}",
-				assigned,
-				box.min().toShortString(),
-				box.max().toShortString(),
-				box.sizeX(),
-				box.sizeY(),
-				box.sizeZ(),
-				dimension
-		);
 		if (assigned <= 0) {
 			failAction(player, Component.translatable("message.refugee.staff.zone.no_workers"));
 			return true;
@@ -373,28 +361,20 @@ public final class StaffService {
 		PlayerSelectionData selection = RefugeeAttachments.get(player);
 		WorkZone zone = new WorkZone(UUID.randomUUID(), dimension, box);
 		int assigned = 0;
-		int skipDead = 0;
-		int skipNotBuilder = 0;
-		int skipCommand = 0;
-		int skipBuilding = 0;
 		List<UUID> selected = selection.snapshotSelected();
 		for (UUID villagerId : selected) {
 			Entity entity = level.getEntity(villagerId);
 			if (!(entity instanceof Villager villager) || !villager.isAlive()) {
-				skipDead++;
 				continue;
 			}
 			if (RefugeeSpecialRole.isSpecial(villager) || !RefugeeRoles.isBuilder(villager)) {
-				skipNotBuilder++;
 				continue;
 			}
 			if (!SelectionService.canCommand(player, villager)) {
-				skipCommand++;
 				continue;
 			}
 			RefugeeVillagerData data = RefugeeAttachments.get(villager);
 			if (data.isBuilding()) {
-				skipBuilding++;
 				continue;
 			}
 			unbindWorker(villager);
@@ -403,24 +383,7 @@ public final class StaffService {
 			zone.addWorker(villager.getUUID());
 			RefugeeAttachments.markDirty(villager, data);
 			assigned++;
-			ItemStack hand = villager.getMainHandItem();
-			Refugee.LOGGER.info(
-					"[zone-worker] id={} tool={} pos={} followNow={}",
-					villager.getUUID().toString().substring(0, 8),
-					hand.isEmpty() ? "empty" : hand.getItem().toString(),
-					villager.blockPosition().toShortString(),
-					data.isFollowing()
-			);
 		}
-		Refugee.LOGGER.info(
-				"[zone-scan] selected={} assigned={} skipDead={} skipNotBuilder={} skipCommand={} skipBuilding={}",
-				selected.size(),
-				assigned,
-				skipDead,
-				skipNotBuilder,
-				skipCommand,
-				skipBuilding
-		);
 		if (assigned > 0) {
 			OrgLogisticsData.get(player.getServer()).addZone(PbsAdapter.resolveSubject(player), zone);
 			RefugeeAttachments.markDirty(player, selection);

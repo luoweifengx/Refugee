@@ -54,7 +54,7 @@ public final class GuideDialogueConfig {
 			if (!Files.isRegularFile(path)) {
 				entries = defaultEntries();
 				write(path, defaultJson());
-				Refugee.LOGGER.info("Wrote default guide dialogue to {}", path);
+				Refugee.LOGGER.debug("Wrote default guide dialogue to {}", path);
 				return;
 			}
 			JsonObject loaded = null;
@@ -68,14 +68,14 @@ public final class GuideDialogueConfig {
 			if (version < SCHEMA_VERSION) {
 				entries = defaultEntries();
 				write(path, defaultJson());
-				Refugee.LOGGER.info("Upgraded {} from version {} to {}", FILE_NAME, version, SCHEMA_VERSION);
+				Refugee.LOGGER.debug("Upgraded {} from version {} to {}", FILE_NAME, version, SCHEMA_VERSION);
 				return;
 			}
 			entries = loaded == null ? List.of() : parse(loaded);
 			if (entries.isEmpty()) {
 				entries = defaultEntries();
 			}
-			Refugee.LOGGER.info("Loaded {} guide dialogue entries from {}", entries.size(), path);
+			Refugee.LOGGER.debug("Loaded {} guide dialogue entries from {}", entries.size(), path);
 		} catch (Exception exception) {
 			Refugee.LOGGER.warn("Failed to load {}; using defaults", FILE_NAME, exception);
 			entries = defaultEntries();

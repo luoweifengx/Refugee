@@ -10,6 +10,7 @@ import java.util.UUID;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -252,8 +253,21 @@ public final class RefugeeImmigration {
 		RefugeeAttachments.markDirty(villager, data);
 		level.addFreshEntity(villager);
 		RosterService.registerOwnedIfPlayer(level.getServer(), subjectId, villager);
+		notifyArrival(level.getServer(), subjectId, 1);
 		String specialNpc = SpecialRefugeeService.onImmigrationSuccess(level, subjectId, feet);
 		return new ImmigrationResult(ImmigrationResult.Status.SUCCESS, villager, feet, chunk, specialNpc);
+	}
+
+	private static void notifyArrival(MinecraftServer server, UUID subjectId, int count) {
+		if (server == null || subjectId == null || count <= 0) {
+			return;
+		}
+		Component message = Component.translatable("message.refugee.immigration.arrived", count);
+		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+			if (subjectId.equals(player.getUUID()) || subjectId.equals(PbsAdapter.resolveSubject(player))) {
+				player.sendSystemMessage(message);
+			}
+		}
 	}
 
 	private static void logSkip(ServerLevel level, UUID subjectId, boolean force, String reason, String extras) {
@@ -265,7 +279,7 @@ public final class RefugeeImmigration {
 	}
 
 	private static void log(String message) {
-		Refugee.LOGGER.info("{} {}", LOG_PREFIX, message);
+		Refugee.LOGGER.debug("{} {}", LOG_PREFIX, message);
 	}
 
 	private static String subjectCtx(MinecraftServer server, UUID subjectId) {

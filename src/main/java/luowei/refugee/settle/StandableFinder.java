@@ -1,6 +1,5 @@
 package luowei.refugee.settle;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -10,7 +9,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
@@ -18,24 +16,22 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
+import luowei.refugee.Refugee;
+
 /**
- * 以原点做 XZ 广度优先搜索，按距离分配可站立落脚点。
- * 可站立以村民碰撞盒为准，脚底贴地板碰撞顶面，避免 2 格高空间被顶到屋顶。
+ * 从原点做三维切比雪夫 BFS：一圈一圈含高度向外找可站立落脚点。
+ * 可站只看脚下实心、脚与头两格可穿过（雪层等非完整方块算可穿过）。
  */
 public final class StandableFinder {
 	public static final int SEARCH_RADIUS = 16;
-	private static final int MAX_EXPAND_ROUNDS = 8;
-	private static final int MAX_VISITED_COLUMNS = 8192;
-	private static final int NEAR_UP = 2;
-	private static final int NEAR_DOWN = 6;
-	private static final int[] DX = {-1, 0, 1, -1, 1, -1, 0, 1};
-	private static final int[] DZ = {-1, -1, -1, 0, 0, 1, 1, 1};
+	private static final int MAX_RADIUS = SEARCH_RADIUS * 2;
+	private static final int MAX_VISITED = 32768;
 
 	private StandableFinder() {
 	}
 
 	/**
-	 * 从原点 BFS 找 {@code needed} 个可站立格。半径 16 不够时以已占用点为种子再向外扩。
+	 * 从原点 BFS 找 {@code needed} 个可站立格。半径 16 不够时继续扩到 32。
 	 */
 	public static List<BlockPos> findStandable(
 			ServerLevel level,
@@ -47,7 +43,7 @@ public final class StandableFinder {
 	}
 
 	/**
-	 * 入境：在区块内从中心 BFS 找一个可站立格，不扫西北角。
+	 * 入境：在区块内从中心 BFS 找一个可站立格。
 	 */
 	public static BlockPos findInChunk(ServerLevel level, ChunkPos chunk, Set<BlockPos> reserved) {
 		int x = chunk.getMinBlockX() + 8;
@@ -55,6 +51,69 @@ public final class StandableFinder {
 		int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
 		List<BlockPos> found = search(level, new BlockPos(x, y, z), reserved, 1, chunk);
 		return found.isEmpty() ? null : found.getFirst();
+	}
+
+	/**
+	 * 在目标周围找可站且到目标中心不超过 {@code maxDistSq} 的格，优先靠近 {@code from}。
+	 */
+	public static BlockPos findStandNear(ServerLevel level, BlockPos target, BlockPos from, double maxDistSq) {
+		if (level == null || target == null) {
+			return null;
+		}
+		long started = debugNanos();
+		int maxR = Math.max(1, (int) Math.ceil(Math.sqrt(maxDistSq)));
+		BlockPos best = null;
+		double bestFrom = Double.MAX_VALUE;
+		int minY = level.getMinY() + 1;
+		int maxY = level.getMinY() + level.getHeight() - 2;
+		int checked = 0;
+		int standable = 0;
+		for (int r = 0; r <= maxR; r++) {
+			for (int dy = -r; dy <= r; dy++) {
+				for (int dx = -r; dx <= r; dx++) {
+					for (int dz = -r; dz <= r; dz++) {
+						if (chebyshev(dx, dy, dz) != r) {
+							continue;
+						}
+						int x = target.getX() + dx;
+						int y = target.getY() + dy;
+						int z = target.getZ() + dz;
+						if (y < minY || y > maxY || !level.hasChunk(x >> 4, z >> 4)) {
+							continue;
+						}
+						checked++;
+						BlockPos feet = new BlockPos(x, y, z);
+						if (feet.equals(target) || !isStandable(level, feet) || villagerOccupies(level, feet)) {
+							continue;
+						}
+						standable++;
+						double toTarget = distSqCenter(feet, target);
+						if (toTarget > maxDistSq) {
+							continue;
+						}
+						double toFrom = from == null ? toTarget : distSqCenter(feet, from);
+						if (toFrom < bestFrom) {
+							bestFrom = toFrom;
+							best = feet;
+						}
+					}
+				}
+			}
+		}
+		long elapsed = elapsedNanos(started);
+		if (Refugee.LOGGER.isDebugEnabled() && elapsed >= 1_000_000L) {
+			Refugee.LOGGER.debug(
+					"[refugee standable] findStandNear target={} from={} maxR={} checked={} standable={} best={} {}ns",
+					target.toShortString(),
+					from == null ? "none" : from.toShortString(),
+					maxR,
+					checked,
+					standable,
+					best == null ? "none" : best.toShortString(),
+					elapsed
+			);
+		}
+		return best;
 	}
 
 	/**
@@ -103,75 +162,71 @@ public final class StandableFinder {
 				}
 			}
 		}
-		Set<Long> visitedColumns = new HashSet<>();
-		List<BlockPos> seeds = new ArrayList<>();
-		seeds.add(origin);
-		int rounds = 0;
-		while (result.size() < needed && !seeds.isEmpty() && rounds <= MAX_EXPAND_ROUNDS) {
-			int before = result.size();
-			expandFrom(level, seeds, visitedColumns, usedFeet, result, needed, chunkBound);
-			if (result.size() >= needed || visitedColumns.size() >= MAX_VISITED_COLUMNS) {
-				break;
+		int minY = level.getMinY() + 1;
+		int maxY = level.getMinY() + level.getHeight() - 2;
+		int visited = 0;
+		int radius = 0;
+		long started = debugNanos();
+		for (int r = 0; r <= MAX_RADIUS && result.size() < needed && visited < MAX_VISITED; r++) {
+			radius = r;
+			for (int dy = -r; dy <= r && result.size() < needed && visited < MAX_VISITED; dy++) {
+				int y = origin.getY() + dy;
+				if (y < minY || y > maxY) {
+					continue;
+				}
+				for (int dx = -r; dx <= r && result.size() < needed && visited < MAX_VISITED; dx++) {
+					for (int dz = -r; dz <= r && result.size() < needed && visited < MAX_VISITED; dz++) {
+						if (chebyshev(dx, dy, dz) != r) {
+							continue;
+						}
+						int x = origin.getX() + dx;
+						int z = origin.getZ() + dz;
+						if (!inBounds(x, z, chunkBound) || !level.hasChunk(x >> 4, z >> 4)) {
+							continue;
+						}
+						visited++;
+						BlockPos feet = new BlockPos(x, y, z);
+						if (usedFeet.contains(feet.asLong()) || !isStandable(level, feet) || villagerOccupies(level, feet)) {
+							continue;
+						}
+						usedFeet.add(feet.asLong());
+						result.add(feet);
+					}
+				}
 			}
-			if (result.size() == before) {
-				break;
-			}
-			seeds = new ArrayList<>(result.subList(before, result.size()));
-			rounds++;
+		}
+		if (Refugee.LOGGER.isDebugEnabled()) {
+			Refugee.LOGGER.debug(
+					"[refugee standable] search origin={} needed={} found={} visited={} radius={} chunkBound={} {}ns",
+					origin.toShortString(),
+					needed,
+					result.size(),
+					visited,
+					radius,
+					chunkBound == null ? "none" : chunkBound.x + "," + chunkBound.z,
+					elapsedNanos(started)
+			);
 		}
 		return result;
 	}
 
-	private static void expandFrom(
-			ServerLevel level,
-			List<BlockPos> seeds,
-			Set<Long> visitedColumns,
-			Set<Long> usedFeet,
-			List<BlockPos> result,
-			int needed,
-			ChunkPos chunkBound
-	) {
-		ArrayDeque<Node> queue = new ArrayDeque<>();
-		Set<Long> queued = new HashSet<>();
-		for (BlockPos seed : seeds) {
-			if (seed == null || !inBounds(seed.getX(), seed.getZ(), chunkBound)) {
-				continue;
-			}
-			long key = columnKey(seed.getX(), seed.getZ());
-			if (!queued.add(key)) {
-				continue;
-			}
-			queue.add(new Node(seed.getX(), seed.getZ(), seed.getY(), 0));
-		}
-		while (!queue.isEmpty() && result.size() < needed && visitedColumns.size() < MAX_VISITED_COLUMNS) {
-			Node node = queue.poll();
-			long col = columnKey(node.x, node.z);
-			if (visitedColumns.add(col)) {
-				BlockPos feet = findInColumn(level, node.x, node.z, node.y, usedFeet);
-				if (feet != null) {
-					usedFeet.add(feet.asLong());
-					result.add(feet);
-					if (result.size() >= needed) {
-						return;
-					}
-				}
-			}
-			if (node.dist >= SEARCH_RADIUS) {
-				continue;
-			}
-			for (int i = 0; i < DX.length; i++) {
-				int nx = node.x + DX[i];
-				int nz = node.z + DZ[i];
-				if (!inBounds(nx, nz, chunkBound) || !level.hasChunk(nx >> 4, nz >> 4)) {
-					continue;
-				}
-				long nkey = columnKey(nx, nz);
-				if (visitedColumns.contains(nkey) || !queued.add(nkey)) {
-					continue;
-				}
-				queue.add(new Node(nx, nz, node.y, node.dist + 1));
-			}
-		}
+	private static long debugNanos() {
+		return Refugee.LOGGER.isDebugEnabled() ? System.nanoTime() : 0L;
+	}
+
+	private static long elapsedNanos(long started) {
+		return started == 0L ? 0L : System.nanoTime() - started;
+	}
+
+	private static int chebyshev(int dx, int dy, int dz) {
+		return Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz)));
+	}
+
+	private static double distSqCenter(BlockPos a, BlockPos b) {
+		double dx = (a.getX() + 0.5) - (b.getX() + 0.5);
+		double dy = (a.getY() + 0.5) - (b.getY() + 0.5);
+		double dz = (a.getZ() + 0.5) - (b.getZ() + 0.5);
+		return dx * dx + dy * dy + dz * dz;
 	}
 
 	private static boolean inBounds(int x, int z, ChunkPos chunkBound) {
@@ -184,107 +239,29 @@ public final class StandableFinder {
 				&& z <= chunkBound.getMaxBlockZ();
 	}
 
-	private static long columnKey(int x, int z) {
-		return BlockPos.asLong(x, 0, z);
-	}
-
-	private static BlockPos findInColumn(ServerLevel level, int x, int z, int aroundY, Set<Long> usedFeet) {
-		if (!level.hasChunk(x >> 4, z >> 4)) {
-			return null;
-		}
-		int minY = level.getMinY() + 1;
-		int maxY = level.getMinY() + level.getHeight() - 2;
-		int nearHigh = clampY(aroundY + NEAR_UP, minY, maxY);
-		int nearLow = clampY(aroundY - NEAR_DOWN, minY, maxY);
-		BlockPos found = scanClosest(level, x, z, aroundY, nearHigh, nearLow, usedFeet);
-		if (found != null) {
-			return found;
-		}
-		int surface = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-		int top = clampY(surface + 1, minY, maxY);
-		int bottom = clampY(surface - 4, minY, maxY);
-		if (top <= nearHigh && bottom >= nearLow) {
-			return null;
-		}
-		return scanClosest(level, x, z, aroundY, top, bottom, usedFeet);
-	}
-
-	private static int clampY(int y, int minY, int maxY) {
-		return Math.max(minY, Math.min(maxY, y));
-	}
-
-	/**
-	 * 在 [yLow, yHigh] 内从 {@code aroundY} 向外扩，先近后远，避免先拿到屋顶。
-	 */
-	private static BlockPos scanClosest(
-			ServerLevel level,
-			int x,
-			int z,
-			int aroundY,
-			int yHigh,
-			int yLow,
-			Set<Long> usedFeet
-	) {
-		int start = Math.max(yHigh, yLow);
-		int end = Math.min(yHigh, yLow);
-		int origin = Math.max(end, Math.min(start, aroundY));
-		BlockPos atOrigin = tryFeet(level, x, origin, z, usedFeet);
-		if (atOrigin != null) {
-			return atOrigin;
-		}
-		int maxDelta = Math.max(start - origin, origin - end);
-		for (int delta = 1; delta <= maxDelta; delta++) {
-			int up = origin + delta;
-			if (up <= start) {
-				BlockPos found = tryFeet(level, x, up, z, usedFeet);
-				if (found != null) {
-					return found;
-				}
-			}
-			int down = origin - delta;
-			if (down >= end) {
-				BlockPos found = tryFeet(level, x, down, z, usedFeet);
-				if (found != null) {
-					return found;
-				}
-			}
-		}
-		return null;
-	}
-
-	private static BlockPos tryFeet(ServerLevel level, int x, int y, int z, Set<Long> usedFeet) {
-		BlockPos feet = new BlockPos(x, y, z);
-		if (usedFeet.contains(feet.asLong()) || !isStandable(level, feet) || villagerOccupies(level, feet)) {
-			return null;
-		}
-		return feet;
-	}
-
 	public static boolean isStandable(ServerLevel level, BlockPos feet) {
 		if (level == null || feet == null || !level.hasChunk(feet.getX() >> 4, feet.getZ() >> 4)) {
 			return false;
 		}
 		BlockPos below = feet.below();
+		BlockPos head = feet.above();
 		BlockState floor = level.getBlockState(below);
-		VoxelShape floorShape = floor.getCollisionShape(level, below);
-		double floorTop;
-		if (floorShape.isEmpty()) {
-			if (!floor.isFaceSturdy(level, below, Direction.UP)) {
-				return false;
-			}
-			floorTop = 1.0;
-		} else {
-			floorTop = floorShape.max(Direction.Axis.Y);
-			if (Double.isNaN(floorTop) || floorTop <= 0.0) {
-				return false;
-			}
-		}
-		if (!level.getFluidState(feet).isEmpty()) {
+		if (!isFloor(floor, level, below)) {
 			return false;
 		}
-		double y = below.getY() + floorTop;
-		AABB box = EntityType.VILLAGER.getSpawnAABB(feet.getX() + 0.5, y, feet.getZ() + 0.5);
-		return level.noCollision(box);
+		return isOpen(level.getBlockState(feet), level, feet)
+				&& isOpen(level.getBlockState(head), level, head);
+	}
+
+	private static boolean isFloor(BlockState state, ServerLevel level, BlockPos pos) {
+		return state.isFaceSturdy(level, pos, Direction.UP) || state.isCollisionShapeFullBlock(level, pos);
+	}
+
+	private static boolean isOpen(BlockState state, ServerLevel level, BlockPos pos) {
+		if (!state.getFluidState().isEmpty()) {
+			return false;
+		}
+		return !state.isCollisionShapeFullBlock(level, pos);
 	}
 
 	public static boolean villagerOccupies(ServerLevel level, BlockPos feet) {
@@ -295,8 +272,5 @@ public final class StandableFinder {
 			}
 		}
 		return false;
-	}
-
-	private record Node(int x, int z, int y, int dist) {
 	}
 }

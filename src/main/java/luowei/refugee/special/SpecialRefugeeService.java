@@ -182,7 +182,7 @@ public final class SpecialRefugeeService {
 			String playerName = player.getGameProfile().getName();
 			if (outcome.status() == TrySpawnResult.SPAWNED) {
 				spawned = true;
-				Refugee.LOGGER.info(
+				Refugee.LOGGER.debug(
 						"{} nurse result=spawned subject={} uuid={} player={} around={} pos={}",
 						IMMIGRATION_LOG_PREFIX,
 						subjectName == null || subjectName.isBlank() ? "-" : subjectName,
@@ -194,7 +194,7 @@ public final class SpecialRefugeeService {
 			} else {
 				failed = true;
 				if (nurseAttemptLoggedPlayers.add(player.getUUID())) {
-					Refugee.LOGGER.info(
+					Refugee.LOGGER.debug(
 							"{} nurse result=failed reason={} subject={} uuid={} player={} around={}",
 							IMMIGRATION_LOG_PREFIX,
 							outcome.status().reasonKey(),

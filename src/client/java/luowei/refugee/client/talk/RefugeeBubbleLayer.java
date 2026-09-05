@@ -64,10 +64,6 @@ public final class RefugeeBubbleLayer {
 		vertex(consumer, pose, x, y1, z, 1.0F, 0.0F, light);
 		vertex(consumer, pose, x, y0, z, 1.0F, 1.0F, light);
 		vertex(consumer, pose, -x, y0, z, 0.0F, 1.0F, light);
-		vertex(consumer, pose, -x, y1, z, 0.0F, 0.0F, light);
-		vertex(consumer, pose, -x, y0, z, 0.0F, 1.0F, light);
-		vertex(consumer, pose, x, y0, z, 1.0F, 1.0F, light);
-		vertex(consumer, pose, x, y1, z, 1.0F, 0.0F, light);
 	}
 
 	private static void vertex(

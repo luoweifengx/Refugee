@@ -6,6 +6,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.item.ItemStack;
 
+import luowei.refugee.ai.RefugeeCombat;
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 
@@ -17,6 +18,10 @@ public final class DeathDropService {
 	}
 
 	public static void dropOnDeath(Villager villager, ServerLevel level) {
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (data.isEating()) {
+			RefugeeCombat.cancelEat(villager);
+		}
 		for (EquipmentSlot slot : EquipmentSlot.values()) {
 			ItemStack stack = villager.getItemBySlot(slot);
 			if (!stack.isEmpty()) {
@@ -32,7 +37,12 @@ public final class DeathDropService {
 				inventory.setItem(i, ItemStack.EMPTY);
 			}
 		}
-		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		ItemStack resource = data.resourceItem();
+		if (!resource.isEmpty()) {
+			villager.spawnAtLocation(level, resource.copy());
+			data.setResourceItem(ItemStack.EMPTY);
+			RefugeeAttachments.markDirty(villager, data);
+		}
 		luowei.refugee.staff.StaffService.unbindWorker(villager);
 		if (data.isBuilding()) {
 			data.clearBuild();

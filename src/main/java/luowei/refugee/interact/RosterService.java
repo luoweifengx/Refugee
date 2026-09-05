@@ -238,13 +238,29 @@ public final class RosterService {
 	private static void grantStarterTeam(ServerPlayer player) {
 		if (!(player.level() instanceof ServerLevel level)) {
 			pendingStarters.putIfAbsent(player.getUUID(), 1);
+			Refugee.LOGGER.debug("[refugee starter] defer player={} reason=not-server-level", player.getGameProfile().getName());
 			return;
 		}
+		long started = System.nanoTime();
 		PlayerSelectionData selection = RefugeeAttachments.get(player);
 		selection.setStarterGranted(true);
 		int wanted = RefugeeConfig.starterRefugeeCount;
 		int spawned = 0;
-		List<BlockPos> spots = findStarterSpots(level, player.blockPosition(), Math.max(1, wanted + 1));
+		BlockPos origin = player.blockPosition();
+		Refugee.LOGGER.debug(
+				"[refugee starter] grant player={} wanted={} origin={}",
+				player.getGameProfile().getName(),
+				wanted,
+				origin.toShortString()
+		);
+		List<BlockPos> spots = findStarterSpots(level, origin, Math.max(1, wanted + 1));
+		Refugee.LOGGER.debug(
+				"[refugee starter] spots={} needed={} first={} last={}",
+				spots.size(),
+				Math.max(1, wanted + 1),
+				spots.isEmpty() ? "none" : spots.getFirst().toShortString(),
+				spots.isEmpty() ? "none" : spots.getLast().toShortString()
+		);
 		int genericSpots = Math.min(wanted, spots.size());
 		for (int i = 0; i < genericSpots; i++) {
 			if (spawnStarter(player, level, selection, spots.get(i))) {
@@ -257,12 +273,13 @@ public final class RosterService {
 		}
 		if (guideFeet == null && !spots.isEmpty()) {
 			Set<BlockPos> reserved = new HashSet<>(spots);
-			reserved.add(player.blockPosition());
+			reserved.add(origin);
 			List<BlockPos> extra = StandableFinder.findStandable(level, spots.getLast(), reserved, 1);
 			if (!extra.isEmpty()) {
 				guideFeet = extra.getFirst();
 			}
 		}
+		boolean guideSpawned = false;
 		if (guideFeet != null) {
 			Villager guide = SpecialRefugeeService.spawnBound(player, level, guideFeet, RefugeeSpecialRole.GUIDE, true);
 			if (guide != null) {
@@ -270,17 +287,27 @@ public final class RosterService {
 				data.setSubjectId(player.getUUID());
 				RefugeeAttachments.markDirty(guide, data);
 				spawned++;
-				player.sendSystemMessage(Component.translatable("message.refugee.special.guide.joined"));
+				guideSpawned = true;
+				Refugee.LOGGER.debug(
+						"[refugee starter] guide id={} feet={} follow=true",
+						guide.getUUID().toString().substring(0, 8),
+						guideFeet.toShortString()
+				);
 			}
 		}
 		RefugeeAttachments.markDirty(player, selection);
 		if (spawned > 0) {
 			SelectionService.giveBanner(player);
-			player.sendSystemMessage(Component.translatable("message.refugee.starter.granted", spawned));
 		} else if (wanted > 0) {
 			Refugee.LOGGER.warn("Starter refugees failed to spawn for {}", player.getGameProfile().getName());
-			player.sendSystemMessage(Component.translatable("message.refugee.starter.failed"));
 		}
+		Refugee.LOGGER.debug(
+				"[refugee starter] done player={} spawned={} guide={} follow=true {}ns",
+				player.getGameProfile().getName(),
+				spawned,
+				guideSpawned,
+				System.nanoTime() - started
+		);
 	}
 
 	private static List<BlockPos> findStarterSpots(ServerLevel level, BlockPos origin, int needed) {
@@ -300,10 +327,19 @@ public final class RosterService {
 		data.startFollowing(player.getUUID());
 		RefugeeAttachments.markDirty(villager, data);
 		if (!level.addFreshEntity(villager)) {
+			Refugee.LOGGER.debug(
+					"[refugee starter] spawn-failed feet={}",
+					feet.toShortString()
+			);
 			return false;
 		}
 		selection.addSelected(villager.getUUID());
 		selection.addRoster(villager);
+		Refugee.LOGGER.debug(
+				"[refugee starter] spawn id={} feet={} follow=true",
+				villager.getUUID().toString().substring(0, 8),
+				feet.toShortString()
+		);
 		return true;
 	}
 

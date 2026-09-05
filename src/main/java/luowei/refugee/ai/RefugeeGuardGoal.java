@@ -3,36 +3,28 @@ package luowei.refugee.ai;
 import java.util.EnumSet;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.npc.Villager;
-import net.minecraft.world.entity.projectile.Arrow;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.config.RefugeeConfig;
 import luowei.refugee.interact.RefugeeRoles;
+import luowei.refugee.logistics.OrgLogisticsData;
 
 /**
- * 守卫：战斗优先。索敌与战斗相对跟随玩家或驻守标定点；近战追击、远程停步射击。
- * 脱战后：跟随时贴身跟随玩家；驻守则按走回/传送距离回标定点。
+ * 守卫与战斗总控：IDLE 让路给工具 AI；COMBAT 主手作战；慌乱不回岗。
  */
 public class RefugeeGuardGoal extends Goal {
 	private static final double ARRIVED_AT_CENTER_DISTANCE = 1.5;
 
 	private final Villager villager;
-	private int attackCooldown;
-	private boolean inCombat;
 	private boolean returningToCenter;
-	private int combatScanCooldown;
 
 	public RefugeeGuardGoal(Villager villager) {
 		this.villager = villager;
@@ -41,7 +33,35 @@ public class RefugeeGuardGoal extends Goal {
 
 	@Override
 	public boolean canUse() {
-		return RefugeeRoles.isGuard(villager);
+		if (villager.isBaby()) {
+			return false;
+		}
+		if (RefugeeCombat.isBusy(villager)) {
+			return true;
+		}
+		boolean assigned = RefugeeRoles.isGuard(villager) || RefugeeRoles.isBuilder(villager);
+		if (assigned && RefugeeCombat.hasHostilesInGuardRadius(villager)) {
+			return true;
+		}
+		if (!RefugeeRoles.isGuard(villager)) {
+			return false;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (!data.isFollowing() && RefugeeRoles.isBuilder(villager) && hasAssignedWork(data)) {
+			return false;
+		}
+		return true;
+	}
+
+	private boolean hasAssignedWork(RefugeeVillagerData data) {
+		if (data.isBuilding()) {
+			return true;
+		}
+		if (villager.level().getServer() == null) {
+			return false;
+		}
+		OrgLogisticsData logistics = OrgLogisticsData.get(villager.level().getServer());
+		return logistics.zoneOfWorker(villager.getUUID()) != null;
 	}
 
 	@Override
@@ -51,11 +71,9 @@ public class RefugeeGuardGoal extends Goal {
 
 	@Override
 	public void start() {
-		inCombat = false;
 		returningToCenter = false;
-		combatScanCooldown = 0;
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		if (!data.isFollowing() && data.guardCenter() == null) {
+		if (RefugeeRoles.isGuard(villager) && !data.isFollowing() && data.guardCenter() == null) {
 			data.setGuardCenter(villager.blockPosition());
 			RefugeeAttachments.markDirty(villager, data);
 		}
@@ -63,88 +81,172 @@ public class RefugeeGuardGoal extends Goal {
 
 	@Override
 	public void stop() {
-		inCombat = false;
 		returningToCenter = false;
-		combatScanCooldown = 0;
 		villager.getNavigation().stop();
+		villager.stopUsingItem();
 	}
 
 	@Override
 	public void tick() {
-		if (attackCooldown > 0) {
-			attackCooldown--;
-		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		data.tickCombatCooldowns();
+		RefugeeCombat.Mood mood = data.combatMood();
+		if (mood.isPanic()) {
+			tickPanic(data, mood);
+			return;
+		}
+		boolean hostiles = RefugeeCombat.hasHostilesInGuardRadius(villager);
+		if (mood == RefugeeCombat.Mood.COMBAT) {
+			if (!hostiles) {
+				RefugeeCombat.setMood(villager, RefugeeCombat.Mood.IDLE);
+				villager.setTarget(null);
+				RefugeeCombat.tickShield(villager, false);
+				return;
+			}
+			tickCombat(false);
+			return;
+		}
+		if (hostiles) {
+			RefugeeCombat.setMood(villager, RefugeeCombat.Mood.COMBAT);
+			tickCombat(false);
+			return;
+		}
+		tickIdle(data);
+	}
+
+	private void tickPanic(RefugeeVillagerData data, RefugeeCombat.Mood mood) {
+		returningToCenter = false;
+		if (mood == RefugeeCombat.Mood.FLEE) {
+			if (!RefugeeRoles.hasFood(villager)) {
+				RefugeeCombat.logPanic(villager, "FLEE tick: no food -> LAST_STAND");
+				RefugeeCombat.setMood(villager, RefugeeCombat.Mood.LAST_STAND);
+				tickCombat(true);
+				return;
+			}
+			Monster nearby = RefugeeCombat.nearestHostile(villager, villager.position(), RefugeeConfig.panicClearRadius);
+			if (nearby == null) {
+				RefugeeCombat.logPanic(villager, "FLEE tick: no monster in panicClearRadius -> RECOVER");
+				RefugeeCombat.setMood(villager, RefugeeCombat.Mood.RECOVER);
+				villager.getNavigation().stop();
+				RefugeeCombat.tryEat(villager, (float) RefugeeConfig.recoverHealthRatio);
+				return;
+			}
+			RefugeeCombat.flee(villager, nearby);
+			return;
+		}
+		if (mood == RefugeeCombat.Mood.RECOVER) {
+			if (!RefugeeRoles.hasFood(villager)) {
+				RefugeeCombat.logPanic(villager, "RECOVER tick: no food -> LAST_STAND");
+				RefugeeCombat.setMood(villager, RefugeeCombat.Mood.LAST_STAND);
+				tickCombat(true);
+				return;
+			}
+			villager.setTarget(null);
+			villager.getNavigation().stop();
+			RefugeeCombat.tickShield(villager, false);
+			RefugeeCombat.tryEat(villager, (float) RefugeeConfig.recoverHealthRatio);
+			if (RefugeeCombat.healthAtLeast(villager, (float) RefugeeConfig.recoverHealthRatio)) {
+				if (RefugeeCombat.hasHostilesInGuardRadius(villager)) {
+					RefugeeCombat.logPanic(villager, "RECOVER done, hostiles in guard radius -> COMBAT");
+					RefugeeCombat.setMood(villager, RefugeeCombat.Mood.COMBAT);
+				} else {
+					RefugeeCombat.logPanic(villager, "RECOVER done, no hostiles -> IDLE");
+					RefugeeCombat.setMood(villager, RefugeeCombat.Mood.IDLE);
+				}
+			}
+			return;
+		}
+		tickCombat(true);
+	}
+
+	private void tickCombat(boolean lastStand) {
+		LivingEntity target = villager.getTarget();
+		Vec3 center = RefugeeCombat.combatCenter(villager);
+		if (target == null || !target.isAlive() || !RefugeeGuardGoal.isWithinGuardRadius(target, center)) {
+			target = RefugeeCombat.nearestHostile(villager, center, RefugeeConfig.guardRadius);
+			villager.setTarget(target);
+		}
+		if (target == null || !target.isAlive()) {
+			villager.getNavigation().stop();
+			RefugeeCombat.stopRangedDraw(villager);
+			RefugeeCombat.tickShield(villager, RefugeeRoles.hasShield(villager));
+			return;
+		}
+		villager.getLookControl().setLookAt(target, 30.0f, 30.0f);
+		InteractionHand[] hands = lastStand
+				? weaponsOnly(villager)
+				: RefugeeCombat.combatAttackHands(villager, target);
+		if (hands.length == 0) {
+			if (lastStand) {
+				villager.getNavigation().stop();
+				RefugeeCombat.stopRangedDraw(villager);
+				RefugeeCombat.tickShield(villager, RefugeeRoles.hasShield(villager));
+				RefugeeCombat.tauntUntargeted(villager);
+				return;
+			}
+			RefugeeCombat.flee(villager, target);
+			return;
+		}
+		RefugeeCombat.preferShieldOffhand(villager);
+		boolean shooting = false;
+		for (InteractionHand hand : hands) {
+			if (RefugeeRoles.isRangedWeapon(RefugeeCombat.stackIn(villager, hand))) {
+				shooting = true;
+				break;
+			}
+		}
+		if (shooting) {
+			villager.getNavigation().stop();
+			RefugeeCombat.tickShield(villager, false);
+		} else {
+			RefugeeCombat.stopRangedDraw(villager);
+			villager.getNavigation().moveTo(target, RefugeeConfig.guardWalkSpeed);
+			RefugeeCombat.tickShield(villager, RefugeeRoles.hasShield(villager));
+		}
+		RefugeeCombat.tauntUntargeted(villager);
+		for (InteractionHand hand : hands) {
+			RefugeeCombat.attackWith(villager, target, hand);
+		}
+	}
+
+	private static InteractionHand[] weaponsOnly(Villager villager) {
+		RefugeeCombat.preferWeaponMainHand(villager);
+		if (RefugeeRoles.isWeapon(villager.getMainHandItem())) {
+			return new InteractionHand[] {InteractionHand.MAIN_HAND};
+		}
+		return new InteractionHand[0];
+	}
+
+	private void tickIdle(RefugeeVillagerData data) {
+		RefugeeCombat.tickShield(villager, false);
+		if (villager.getTarget() != null) {
+			villager.setTarget(null);
+		}
+		RefugeeCombat.tryEat(villager, 1.0f);
+		if (!RefugeeRoles.isGuard(villager)) {
+			villager.getNavigation().stop();
+			return;
+		}
 		ServerPlayer followPlayer = null;
-		Vec3 center;
-		BlockPos stationCenter = null;
 		if (data.isFollowing()) {
 			followPlayer = resolveFollowPlayer(villager, data);
 			if (followPlayer == null) {
 				villager.getNavigation().stop();
 				return;
 			}
-			center = followPlayer.position();
-		} else {
-			stationCenter = data.guardCenter();
-			if (stationCenter == null) {
-				data.setGuardCenter(villager.blockPosition());
-				RefugeeAttachments.markDirty(villager, data);
-				stationCenter = data.guardCenter();
-			}
-			center = Vec3.atBottomCenterOf(stationCenter);
-		}
-		updateCombatState(center);
-		if (inCombat) {
-			returningToCenter = false;
-			tickCombat(center);
-			return;
-		}
-		if (followPlayer != null) {
 			tickFollowPlayer(followPlayer);
-		} else {
-			tickReturnToCenter(stationCenter);
-		}
-	}
-
-	private void updateCombatState(Vec3 center) {
-		LivingEntity target = villager.getTarget();
-		if (isValidCombatTarget(target, center)) {
-			inCombat = true;
-			if (combatScanCooldown > 0) {
-				combatScanCooldown--;
-			}
 			return;
 		}
-		boolean scanNow = combatScanCooldown <= 0 || inCombat;
-		if (scanNow) {
-			inCombat = hasNearbyHostiles(center);
-			combatScanCooldown = RefugeeConfig.guardCombatScanIntervalTicks;
-		} else {
-			combatScanCooldown--;
+		BlockPos stationCenter = data.guardCenter();
+		if (stationCenter == null) {
+			data.setGuardCenter(villager.blockPosition());
+			RefugeeAttachments.markDirty(villager, data);
+			stationCenter = data.guardCenter();
 		}
-	}
-
-	private void tickCombat(Vec3 center) {
-		LivingEntity target = villager.getTarget();
-		if (!isValidCombatTarget(target, center)) {
-			villager.getNavigation().stop();
-			return;
-		}
-		villager.getLookControl().setLookAt(target, 30.0f, 30.0f);
-		if (RefugeeRoles.isRangedWeapon(villager.getMainHandItem())) {
-			villager.getNavigation().stop();
-			tryRangedAttack(target);
-			return;
-		}
-		villager.getNavigation().moveTo(target, RefugeeConfig.guardWalkSpeed);
-		tryMeleeAttack(target);
+		tickReturnToCenter(stationCenter);
 	}
 
 	private void tickFollowPlayer(ServerPlayer player) {
-		if (villager.getTarget() != null) {
-			villager.setTarget(null);
-		}
 		villager.getLookControl().setLookAt(player, 10.0f, villager.getMaxHeadXRot());
 		double distSq = villager.distanceToSqr(player);
 		double teleport = RefugeeConfig.guardReturnTeleportDistance;
@@ -161,9 +263,6 @@ public class RefugeeGuardGoal extends Goal {
 	}
 
 	private void tickReturnToCenter(BlockPos center) {
-		if (villager.getTarget() != null) {
-			villager.setTarget(null);
-		}
 		double cx = center.getX() + 0.5;
 		double cy = center.getY();
 		double cz = center.getZ() + 0.5;
@@ -189,21 +288,6 @@ public class RefugeeGuardGoal extends Goal {
 			return;
 		}
 		villager.getNavigation().stop();
-	}
-
-	private boolean isValidCombatTarget(LivingEntity target, Vec3 center) {
-		return target != null && target.isAlive() && isWithinGuardRadius(target, center);
-	}
-
-	private boolean hasNearbyHostiles(Vec3 center) {
-		if (!(villager.level() instanceof ServerLevel level)) {
-			return false;
-		}
-		double radius = RefugeeConfig.guardRadius;
-		AABB box = new AABB(center, center).inflate(radius);
-		return !level.getEntitiesOfClass(Monster.class, box, monster ->
-				monster.isAlive() && isWithinGuardRadius(monster, center)
-		).isEmpty();
 	}
 
 	static ServerPlayer resolveFollowPlayer(Villager villager, RefugeeVillagerData data) {
@@ -232,40 +316,5 @@ public class RefugeeGuardGoal extends Goal {
 	static boolean isWithinGuardRadius(LivingEntity entity, Vec3 center) {
 		double radius = RefugeeConfig.guardRadius;
 		return entity.distanceToSqr(center) <= radius * radius;
-	}
-
-	private ServerLevel serverLevel() {
-		return (ServerLevel) villager.level();
-	}
-
-	private void tryMeleeAttack(LivingEntity target) {
-		if (attackCooldown > 0 || villager.distanceTo(target) >= 2.2) {
-			return;
-		}
-		if (villager instanceof Mob mob) {
-			mob.doHurtTarget(serverLevel(), target);
-			attackCooldown = RefugeeConfig.meleeAttackIntervalTicks;
-		}
-	}
-
-	private void tryRangedAttack(LivingEntity target) {
-		if (attackCooldown > 0 || !(villager.level() instanceof ServerLevel level)) {
-			return;
-		}
-		villager.getLookControl().setLookAt(target, 30.0f, 30.0f);
-		ItemStack weapon = villager.getMainHandItem();
-		ItemStack ammo = new ItemStack(Items.ARROW);
-		Arrow arrow = new Arrow(level, villager, ammo, weapon.copy());
-		// 对齐 AbstractSkeleton.performRangedAttack：用目标三坐标差设速度，不经实体航角。
-		double dx = target.getX() - villager.getX();
-		double dy = target.getY(1.0 / 3.0) - arrow.getY();
-		double dz = target.getZ() - villager.getZ();
-		double horiz = Math.sqrt(dx * dx + dz * dz);
-		float inaccuracy = (float) (14 - level.getDifficulty().getId() * 4);
-		arrow.shoot(dx, dy + horiz * 0.2F, dz, 1.6F, inaccuracy);
-		arrow.setBaseDamage(2.0);
-		level.addFreshEntity(arrow);
-		weapon.hurtAndBreak(1, villager, villager.getEquipmentSlotForItem(weapon));
-		attackCooldown = RefugeeConfig.rangedAttackIntervalTicks;
 	}
 }

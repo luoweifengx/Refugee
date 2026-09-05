@@ -8,6 +8,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -19,7 +20,7 @@ import luowei.refugee.staff.StaffNavAction;
 import luowei.refugee.staff.StaffPage;
 
 /**
- * 指挥杖页面树客户端导航：E / Esc 回根，预览时 Tab 切通道、滚轮改值。
+ * 指挥杖页面树客户端导航：E / Esc 回根，预览时 Tab 切通道、滚轮改值，右键先钉原点再开工。
  */
 public final class StaffClientNav {
 	private StaffClientNav() {
@@ -117,6 +118,41 @@ public final class StaffClientNav {
 		return false;
 	}
 
+	/**
+	 * 预览右键：未钉住则把准星方块定为原点，已钉住则发包开工。
+	 */
+	public static boolean handlePreviewUse(BlockPos clicked) {
+		if (!isPreview()) {
+			return false;
+		}
+		if (ClientBlueprintSelection.originLocked()) {
+			return confirmPreviewPlace();
+		}
+		BlockPos origin = clicked;
+		if (origin == null) {
+			origin = lookBlock(Minecraft.getInstance());
+		}
+		if (origin == null) {
+			return false;
+		}
+		ClientBlueprintSelection.lockOrigin(origin);
+		Minecraft client = Minecraft.getInstance();
+		if (client.player != null) {
+			client.player.displayClientMessage(
+					Component.translatable("message.refugee.staff.preview.pinned"),
+					true
+			);
+		}
+		return true;
+	}
+
+	public static boolean handlePreviewAirUse() {
+		if (!isPreview() || !ClientBlueprintSelection.originLocked()) {
+			return false;
+		}
+		return confirmPreviewPlace();
+	}
+
 	public static boolean confirmPreviewPlace() {
 		if (!isPreview()) {
 			return false;
@@ -142,6 +178,13 @@ public final class StaffClientNav {
 		}
 		if (ClientBlueprintSelection.buildOrigin() != null) {
 			return ClientBlueprintSelection.buildOrigin();
+		}
+		return lookBlock(client);
+	}
+
+	private static BlockPos lookBlock(Minecraft client) {
+		if (client == null) {
+			return null;
 		}
 		HitResult hit = client.hitResult;
 		if (hit instanceof BlockHitResult blockHit && hit.getType() == HitResult.Type.BLOCK) {

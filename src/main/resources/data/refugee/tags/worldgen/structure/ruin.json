@@ -1,0 +1,9 @@
+{
+	"replace": false,
+	"values": [
+		"refugee:ruin_arrow_tower",
+		"refugee:ruin_wall",
+		"refugee:ruin_gate",
+		"refugee:ruin_hut"
+	]
+}

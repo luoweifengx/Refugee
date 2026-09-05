@@ -27,7 +27,6 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
-import luowei.refugee.Refugee;
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.config.RefugeeConfig;
@@ -44,27 +43,13 @@ import luowei.refugee.zone.WorkZone;
  * 镐/斧/铲按玩家破坏公式按 tick 累加进度，并用 {@code destroyBlockProgress} 向客户端同步裂纹。
  */
 public class RefugeeMineGoal extends Goal {
-	private static final double REACH = 9.0;
-	/** 斧的 distanceToSqr 阈值，约 100 格欧氏。 */
-	private static final double AXE_REACH = 10000.0;
-	/** 斧/锄身边优先扫描半径；镐/铲不用。 */
+	/** 身边优先扫描半径，再扫整区。 */
 	private static final int NEAR_SCAN = 12;
 	private static final int SWING_INTERVAL = 6;
-	private static final int LOG_INTERVAL = 20;
-	private static final int LAYER_SCAN_BUDGET = 4096;
-	private static final int WALK_RETRY_TICKS = 10;
 
 	private final Villager villager;
 	private BlockPos target;
 	private int scanCursor;
-	/** 镐/铲当前扫描层 Y；MIN_VALUE 表示尚未开始或已复位。 */
-	private int scanLayerY = Integer.MIN_VALUE;
-	/** 当前层扫描中水平最近的合法块，大层跨 tick 续扫。 */
-	private BlockPos layerBest;
-	private long layerBestHoriz = Long.MAX_VALUE;
-	private int walkFailCooldown;
-	private String lastLogPhase = "";
-	private int lastLogTick;
 	/** 当前方块的破坏进度，满 1 后拆块。 */
 	private float mineProgress;
 	/** 上次发给客户端的裂纹阶段 0–9；-1 表示未在播裂纹。 */
@@ -77,20 +62,11 @@ public class RefugeeMineGoal extends Goal {
 
 	@Override
 	public boolean canUse() {
-		if (!RefugeeRoles.isBuilder(villager)) {
+		if (villager.isBaby() || !RefugeeRoles.isBuilder(villager)) {
 			return false;
 		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		if (data.isBuilding()) {
-			debug("skip", "isBuilding");
-			return false;
-		}
-		if (data.isFollowing()) {
-			debug("skip", "isFollowing");
-			return false;
-		}
-		if (zone() == null) {
-			debug("skip", "no-zone");
+		if (data.isBuilding() || data.isFollowing() || zone() == null) {
 			return false;
 		}
 		return true;
@@ -102,13 +78,7 @@ public class RefugeeMineGoal extends Goal {
 	}
 
 	@Override
-	public void start() {
-		debug("start", "goal-activated");
-	}
-
-	@Override
 	public void stop() {
-		debug("stop", "goal-stopped");
 		if (villager.level() instanceof ServerLevel level) {
 			abortMining(level);
 		} else {
@@ -116,8 +86,7 @@ public class RefugeeMineGoal extends Goal {
 			lastCrack = -1;
 		}
 		target = null;
-		walkFailCooldown = 0;
-		resetLayerScan();
+		scanCursor = 0;
 		villager.getNavigation().stop();
 	}
 
@@ -139,9 +108,7 @@ public class RefugeeMineGoal extends Goal {
 		BlockPos feet = villager.blockPosition();
 		if (isFarFromZone(box, feet)) {
 			abortMining(level);
-			BlockPos dest = findZoneApproach(level, box);
-			issueWalk(level, dest, "walk-zone",
-					"box=" + box.min().toShortString() + ".." + box.max().toShortString());
+			WorkMove.goTo(villager, level, findZoneApproach(level, box));
 			return;
 		}
 		if (target == null || !box.contains(target) || !isValidTarget(level, target)) {
@@ -149,65 +116,21 @@ public class RefugeeMineGoal extends Goal {
 			target = findTarget(level, box);
 		}
 		if (target == null) {
-			if (usesTopDownScan() && scanLayerY != Integer.MIN_VALUE) {
-				debug("scan-layer", "y=" + scanLayerY + " cursor=" + scanCursor
-						+ " box=" + box.min().toShortString() + ".." + box.max().toShortString());
-			} else {
-				debug("no-target", "box=" + box.min().toShortString() + ".." + box.max().toShortString()
-						+ " size=" + box.sizeX() + "x" + box.sizeY() + "x" + box.sizeZ());
-			}
 			return;
 		}
 		villager.getLookControl().setLookAt(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
-		ItemStack tool = villager.getMainHandItem();
-		double reach = RefugeeRoles.isAxe(tool) ? AXE_REACH : REACH;
-		double distSq = villager.distanceToSqr(target.getX() + 0.5, target.getY(), target.getZ() + 0.5);
-		if (distSq > reach) {
+		ItemStack tool = RefugeeRoles.workTool(villager);
+		WorkMove.moveToward(villager, target);
+		if (RefugeeConfig.workReachLimit && !WorkMove.inReach(villager, target)) {
 			abortMining(level);
-			BlockPos dest = findStandNearTarget(level, target);
-			issueWalk(level, dest, "walk-target",
-					"target=" + target.toShortString()
-							+ " targetY=" + target.getY()
-							+ " block=" + level.getBlockState(target).getBlock()
-							+ " distSq=" + String.format("%.1f", distSq)
-							+ " reach=" + reach);
 			return;
 		}
-		villager.getNavigation().stop();
-		walkFailCooldown = 0;
 		BlockState state = level.getBlockState(target);
-		debug("mine", "target=" + target.toShortString()
-				+ " targetY=" + target.getY()
-				+ " block=" + state.getBlock()
-				+ " distSq=" + String.format("%.1f", distSq)
-				+ " progress=" + String.format("%.2f", mineProgress));
 		if (tryHoeInstant(level, target, state, tool)) {
 			target = null;
 			return;
 		}
 		tickMineProgress(level, target, state, tool);
-	}
-
-	private void debug(String phase, String detail) {
-		if (phase.equals(lastLogPhase) && villager.tickCount - lastLogTick < LOG_INTERVAL) {
-			return;
-		}
-		lastLogPhase = phase;
-		lastLogTick = villager.tickCount;
-		ItemStack hand = villager.getMainHandItem();
-		String tool = hand.isEmpty() ? "empty" : hand.getItem().toString();
-		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		Refugee.LOGGER.info(
-				"[mine/{}] id={} tool={} pos={} follow={} building={} hasZone={} {}",
-				phase,
-				villager.getUUID().toString().substring(0, 8),
-				tool,
-				villager.blockPosition().toShortString(),
-				data.isFollowing(),
-				data.isBuilding(),
-				zone() != null,
-				detail
-		);
 	}
 
 	private WorkZone zone() {
@@ -218,91 +141,11 @@ public class RefugeeMineGoal extends Goal {
 	}
 
 	private BlockPos findTarget(ServerLevel level, AreaBox box) {
-		if (usesTopDownScan()) {
-			return findLayerTarget(level, box);
-		}
-		if (scanLayerY != Integer.MIN_VALUE) {
-			resetLayerScan();
-		}
 		BlockPos near = scanNear(level, box, villager.blockPosition(), NEAR_SCAN);
 		if (near != null) {
 			return near;
 		}
 		return scanBox(level, box);
-	}
-
-	private boolean usesTopDownScan() {
-		ItemStack tool = villager.getMainHandItem();
-		return RefugeeRoles.isPickaxe(tool) || RefugeeRoles.isShovel(tool);
-	}
-
-	/**
-	 * 镐/铲：工作区内从最高层往下找合法块，同层取水平最近。
-	 * 大层按 {@link #LAYER_SCAN_BUDGET} 跨 tick 扫完再下一层，避免每 tick 从角落扫爆。
-	 */
-	private BlockPos findLayerTarget(ServerLevel level, AreaBox box) {
-		int maxY = box.max().getY();
-		int minY = box.min().getY();
-		if (scanLayerY == Integer.MIN_VALUE || scanLayerY > maxY) {
-			scanLayerY = maxY;
-			scanCursor = 0;
-			layerBest = null;
-			layerBestHoriz = Long.MAX_VALUE;
-		}
-		if (scanLayerY < minY) {
-			resetLayerScan();
-			return null;
-		}
-		int minX = box.min().getX();
-		int minZ = box.min().getZ();
-		int sizeX = box.sizeX();
-		int sizeZ = box.sizeZ();
-		int layerSize = sizeX * sizeZ;
-		int originX = villager.blockPosition().getX();
-		int originZ = villager.blockPosition().getZ();
-		int budget = LAYER_SCAN_BUDGET;
-		while (budget > 0 && scanLayerY >= minY) {
-			while (scanCursor < layerSize && budget > 0) {
-				int i = scanCursor++;
-				budget--;
-				int x = minX + (i % sizeX);
-				int z = minZ + (i / sizeX);
-				BlockPos pos = new BlockPos(x, scanLayerY, z);
-				if (!isValidTarget(level, pos)) {
-					continue;
-				}
-				long dx = (long) x - originX;
-				long dz = (long) z - originZ;
-				long horiz = dx * dx + dz * dz;
-				if (horiz < layerBestHoriz) {
-					layerBestHoriz = horiz;
-					layerBest = pos;
-				}
-			}
-			if (scanCursor < layerSize) {
-				return null;
-			}
-			if (layerBest != null) {
-				BlockPos found = layerBest;
-				resetLayerScan();
-				return found;
-			}
-			scanLayerY--;
-			scanCursor = 0;
-			layerBest = null;
-			layerBestHoriz = Long.MAX_VALUE;
-		}
-		if (scanLayerY < minY) {
-			resetLayerScan();
-		}
-		return null;
-	}
-
-	private void resetLayerScan() {
-		scanLayerY = Integer.MIN_VALUE;
-		scanCursor = 0;
-		layerBest = null;
-		layerBestHoriz = Long.MAX_VALUE;
 	}
 
 	/** 脚在盒内，或站在顶层上方一格且水平落在区内，算出勤。 */
@@ -321,41 +164,6 @@ public class RefugeeMineGoal extends Goal {
 			return false;
 		}
 		return !box.aabb().inflate(2.0).contains(villager.position());
-	}
-
-	private void issueWalk(ServerLevel level, BlockPos dest, String phase, String extra) {
-		var nav = villager.getNavigation();
-		if (dest == null) {
-			debug(phase, extra + " dest=none destY=none moveTo=false navDone=" + nav.isDone());
-			return;
-		}
-		if (!nav.isDone()) {
-			debug(phase, extra + " dest=" + dest.toShortString()
-					+ " destY=" + dest.getY()
-					+ " moveTo=hold navDone=false");
-			return;
-		}
-		if (walkFailCooldown > 0) {
-			walkFailCooldown--;
-			debug(phase, extra + " dest=" + dest.toShortString()
-					+ " destY=" + dest.getY()
-					+ " moveTo=wait navDone=true");
-			return;
-		}
-		double standY = StandableFinder.standY(level, dest);
-		boolean moved = nav.moveTo(
-				dest.getX() + 0.5,
-				standY,
-				dest.getZ() + 0.5,
-				RefugeeConfig.builderWalkSpeed
-		);
-		if (!moved || nav.isDone()) {
-			walkFailCooldown = WALK_RETRY_TICKS;
-		}
-		debug(phase, extra + " dest=" + dest.toShortString()
-				+ " destY=" + dest.getY()
-				+ " moveTo=" + moved
-				+ " navDone=" + nav.isDone());
 	}
 
 	/** 优先站到区顶上方空气，避免走进盒子中心实心块。 */
@@ -401,35 +209,6 @@ public class RefugeeMineGoal extends Goal {
 		return null;
 	}
 
-	/** 可站格：目标上方或四邻（含邻格上方），脚下须实心。 */
-	private BlockPos findStandNearTarget(ServerLevel level, BlockPos mineAt) {
-		BlockPos best = null;
-		double bestDist = Double.MAX_VALUE;
-		BlockPos above = mineAt.above();
-		if (StandableFinder.isStandable(level, above)) {
-			return above;
-		}
-		for (Direction dir : Direction.Plane.HORIZONTAL) {
-			BlockPos side = mineAt.relative(dir);
-			BlockPos sideAbove = side.above();
-			if (StandableFinder.isStandable(level, side)) {
-				double dist = villager.distanceToSqr(side.getX() + 0.5, side.getY(), side.getZ() + 0.5);
-				if (dist < bestDist) {
-					bestDist = dist;
-					best = side;
-				}
-			}
-			if (StandableFinder.isStandable(level, sideAbove)) {
-				double dist = villager.distanceToSqr(sideAbove.getX() + 0.5, sideAbove.getY(), sideAbove.getZ() + 0.5);
-				if (dist < bestDist) {
-					bestDist = dist;
-					best = sideAbove;
-				}
-			}
-		}
-		return best;
-	}
-
 	private BlockPos scanNear(ServerLevel level, AreaBox box, BlockPos origin, int radius) {
 		BlockPos best = null;
 		double bestDist = Double.MAX_VALUE;
@@ -447,7 +226,7 @@ public class RefugeeMineGoal extends Goal {
 			if (!isValidTarget(level, pos)) {
 				continue;
 			}
-			double dist = villager.distanceToSqr(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
+			double dist = villager.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
 			if (dist < bestDist) {
 				bestDist = dist;
 				best = pos.immutable();
@@ -472,7 +251,7 @@ public class RefugeeMineGoal extends Goal {
 			if (!isValidTarget(level, pos)) {
 				continue;
 			}
-			double dist = villager.distanceToSqr(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
+			double dist = villager.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
 			if (dist < bestDist) {
 				bestDist = dist;
 				best = pos.immutable();
@@ -502,7 +281,7 @@ public class RefugeeMineGoal extends Goal {
 		if (state.isAir() || state.getDestroySpeed(level, pos) < 0.0f) {
 			return false;
 		}
-		ItemStack tool = villager.getMainHandItem();
+		ItemStack tool = RefugeeRoles.workTool(villager);
 		if (RefugeeRoles.isPickaxe(tool)) {
 			return state.is(BlockTags.MINEABLE_WITH_PICKAXE);
 		}
@@ -559,7 +338,7 @@ public class RefugeeMineGoal extends Goal {
 		}
 		level.setBlock(cropPos, crop, 3);
 		level.levelEvent(2001, cropPos, Block.getId(crop));
-		villager.swing(InteractionHand.MAIN_HAND);
+		villager.swing(RefugeeRoles.workHand(villager));
 		return true;
 	}
 
@@ -596,7 +375,7 @@ public class RefugeeMineGoal extends Goal {
 			lastCrack = stage;
 		}
 		if (mineProgress == perTick || villager.tickCount % SWING_INTERVAL == 0) {
-			villager.swing(InteractionHand.MAIN_HAND);
+			villager.swing(RefugeeRoles.workHand(villager));
 			playHitSound(level, pos, state);
 		}
 		if (mineProgress >= 1.0f) {
@@ -639,7 +418,7 @@ public class RefugeeMineGoal extends Goal {
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		UUID subjectId = data.subjectId();
 		BlockEntity blockEntity = level.getBlockEntity(pos);
-		List<ItemStack> drops = Block.getDrops(state, level, pos, blockEntity, villager, villager.getMainHandItem());
+		List<ItemStack> drops = Block.getDrops(state, level, pos, blockEntity, villager, RefugeeRoles.workTool(villager));
 		level.destroyBlock(pos, false);
 		WarehouseService.depositLoot(level, villager, subjectId, drops);
 	}
