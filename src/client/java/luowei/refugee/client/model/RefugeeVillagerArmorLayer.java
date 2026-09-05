@@ -14,6 +14,7 @@ import net.minecraft.client.renderer.entity.layers.RenderLayer;
 import net.minecraft.client.renderer.entity.state.VillagerRenderState;
 import net.minecraft.client.resources.model.EquipmentClientInfo;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.item.ItemStack;
@@ -109,14 +110,30 @@ public class RefugeeVillagerArmorLayer extends RenderLayer<VillagerRenderState, 
 			return;
 		}
 		ModelPart folded = villager.foldedArms();
-		armor.rightArm.xRot = folded.xRot;
-		armor.leftArm.xRot = folded.xRot;
-		armor.rightArm.yRot = 0.0F;
-		armor.leftArm.yRot = 0.0F;
-		armor.rightArm.zRot = 0.0F;
-		armor.leftArm.zRot = 0.0F;
-		armor.rightArm.z += folded.z;
-		armor.leftArm.z += folded.z;
+		ModelPart body = villager.body();
+		float pitch = folded.xRot;
+		float sin = Mth.sin(pitch);
+		float cos = Mth.cos(pitch);
+		float cornerA = -2.0F * cos - (-2.0F) * sin;
+		float cornerB = -2.0F * cos - 2.0F * sin;
+		float minLocalY = Math.min(cornerA, cornerB);
+		float shoulderY = body.y - minLocalY;
+		poseFoldedSleeve(armor.rightArm, body, folded, pitch, shoulderY);
+		poseFoldedSleeve(armor.leftArm, body, folded, pitch, shoulderY);
+	}
+
+	private static void poseFoldedSleeve(
+			ModelPart arm,
+			ModelPart body,
+			ModelPart folded,
+			float pitch,
+			float shoulderY
+	) {
+		arm.xRot = pitch;
+		arm.yRot = 0.0F;
+		arm.zRot = 0.0F;
+		arm.y = shoulderY;
+		arm.z = body.z + folded.z;
 	}
 
 	private static void copy(ModelPart from, ModelPart to) {

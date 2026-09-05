@@ -1,9 +1,78 @@
 # Refugee
 
-## Setup
+Minecraft **1.21.5** Fabric 模组，当前版本 **0.3.0**。仓库：[luoweifengx/Refugee](https://github.com/luoweifengx/Refugee)。
 
-For setup instructions, please see the [Fabric Documentation page](https://docs.fabricmc.net/develop/getting-started/creating-a-project#setting-up) related to the IDE that you are using.
+## 需求
 
-## License
+希望村民能更轻松地被玩家调动，并且「人」这样的存在能主动去和怪物作战、经营玩家的领地。
 
-This template is available under the CC0 license. Feel free to learn from it and incorporate it in your own projects.
+## 实现的功能
+
+- **调动**：空手右键选中跟随；号角或敲钟范围选中；安顿旗把选中居民传送到落点。指挥杖（一根木棍合成）划仓库、工作区、预览建造和导入建筑。
+- **作战**：潜行右键把剑 / 弓 / 弩交给居民，成为守卫，在驻守点附近主动攻击怪物。可装备盔甲、盾和食物。
+- **经营**：潜行右键把镐 / 斧 / 锄 / 铲交给居民，成为工人。镐采石、斧砍原木、锄耕种、铲挖泥沙；建造从仓库远程取料。
+- **入境**：原版村庄变为僵尸村。占领 PBS 领地后，黎明按占领区块定配额，白天在领地内逐个入境难民。
+- **装具**：潜行空手打开装具界面。玩家死亡会献祭一名普通居民；名册清空后进入旁观。
+
+## 添加的建筑
+
+指挥杖可建造（`config/refugee/blueprints/`）：
+
+| 类别 | 建筑 |
+| --- | --- |
+| 防御 | 直城墙、城墙转角、城门、木栅栏墙、木哨塔、石哨塔 |
+| 居住 | 橡木小屋、橡木民居、石屋 |
+| 道路 | 直路、弯道、T 字路口、十字路口 |
+| 聚落 | 橡木仓库、圆石水井、农田、兵营、铁匠铺、谷仓 |
+
+也可框选导入自定义建筑。世界生成 / 地标（`config/refugee/worldgen/`，不进指挥杖目录）：废墟箭塔、废墟城墙、废墟城门、废墟小屋；法师塔、地狱熔炉。
+
+## 添加的 NPC
+
+| NPC | 说明 |
+| --- | --- |
+| 普通难民 | 按装备成为守卫或工人，可跟随、安顿、建造 |
+| 向导 | 讲解调动、作战与经营 |
+| 护士 | 随第一批入境出现，用绿宝石治疗玩家 |
+| 绘图师 | 占领超过 20 区块后出现，可查看领地图 |
+| 附魔师 | 守在附魔台旁，用绿宝石换附魔书；未装 Food 时首次获得青金石出现，装了 Food 则随法师塔出现 |
+
+特殊 NPC 不接受武器或工具。加入 PBS 组织时，难民和特殊 NPC 会划归组织。
+
+## 与依赖的关系
+
+**Player Block Status**（≥ 0.2.8）是必需依赖：
+
+- 村民按蓝图放置的方块会计入 PBS 方块分，从而扩张领地。
+- 难民只在已有领地上入境，配额随占领区块增加。
+- 绘图师读取 PBS 占领 / 边界数据，打开领地图（己方、边界、他人、空地）。
+
+可选：
+
+- **Food Health Hunger**：地脉仪式完成后，在出生点 10–20 区块外升起法师塔，附魔师出现在塔内。
+- **Travel Business Team**：建议同装，本模组不强制。
+
+## 指令
+
+| 指令 | 权限 | 作用 |
+| --- | --- | --- |
+| `/refugee roster` | 任何人 | 查看自己的名册 |
+| `/refugee roster <玩家>` | 管理员 | 查看指定玩家名册 |
+| `/refugee spawn [玩家]` | 管理员 | 在领地内强制刷一名普通难民 |
+| `/refugee spawn special <guide\|nurse\|cartographer\|enchanter> [玩家]` | 管理员 | 刷特殊角色（已有则拒绝） |
+| `/refugee blueprint reload` | 管理员 | 重载蓝图目录 |
+
+## 配置与开发
+
+主配置 `config/refugee.json`，向导对话 `config/refugee/guide.json`，改完需重启。需要 JDK 21。
+
+```bash
+./gradlew runClient
+./gradlew build
+```
+
+本仓库通过 `includeBuild` 组合同目录 PBS 工程。版本号写在 `gradle.properties`。
+
+## 许可证
+
+[MIT](LICENSE)

@@ -3,15 +3,15 @@
 	"id": "refugee",
 	"version": "${version}",
 	"name": "Refugee",
-	"description": "Zombie villages, refugee immigration on PBS territory, and villager build/guard AI.",
+	"description": "Zombie villages, PBS-territory immigration, command-staff settlements, and villager guard/build AI.",
 	"authors": [
 		"luoweifengx"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://github.com/luoweifengx/Refugee",
+		"sources": "https://github.com/luoweifengx/Refugee"
 	},
-	"license": "CC0-1.0",
+	"license": "MIT",
 	"icon": "assets/refugee/icon.png",
 	"environment": "*",
 	"entrypoints": {
