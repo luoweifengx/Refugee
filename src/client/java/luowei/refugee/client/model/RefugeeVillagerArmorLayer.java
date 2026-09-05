@@ -22,7 +22,7 @@ import net.minecraft.world.item.equipment.Equippable;
 
 /**
  * 把玩家内外甲网格对齐到村民身体零件上，职业衣服仍走原版村民模型。
- * 头盔与胸甲对齐村民；抱臂时胸甲袖随前置手臂；护腿与靴不绘制。
+ * 头盔先跟村民头转，再沿头的局部轴上抬；胸甲对齐身体。抱臂时袖随前置手臂；护腿与靴不绘制。
  */
 public class RefugeeVillagerArmorLayer extends RenderLayer<VillagerRenderState, VillagerModel> {
 	private static final float HELMET_LIFT = 2.5F / 16.0F;
@@ -88,7 +88,10 @@ public class RefugeeVillagerArmorLayer extends RenderLayer<VillagerRenderState, 
 				: EquipmentClientInfo.LayerType.HUMANOID;
 		pose.pushPose();
 		if (slot == EquipmentSlot.HEAD) {
+			villager.getHead().translateAndRotate(pose);
 			pose.translate(0.0F, -HELMET_LIFT, 0.0F);
+			resetLocal(armor.head);
+			resetLocal(armor.hat);
 		}
 		equipmentRenderer.renderLayers(type, equippable.assetId().get(), armor, stack, pose, buffer, packedLight);
 		pose.popPose();
@@ -138,6 +141,15 @@ public class RefugeeVillagerArmorLayer extends RenderLayer<VillagerRenderState, 
 
 	private static void copy(ModelPart from, ModelPart to) {
 		to.copyFrom(from);
+	}
+
+	private static void resetLocal(ModelPart part) {
+		part.x = 0.0F;
+		part.y = 0.0F;
+		part.z = 0.0F;
+		part.xRot = 0.0F;
+		part.yRot = 0.0F;
+		part.zRot = 0.0F;
 	}
 
 	private static void stretchParts(HumanoidArmorModel armor, EquipmentSlot slot) {

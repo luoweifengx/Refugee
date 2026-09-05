@@ -52,20 +52,20 @@ public final class EquipmentService {
 	private static boolean give(ServerPlayer player, Villager villager, InteractionHand hand, ItemStack held) {
 		if (RefugeeRoles.isGiveableArmor(held)) {
 			EquipmentSlot slot = RefugeeRoles.armorSlot(villager, held);
-			return swapSlot(player, villager, slot, held, "message.refugee.armor.given");
+			return swapSlot(player, villager, slot, held);
 		}
 		if (RefugeeRoles.isFood(held)) {
 			return giveFood(player, villager, held);
 		}
 		if (RefugeeRoles.isShield(held)) {
-			return swapSlot(player, villager, EquipmentSlot.OFFHAND, held, "message.refugee.shield.given");
+			return swapSlot(player, villager, EquipmentSlot.OFFHAND, held);
 		}
 		ItemStack logicalMain = RefugeeRoles.logicalMainHand(villager);
 		boolean given;
 		if (logicalMain.isEmpty() || !villager.getOffhandItem().isEmpty()) {
-			given = swapLogicalMain(player, villager, held, "message.refugee.tool.given");
+			given = swapLogicalMain(player, villager, held);
 		} else {
-			given = swapSlot(player, villager, EquipmentSlot.OFFHAND, held, "message.refugee.tool.given");
+			given = swapSlot(player, villager, EquipmentSlot.OFFHAND, held);
 		}
 		if (given && RefugeeRoles.isGuard(villager)) {
 			RefugeeVillagerData data = RefugeeAttachments.get(villager);
@@ -95,7 +95,6 @@ public final class EquipmentService {
 					RefugeeAttachments.markDirty(villager, data);
 				}
 			}
-			player.displayClientMessage(Component.translatable("message.refugee.food.given"), true);
 			return true;
 		}
 		ItemStack previous = current.copy();
@@ -108,16 +107,14 @@ public final class EquipmentService {
 			}
 		}
 		giveBack(player, previous);
-		player.displayClientMessage(Component.translatable("message.refugee.food.given"), true);
 		return true;
 	}
 
-	private static boolean swapLogicalMain(ServerPlayer player, Villager villager, ItemStack held, String message) {
+	private static boolean swapLogicalMain(ServerPlayer player, Villager villager, ItemStack held) {
 		ItemStack previous = RefugeeRoles.logicalMainHand(villager);
 		RefugeeRoles.setLogicalMainHand(villager, held.copyWithCount(1));
 		held.shrink(1);
 		giveBack(player, previous);
-		player.displayClientMessage(Component.translatable(message), true);
 		return true;
 	}
 
@@ -125,14 +122,12 @@ public final class EquipmentService {
 			ServerPlayer player,
 			Villager villager,
 			EquipmentSlot slot,
-			ItemStack held,
-			String message
+			ItemStack held
 	) {
 		ItemStack previous = villager.getItemBySlot(slot);
 		villager.setItemSlot(slot, held.copyWithCount(1));
 		held.shrink(1);
 		giveBack(player, previous);
-		player.displayClientMessage(Component.translatable(message), true);
 		return true;
 	}
 

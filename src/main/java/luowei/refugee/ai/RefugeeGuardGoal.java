@@ -156,6 +156,21 @@ public class RefugeeGuardGoal extends Goal {
 			}
 			return;
 		}
+		Monster nearby = RefugeeCombat.nearestHostile(villager, villager.position(), RefugeeConfig.panicClearRadius);
+		if (nearby == null) {
+			if (RefugeeRoles.hasFood(villager)) {
+				RefugeeCombat.logPanic(villager, "LAST_STAND tick: no monster in panicClearRadius -> RECOVER");
+				RefugeeCombat.setMood(villager, RefugeeCombat.Mood.RECOVER);
+				villager.getNavigation().stop();
+				RefugeeCombat.tryEat(villager, (float) RefugeeConfig.recoverHealthRatio);
+			} else {
+				RefugeeCombat.logPanic(villager, "LAST_STAND tick: no monster in panicClearRadius, no food -> IDLE");
+				RefugeeCombat.setMood(villager, RefugeeCombat.Mood.IDLE);
+				villager.setTarget(null);
+				villager.getNavigation().stop();
+			}
+			return;
+		}
 		tickCombat(true);
 	}
 
