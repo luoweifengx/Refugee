@@ -13,6 +13,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -37,7 +38,7 @@ import luowei.refugee.staff.StaffService;
 import luowei.refugee.warehouse.WarehouseLedger.SlotLoc;
 
 /**
- * 组织仓库：存按漏斗逻辑；取料在合并大类时宽松，关闭合并时按精确物品。
+ * 组织仓库：存按漏斗逻辑；取料按各大类开关宽松或精确。
  * 槽位账本与区块强制加载均经由此类，避免热路径全表扫描。
  */
 public final class WarehouseService {
@@ -61,6 +62,9 @@ public final class WarehouseService {
 		}
 		ResourceLocation dimension = level.dimension().location();
 		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
+		if (data.hasFoodWarehouse(subjectId, dimension, pos)) {
+			removeFood(level, subjectId, pos);
+		}
 		if (!data.addWarehouse(subjectId, dimension, pos)) {
 			return false;
 		}
@@ -81,6 +85,41 @@ public final class WarehouseService {
 		}
 		ContainerRef ref = new ContainerRef(dimension, pos.immutable());
 		WarehouseLedger.instance().removeChest(subjectId, ref);
+		releaseChunk(level, ref);
+		if (!isTracked(level, pos)) {
+			OPEN_COUNTS.remove(ref);
+		}
+		return true;
+	}
+
+	public static boolean addFood(ServerLevel level, UUID subjectId, BlockPos pos) {
+		if (level == null || subjectId == null || pos == null) {
+			return false;
+		}
+		ResourceLocation dimension = level.dimension().location();
+		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
+		if (data.hasWarehouse(subjectId, dimension, pos)) {
+			remove(level, subjectId, pos);
+		}
+		if (!data.addFoodWarehouse(subjectId, dimension, pos)) {
+			return false;
+		}
+		ContainerRef ref = new ContainerRef(dimension, pos.immutable());
+		retainChunk(level, ref);
+		organize(level, pos);
+		return true;
+	}
+
+	public static boolean removeFood(ServerLevel level, UUID subjectId, BlockPos pos) {
+		if (level == null || subjectId == null || pos == null) {
+			return false;
+		}
+		ResourceLocation dimension = level.dimension().location();
+		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
+		if (!data.removeFoodWarehouse(subjectId, dimension, pos)) {
+			return false;
+		}
+		ContainerRef ref = new ContainerRef(dimension, pos.immutable());
 		releaseChunk(level, ref);
 		if (!isTracked(level, pos)) {
 			OPEN_COUNTS.remove(ref);
@@ -156,6 +195,31 @@ public final class WarehouseService {
 		return takeFirst(level, subjectId, category, null);
 	}
 
+	/**
+	 * 从食物仓取出一件可食且非种子类的物品。初级农作物留在物块仓。
+	 */
+	public static ItemStack takeOneFood(ServerLevel level, UUID subjectId) {
+		if (level == null || subjectId == null) {
+			return ItemStack.EMPTY;
+		}
+		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
+		for (ContainerRef ref : data.foodWarehouses(subjectId)) {
+			if (isOccupied(ref)) {
+				continue;
+			}
+			Container container = containerAt(level.getServer(), ref);
+			if (container == null) {
+				continue;
+			}
+			ItemStack taken = takeFoodFrom(container);
+			if (!taken.isEmpty()) {
+				data.setDirty();
+				return taken;
+			}
+		}
+		return ItemStack.EMPTY;
+	}
+
 	public static boolean tryConsume(ServerLevel level, UUID subjectId, Item item) {
 		if (level == null || subjectId == null || item == null) {
 			return false;
@@ -164,17 +228,14 @@ public final class WarehouseService {
 	}
 
 	/**
-	 * 建筑取料：合并大类时木头/木板/石头/泥沙/杂项宽松，种子与珍贵物精确；关闭合并时一律精确。
+	 * 建筑取料：木头/木板/石头/泥沙按各自开关宽松；种子、杂项与珍贵物精确。
 	 */
 	public static boolean tryConsumeForBuild(ServerLevel level, UUID subjectId, Item material) {
-		if (!RefugeeConfig.warehouseMergeCategories) {
-			return tryConsume(level, subjectId, material);
+		if (level == null || subjectId == null || material == null) {
+			return false;
 		}
 		MaterialCategory category = MaterialCategory.of(material);
-		if (category == MaterialCategory.SEED) {
-			return tryConsume(level, subjectId, material);
-		}
-		if (category.isWarehouseCategory()) {
+		if (RefugeeConfig.mergeCategory(category)) {
 			return tryConsume(level, subjectId, category);
 		}
 		return tryConsume(level, subjectId, material);
@@ -184,14 +245,8 @@ public final class WarehouseService {
 		if (level == null || subjectId == null || material == null) {
 			return false;
 		}
-		if (!RefugeeConfig.warehouseMergeCategories) {
-			return countExact(level.getServer(), subjectId, material) > 0;
-		}
 		MaterialCategory category = MaterialCategory.of(material);
-		if (category == MaterialCategory.SEED) {
-			return countExact(level.getServer(), subjectId, material) > 0;
-		}
-		if (category.isWarehouseCategory()) {
+		if (RefugeeConfig.mergeCategory(category)) {
 			return count(level.getServer(), subjectId, category) > 0;
 		}
 		return countExact(level.getServer(), subjectId, material) > 0;
@@ -206,19 +261,18 @@ public final class WarehouseService {
 	}
 
 	/**
-	 * 加入箱子后整理：合并大类时按分类归堆；关闭合并时只把相同物品压叠。
+	 * 加入箱子后整理：开启合并的大类按分类归堆；其余只把相同物品压叠。
 	 */
 	public static void organize(ServerLevel level, BlockPos pos) {
 		if (level == null || pos == null || !(level.getBlockEntity(pos) instanceof Container container)) {
 			return;
 		}
 		runSilent(() -> {
-			List<ItemStack> ordered;
-			if (RefugeeConfig.warehouseMergeCategories) {
-				ordered = organizeByCategory(container);
-			} else {
-				ordered = organizeExact(container);
-			}
+			List<ItemStack> ordered = isFoodChest(level, pos)
+					? organizeExact(container)
+					: RefugeeConfig.anyMergeCategory()
+							? organizeByCategory(container)
+							: organizeExact(container);
 			int slot = 0;
 			for (ItemStack stack : ordered) {
 				if (slot >= container.getContainerSize()) {
@@ -308,7 +362,7 @@ public final class WarehouseService {
 		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
 		List<UUID> owners = new ArrayList<>();
 		for (UUID subjectId : data.subjectIds()) {
-			if (data.hasWarehouse(subjectId, dimension, pos)) {
+			if (data.hasWarehouse(subjectId, dimension, pos) || data.hasFoodWarehouse(subjectId, dimension, pos)) {
 				owners.add(subjectId);
 			}
 		}
@@ -317,7 +371,12 @@ public final class WarehouseService {
 			return;
 		}
 		for (UUID subjectId : owners) {
-			remove(level, subjectId, pos);
+			if (data.hasWarehouse(subjectId, dimension, pos)) {
+				remove(level, subjectId, pos);
+			}
+			if (data.hasFoodWarehouse(subjectId, dimension, pos)) {
+				removeFood(level, subjectId, pos);
+			}
 			StaffService.syncSubject(level.getServer(), subjectId);
 		}
 	}
@@ -360,7 +419,7 @@ public final class WarehouseService {
 				continue;
 			}
 			MaterialCategory category = MaterialCategory.of(stack);
-			if (category.isWarehouseCategory()) {
+			if (RefugeeConfig.mergeCategory(category)) {
 				buckets.computeIfAbsent(category, key -> new ArrayList<>()).add(stack.copy());
 			} else {
 				rest.add(stack.copy());
@@ -372,9 +431,7 @@ public final class WarehouseService {
 				MaterialCategory.LOG,
 				MaterialCategory.PLANKS,
 				MaterialCategory.STONE,
-				MaterialCategory.SOIL,
-				MaterialCategory.SEED,
-				MaterialCategory.MISC
+				MaterialCategory.SOIL
 		)) {
 			ordered.addAll(compact(buckets.getOrDefault(category, List.of())));
 		}
@@ -590,6 +647,12 @@ public final class WarehouseService {
 					WarehouseLedger.instance().rebuildChest(subjectId, ref, container);
 				}
 			}
+			for (ContainerRef ref : data.foodWarehouses(subjectId)) {
+				ServerLevel level = levelOf(server, ref.dimension());
+				if (level != null) {
+					retainChunk(level, ref);
+				}
+			}
 		}
 	}
 
@@ -605,6 +668,11 @@ public final class WarehouseService {
 				Container container = containerAt(level.getServer(), ref);
 				if (container != null) {
 					WarehouseLedger.instance().rebuildChest(subjectId, ref, container);
+				}
+			}
+			for (ContainerRef ref : data.foodWarehouses(subjectId)) {
+				if (dimension.equals(ref.dimension())) {
+					retainChunk(level, ref);
 				}
 			}
 		}
@@ -633,6 +701,11 @@ public final class WarehouseService {
 		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
 		for (UUID subjectId : data.subjectIds()) {
 			for (ContainerRef ref : data.warehouses(subjectId)) {
+				if (dimension.equals(ref.dimension()) && new ChunkPos(ref.pos()).equals(chunk)) {
+					n++;
+				}
+			}
+			for (ContainerRef ref : data.foodWarehouses(subjectId)) {
 				if (dimension.equals(ref.dimension()) && new ChunkPos(ref.pos()).equals(chunk)) {
 					n++;
 				}
@@ -686,11 +759,50 @@ public final class WarehouseService {
 		}
 		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
 		for (UUID subjectId : data.subjectIds()) {
-			if (data.hasWarehouse(subjectId, ref.dimension(), ref.pos())) {
+			if (data.hasWarehouse(subjectId, ref.dimension(), ref.pos())
+					|| data.hasFoodWarehouse(subjectId, ref.dimension(), ref.pos())) {
 				return true;
 			}
 		}
 		return false;
+	}
+
+	private static boolean isFoodChest(ServerLevel level, BlockPos pos) {
+		if (level == null || pos == null || level.getServer() == null) {
+			return false;
+		}
+		ResourceLocation dimension = level.dimension().location();
+		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
+		for (UUID subjectId : data.subjectIds()) {
+			if (data.hasFoodWarehouse(subjectId, dimension, pos)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static ItemStack takeFoodFrom(Container container) {
+		ItemStack[] taken = { ItemStack.EMPTY };
+		runSilent(() -> {
+			for (int slot = 0; slot < container.getContainerSize(); slot++) {
+				ItemStack stack = container.getItem(slot);
+				if (!isEdibleStoreFood(stack)) {
+					continue;
+				}
+				taken[0] = stack.copyWithCount(1);
+				stack.shrink(1);
+				container.setChanged();
+				return;
+			}
+		});
+		return taken[0];
+	}
+
+	private static boolean isEdibleStoreFood(ItemStack stack) {
+		if (stack == null || stack.isEmpty() || !stack.has(DataComponents.FOOD)) {
+			return false;
+		}
+		return MaterialCategory.of(stack) != MaterialCategory.SEED;
 	}
 
 	private record ChunkKey(ResourceLocation dimension, int x, int z) {

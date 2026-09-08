@@ -13,6 +13,7 @@
 		"StructureTemplateAccessor",
 		"StructureTemplatePoolAccessor",
 		"VillageTownCenterPoolMixin",
+		"VillagerArmorDurabilityMixin",
 		"VillagerAttributesMixin",
 		"VillagerBrainMixin",
 		"VillagerBubbleMixin",
@@ -23,6 +24,7 @@
 		"VillagerProfessionLockMixin",
 		"VillagerSubjectNbtMixin",
 		"VillagerTradeMixin",
+		"ZombieInfectVillagerMixin",
 		"ZombieVillagerConversionMixin"
 	],
 	"injectors": {

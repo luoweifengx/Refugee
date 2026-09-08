@@ -28,13 +28,19 @@ public final class RefugeeInteractions {
 
 	public static void register() {
 		UseEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
-			if (hit != null) {
-				return InteractionResult.PASS;
-			}
 			if (!(player instanceof ServerPlayer serverPlayer)) {
 				return InteractionResult.PASS;
 			}
 			ItemStack held = serverPlayer.getItemInHand(hand);
+			// 客户端 SUCCESS 只发 INTERACT_AT（hit 非空）；跟随模式必须在这里消费，不能等 hit==null。
+			if (held.getItem() instanceof CommandStaffItem
+					&& StaffService.page(serverPlayer) == StaffPage.COMBAT_FOLLOW) {
+				StaffService.handleEntity(serverPlayer, entity);
+				return InteractionResult.SUCCESS;
+			}
+			if (hit != null) {
+				return InteractionResult.PASS;
+			}
 			if (isGoldenApple(held) && (entity instanceof Villager || entity instanceof ZombieVillager)) {
 				return InteractionResult.FAIL;
 			}

@@ -35,12 +35,15 @@ import net.minecraft.world.effect.MobEffect;
 
 import luowei.refugee.Refugee;
 import luowei.refugee.ai.RefugeeBuffState;
+import luowei.refugee.warehouse.MaterialCategory;
 
 /**
- * {@code config/refugee.json}：入境、号角/钟、守卫、安顿、干活距离、仓库合并与村民 buff。缺文件时写出默认值。
+ * {@code config/refugee.json}：入境（白天按间隔抽签，档位人数再乘难度）、号角/钟、守卫、安顿、干活距离、仓库合并与村民 buff。缺文件时写出默认值。
  */
 public final class RefugeeConfig {
 	public static final String FILE_NAME = "refugee.json";
+	public static final int IMMIGRATION_SCHEMA = 3;
+	public static final int DEFAULT_IMMIGRATION_INTERVAL_TICKS = 2000;
 
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
@@ -55,20 +58,23 @@ public final class RefugeeConfig {
 			ResourceLocation.parse("minecraft:overworld")
 	);
 	private static final List<ImmigrationTier> DEFAULT_IMMIGRATION_TIERS = List.of(
-			new ImmigrationTier(5, 0.20, 3, 5),
-			new ImmigrationTier(12, 0.2286, 6, 8),
-			new ImmigrationTier(20, 0.24, 10, 15),
-			new ImmigrationTier(50, 0.32, 20, 30),
-			new ImmigrationTier(100, 0.40, 50, 50),
-			new ImmigrationTier(Integer.MAX_VALUE, 0.8333, 60, 60)
+			new ImmigrationTier(10, 0.30, 4, 8),
+			new ImmigrationTier(25, 0.36, 7, 13),
+			new ImmigrationTier(45, 0.42, 11, 19),
+			new ImmigrationTier(80, 0.48, 14, 24),
+			new ImmigrationTier(160, 0.54, 17, 30),
+			new ImmigrationTier(Integer.MAX_VALUE, 0.60, 20, 35)
 	);
 
-	public static int immigrationIntervalTicks = 1000;
+	public static int immigrationIntervalTicks = DEFAULT_IMMIGRATION_INTERVAL_TICKS;
 	public static List<ResourceLocation> immigrationDimensionWhitelist = DEFAULT_IMMIGRATION_DIMENSIONS;
 	public static List<ImmigrationTier> immigrationTiers = DEFAULT_IMMIGRATION_TIERS;
 	public static double hornBellRadius = 24.0;
-	public static double guardRadius = 16.0;
+	/** 战斗圈半径（格）：以村民自身为圆心检测敌对，与岗点无关。 */
+	public static double guardRadius = 32.0;
+	/** IDLE 回岗：距岗点超过此距离则走路返回。 */
 	public static double guardReturnWalkDistance = 20.0;
+	/** IDLE 回岗：距岗点超过此距离则传送。 */
 	public static double guardReturnTeleportDistance = 50.0;
 	public static int guardCombatScanIntervalTicks = 20;
 	public static int settleChunkRadius = 1;
@@ -78,6 +84,8 @@ public final class RefugeeConfig {
 	public static double combatRangedDistance = 8.0;
 	public static double dualRangedFleeDistance = 5.0;
 	public static double shieldTauntRadius = 5.0;
+	/** 举盾时移速倍率（相对平时）。 */
+	public static double shieldMoveMultiplier = 0.8;
 	public static double panicClearRadius = 16.0;
 	public static double panicHealthRatio = 0.30;
 	public static double recoverHealthRatio = 0.70;
@@ -86,15 +94,22 @@ public final class RefugeeConfig {
 	public static int rangedAttackIntervalTicks = 40;
 	public static int meleeAttackIntervalTicks = 10;
 	public static double builderWalkSpeed = 0.45;
-	public static int starterRefugeeCount = 8;
 	public static int importMaxAxis = 32;
 	public static int importMaxVolume = 4096;
-	/** true：挖/放须走到 4 格内；false：找到目标就动手。 */
+	/** true：挖/放须走到 4 格内，且须在工作区附近；false：找到目标就动手，不因离区而停。 */
 	public static boolean workReachLimit = false;
-	/** true：仓库按大类记账，建筑可拿同类方块；false：按精确物品取料。 */
-	public static boolean warehouseMergeCategories = true;
+	/** true：木头大类可互换取料并按类整理。 */
+	public static boolean warehouseMergeLogs = true;
+	/** true：木板大类可互换取料并按类整理。 */
+	public static boolean warehouseMergePlanks = true;
+	/** true：石头大类可互换取料并按类整理。 */
+	public static boolean warehouseMergeStone = true;
+	/** true：泥沙大类可互换取料并按类整理。 */
+	public static boolean warehouseMergeSoil = true;
 	/** true：按职业给村民常驻 buff；false：不施加并清掉本模组管理的效果。 */
 	public static boolean villagerBuffsEnabled = false;
+	/** true：禁止村民被僵尸打死时转化成僵尸村民（按死亡掉落）；false：沿用原版转化。 */
+	public static boolean blockVillagerZombieConversion = true;
 
 	public static List<BuffSpec> idleBuffs = DEFAULT_IDLE_BUFFS;
 	public static List<BuffSpec> rangedBuffs = DEFAULT_RANGED_BUFFS;
@@ -160,10 +175,38 @@ public final class RefugeeConfig {
 		return immigrationTiers.isEmpty() ? null : immigrationTiers.get(immigrationTiers.size() - 1);
 	}
 
+	public static boolean mergeCategory(MaterialCategory category) {
+		if (category == null) {
+			return false;
+		}
+		return switch (category) {
+			case LOG -> warehouseMergeLogs;
+			case PLANKS -> warehouseMergePlanks;
+			case STONE -> warehouseMergeStone;
+			case SOIL -> warehouseMergeSoil;
+			default -> false;
+		};
+	}
+
+	public static boolean anyMergeCategory() {
+		return warehouseMergeLogs || warehouseMergePlanks || warehouseMergeStone || warehouseMergeSoil;
+	}
+
 	private static void apply(JsonObject json) {
-		immigrationIntervalTicks = readIntAtLeast(json, "immigrationIntervalTicks", immigrationIntervalTicks, 1);
 		immigrationDimensionWhitelist = readDimensionWhitelist(json);
-		immigrationTiers = readImmigrationTiers(json);
+		int immigrationSchema = readIntAtLeast(json, "immigrationSchema", 1, 1);
+		if (immigrationSchema >= IMMIGRATION_SCHEMA) {
+			immigrationIntervalTicks = readIntAtLeast(
+					json,
+					"immigrationIntervalTicks",
+					DEFAULT_IMMIGRATION_INTERVAL_TICKS,
+					1
+			);
+			immigrationTiers = readImmigrationTiers(json);
+		} else {
+			immigrationIntervalTicks = DEFAULT_IMMIGRATION_INTERVAL_TICKS;
+			immigrationTiers = DEFAULT_IMMIGRATION_TIERS;
+		}
 		hornBellRadius = readDoubleAtLeast(json, "hornBellRadius", hornBellRadius, 1.0);
 		guardRadius = readDoubleAtLeast(json, "guardRadius", guardRadius, 1.0);
 		guardReturnWalkDistance = readDoubleAtLeast(json, "guardReturnWalkDistance", guardReturnWalkDistance, 1.0);
@@ -176,6 +219,7 @@ public final class RefugeeConfig {
 		combatRangedDistance = readDoubleAtLeast(json, "combatRangedDistance", combatRangedDistance, 1.0);
 		dualRangedFleeDistance = readDoubleAtLeast(json, "dualRangedFleeDistance", dualRangedFleeDistance, 1.0);
 		shieldTauntRadius = readDoubleAtLeast(json, "shieldTauntRadius", shieldTauntRadius, 1.0);
+		shieldMoveMultiplier = readChance(json, "shieldMoveMultiplier", shieldMoveMultiplier);
 		panicClearRadius = readDoubleAtLeast(json, "panicClearRadius", panicClearRadius, 1.0);
 		panicHealthRatio = readChance(json, "panicHealthRatio", panicHealthRatio);
 		recoverHealthRatio = readChance(json, "recoverHealthRatio", recoverHealthRatio);
@@ -184,19 +228,24 @@ public final class RefugeeConfig {
 		rangedAttackIntervalTicks = readIntAtLeast(json, "rangedAttackIntervalTicks", rangedAttackIntervalTicks, 1);
 		meleeAttackIntervalTicks = readIntAtLeast(json, "meleeAttackIntervalTicks", meleeAttackIntervalTicks, 1);
 		builderWalkSpeed = readDoubleAtLeast(json, "builderWalkSpeed", builderWalkSpeed, 0.05);
-		starterRefugeeCount = readIntAtLeast(json, "starterRefugeeCount", starterRefugeeCount, 0);
 		importMaxAxis = readIntAtLeast(json, "importMaxAxis", importMaxAxis, 1);
 		importMaxVolume = readIntAtLeast(json, "importMaxVolume", importMaxVolume, 1);
 		workReachLimit = readBoolean(json, "workReachLimit", workReachLimit);
-		warehouseMergeCategories = readBoolean(json, "warehouseMergeCategories", warehouseMergeCategories);
+		boolean legacyMerge = readBoolean(json, "warehouseMergeCategories", true);
+		warehouseMergeLogs = readBoolean(json, "warehouseMergeLogs", legacyMerge);
+		warehouseMergePlanks = readBoolean(json, "warehouseMergePlanks", legacyMerge);
+		warehouseMergeStone = readBoolean(json, "warehouseMergeStone", legacyMerge);
+		warehouseMergeSoil = readBoolean(json, "warehouseMergeSoil", legacyMerge);
 		villagerBuffsEnabled = readBoolean(json, "villagerBuffsEnabled", villagerBuffsEnabled);
+		blockVillagerZombieConversion = readBoolean(json, "blockVillagerZombieConversion", blockVillagerZombieConversion);
 		applyBuffs(json);
 	}
 
 	private static void write(Path path) throws IOException {
 		Files.createDirectories(path.getParent());
 		JsonObject json = new JsonObject();
-		json.addProperty("_comment", "Refugee immigration (dimension whitelist, dawn P_day quota, daytime drip), horn/bell, guard, settlement and villager buffs. Restart after editing.");
+		json.addProperty("_comment", "Refugee immigration (daytime-only rolls every interval; chance and count range by owned chunks; arrivals then scale by vanilla difficulty / hardcore). Restart after editing.");
+		json.addProperty("immigrationSchema", IMMIGRATION_SCHEMA);
 		json.addProperty("immigrationIntervalTicks", immigrationIntervalTicks);
 		json.add("immigrationDimensionWhitelist", writeDimensionWhitelist(immigrationDimensionWhitelist));
 		json.add("immigrationTiers", writeImmigrationTiers(immigrationTiers));
@@ -212,6 +261,7 @@ public final class RefugeeConfig {
 		json.addProperty("combatRangedDistance", combatRangedDistance);
 		json.addProperty("dualRangedFleeDistance", dualRangedFleeDistance);
 		json.addProperty("shieldTauntRadius", shieldTauntRadius);
+		json.addProperty("shieldMoveMultiplier", shieldMoveMultiplier);
 		json.addProperty("panicClearRadius", panicClearRadius);
 		json.addProperty("panicHealthRatio", panicHealthRatio);
 		json.addProperty("recoverHealthRatio", recoverHealthRatio);
@@ -220,12 +270,15 @@ public final class RefugeeConfig {
 		json.addProperty("rangedAttackIntervalTicks", rangedAttackIntervalTicks);
 		json.addProperty("meleeAttackIntervalTicks", meleeAttackIntervalTicks);
 		json.addProperty("builderWalkSpeed", builderWalkSpeed);
-		json.addProperty("starterRefugeeCount", starterRefugeeCount);
 		json.addProperty("importMaxAxis", importMaxAxis);
 		json.addProperty("importMaxVolume", importMaxVolume);
 		json.addProperty("workReachLimit", workReachLimit);
-		json.addProperty("warehouseMergeCategories", warehouseMergeCategories);
+		json.addProperty("warehouseMergeLogs", warehouseMergeLogs);
+		json.addProperty("warehouseMergePlanks", warehouseMergePlanks);
+		json.addProperty("warehouseMergeStone", warehouseMergeStone);
+		json.addProperty("warehouseMergeSoil", warehouseMergeSoil);
 		json.addProperty("villagerBuffsEnabled", villagerBuffsEnabled);
+		json.addProperty("blockVillagerZombieConversion", blockVillagerZombieConversion);
 		JsonObject villagerBuffs = new JsonObject();
 		villagerBuffs.add("idle", writeBuffList(idleBuffs));
 		villagerBuffs.add("ranged", writeBuffList(rangedBuffs));
@@ -318,15 +371,12 @@ public final class RefugeeConfig {
 			int maxOwned = obj.has("maxOwned")
 					? readIntAtLeast(obj, "maxOwned", Integer.MAX_VALUE, 0)
 					: Integer.MAX_VALUE;
-			double dayChance = readChance(obj, "dayChance", 0.0);
-			int minCount = readIntAtLeast(obj, "minCount", 0, 0);
-			int maxCount = readIntAtLeast(obj, "maxCount", minCount, 0);
-			if (minCount > maxCount) {
-				int swap = minCount;
-				minCount = maxCount;
-				maxCount = swap;
-			}
-			result.add(new ImmigrationTier(maxOwned, dayChance, minCount, maxCount));
+			double chance = obj.has("chance")
+					? readChance(obj, "chance", 0.0)
+					: readChance(obj, "dayChance", 0.0);
+			int minCount = readIntAtLeast(obj, "minCount", 1, 1);
+			int maxCount = readIntAtLeast(obj, "maxCount", minCount, 1);
+			result.add(new ImmigrationTier(maxOwned, chance, minCount, maxCount));
 		}
 		if (result.isEmpty()) {
 			return DEFAULT_IMMIGRATION_TIERS;
@@ -342,7 +392,7 @@ public final class RefugeeConfig {
 			if (tier.maxOwned() < Integer.MAX_VALUE) {
 				obj.addProperty("maxOwned", tier.maxOwned());
 			}
-			obj.addProperty("dayChance", tier.dayChance());
+			obj.addProperty("chance", tier.chance());
 			obj.addProperty("minCount", tier.minCount());
 			obj.addProperty("maxCount", tier.maxCount());
 			array.add(obj);
@@ -436,9 +486,13 @@ public final class RefugeeConfig {
 	}
 
 	/**
-	 * 持有区块上限（含）、日选中率 P日、入境人数闭区间。缺 {@code maxOwned} 表示无上限（最后一档）。
+	 * 持有区块上限（含）、每次间隔抽中率、抽中后的人数区间（简单基准）。缺 {@code maxOwned} 表示无上限（最后一档）。
 	 */
-	public record ImmigrationTier(int maxOwned, double dayChance, int minCount, int maxCount) {
+	public record ImmigrationTier(int maxOwned, double chance, int minCount, int maxCount) {
+		public ImmigrationTier {
+			minCount = Math.max(1, minCount);
+			maxCount = Math.max(minCount, maxCount);
+		}
 	}
 
 	public record BuffSpec(String effect, int amplifier) {

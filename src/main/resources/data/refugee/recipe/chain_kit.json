@@ -1,0 +1,19 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "equipment",
+	"ingredients": [
+		"minecraft:copper_ingot",
+		"minecraft:copper_ingot",
+		"minecraft:copper_ingot",
+		"minecraft:copper_ingot",
+		"minecraft:copper_ingot",
+		"minecraft:copper_ingot",
+		"minecraft:copper_ingot",
+		"minecraft:copper_block",
+		"minecraft:copper_block"
+	],
+	"result": {
+		"count": 1,
+		"id": "refugee:chain_kit"
+	}
+}

@@ -16,10 +16,12 @@ public final class ClientStaffState {
 	private static StaffMode mode = StaffMode.NONE;
 	private static StaffPage page = StaffPage.ROOT;
 	private static List<BlockPos> chests = List.of();
+	private static List<BlockPos> foodChests = List.of();
 	private static List<AreaBox> zones = List.of();
 	private static List<AreaBox> builds = List.of();
 	private static BlockPos pendingCorner;
 	private static AreaBox importBox;
+	private static List<BlockPos> patrolPoints = List.of();
 
 	private ClientStaffState() {
 	}
@@ -28,19 +30,23 @@ public final class ClientStaffState {
 			StaffMode nextMode,
 			StaffPage nextPage,
 			List<BlockPos> nextChests,
+			List<BlockPos> nextFoodChests,
 			List<AreaBox> nextZones,
 			List<AreaBox> nextBuilds,
 			Optional<BlockPos> nextCorner,
-			Optional<AreaBox> nextImport
+			Optional<AreaBox> nextImport,
+			List<BlockPos> nextPatrol
 	) {
 		StaffPage previous = page;
 		mode = nextMode == null ? StaffMode.NONE : nextMode;
 		page = nextPage == null ? StaffPage.ROOT : nextPage;
 		chests = nextChests == null ? List.of() : List.copyOf(nextChests);
+		foodChests = nextFoodChests == null ? List.of() : List.copyOf(nextFoodChests);
 		zones = nextZones == null ? List.of() : List.copyOf(nextZones);
 		builds = nextBuilds == null ? List.of() : List.copyOf(nextBuilds);
 		pendingCorner = nextCorner == null ? null : nextCorner.orElse(null);
 		importBox = nextImport == null ? null : nextImport.orElse(null);
+		patrolPoints = nextPatrol == null ? List.of() : List.copyOf(nextPatrol);
 		if (page != StaffPage.BUILD_PREVIEW || previous != StaffPage.BUILD_PREVIEW) {
 			ClientBlueprintSelection.clearPreview();
 		}
@@ -51,6 +57,9 @@ public final class ClientStaffState {
 		mode = page.worldMode();
 		if (page != StaffPage.BUILD_PREVIEW) {
 			ClientBlueprintSelection.clearPreview();
+		}
+		if (page != StaffPage.COMBAT_PATROL) {
+			patrolPoints = List.of();
 		}
 	}
 
@@ -64,6 +73,10 @@ public final class ClientStaffState {
 
 	public static List<BlockPos> chests() {
 		return chests;
+	}
+
+	public static List<BlockPos> foodChests() {
+		return foodChests;
 	}
 
 	public static List<AreaBox> zones() {
@@ -82,14 +95,20 @@ public final class ClientStaffState {
 		return importBox;
 	}
 
+	public static List<BlockPos> patrolPoints() {
+		return patrolPoints;
+	}
+
 	public static void clear() {
 		mode = StaffMode.NONE;
 		page = StaffPage.ROOT;
 		chests = List.of();
+		foodChests = List.of();
 		zones = List.of();
 		builds = List.of();
 		pendingCorner = null;
 		importBox = null;
+		patrolPoints = List.of();
 		ClientBlueprintSelection.clearPreview();
 	}
 }

@@ -42,7 +42,11 @@ public final class RefugeeRoles {
 	}
 
 	public static boolean isGiveable(ItemStack stack) {
-		return isGiveableTool(stack) || isGiveableArmor(stack) || isShield(stack) || isFood(stack);
+		return isGiveableTool(stack)
+				|| isGiveableArmor(stack)
+				|| isShield(stack)
+				|| isFood(stack)
+				|| luowei.refugee.item.ArmorKitItem.isKit(stack);
 	}
 
 	public static boolean isShield(ItemStack stack) {
@@ -187,7 +191,7 @@ public final class RefugeeRoles {
 			return true;
 		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		if (data.isFollowing() || data.isBuilding() || data.combatMood().isBusy()) {
+		if (data.isFollowing() || data.isFollowingEntity() || data.isPatrolling() || data.isBuilding() || data.combatMood().isBusy()) {
 			return true;
 		}
 		if (villager.level().getServer() != null) {

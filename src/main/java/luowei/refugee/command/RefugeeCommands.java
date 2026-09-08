@@ -270,7 +270,7 @@ public final class RefugeeCommands {
 				source.sendFailure(Component.translatable("message.refugee.spawn.dimension_not_allowed"));
 				yield 0;
 			}
-			case CREATE_FAILED, SKIPPED_CHANCE -> {
+			case CREATE_FAILED, SKIPPED_CHANCE, SKIPPED_NIGHT -> {
 				source.sendFailure(Component.translatable("message.refugee.spawn.failed"));
 				yield 0;
 			}

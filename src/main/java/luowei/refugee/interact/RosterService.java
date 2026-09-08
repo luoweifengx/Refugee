@@ -36,7 +36,7 @@ import luowei.refugee.attachment.PlayerSelectionData;
 import luowei.refugee.attachment.PlayerSelectionData.RosterEntry;
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
-import luowei.refugee.config.RefugeeConfig;
+import luowei.refugee.config.RefugeePlayDifficulty;
 import luowei.refugee.settle.StandableFinder;
 import luowei.refugee.pbs.PbsAdapter;
 import luowei.refugee.pbs.OrgMergeService;
@@ -44,7 +44,7 @@ import luowei.refugee.special.RefugeeSpecialRole;
 import luowei.refugee.special.SpecialRefugeeService;
 
 /**
- * 玩家难民名册、开局 8 名普通难民 + 1 名向导、死亡扣一人延迟击杀、空名册旁观失败。
+ * 玩家难民名册、按原版难度发放开局难民、死亡扣一人延迟击杀、空名册旁观失败。
  */
 public final class RosterService {
 	private static final Map<UUID, Integer> pendingStarters = new ConcurrentHashMap<>();
@@ -148,7 +148,7 @@ public final class RosterService {
 	}
 
 	private static void onPlayerDeath(ServerPlayer player) {
-		if (!(player.level() instanceof ServerLevel)) {
+		if (!(player.level() instanceof ServerLevel level)) {
 			return;
 		}
 		PlayerSelectionData data = RefugeeAttachments.get(player);
@@ -159,6 +159,9 @@ public final class RosterService {
 			data.setDefeated(true);
 			RefugeeAttachments.markDirty(player, data);
 			player.sendSystemMessage(Component.translatable("message.refugee.defeated"));
+			return;
+		}
+		if (!RefugeePlayDifficulty.of(level).playerDeathSacrifices()) {
 			return;
 		}
 		RosterEntry sacrificed = data.pollSacrificeRoster();
@@ -244,20 +247,33 @@ public final class RosterService {
 		long started = System.nanoTime();
 		PlayerSelectionData selection = RefugeeAttachments.get(player);
 		selection.setStarterGranted(true);
-		int wanted = RefugeeConfig.starterRefugeeCount;
+		RefugeePlayDifficulty difficulty = RefugeePlayDifficulty.of(level);
+		int wanted = difficulty.starterRefugeeCount();
+		boolean wantGuide = difficulty.spawnGuide();
 		int spawned = 0;
 		BlockPos origin = player.blockPosition();
 		Refugee.LOGGER.debug(
-				"[refugee starter] grant player={} wanted={} origin={}",
+				"[refugee starter] grant player={} difficulty={} wanted={} guide={} origin={}",
 				player.getGameProfile().getName(),
+				difficulty,
 				wanted,
+				wantGuide,
 				origin.toShortString()
 		);
-		List<BlockPos> spots = findStarterSpots(level, origin, Math.max(1, wanted + 1));
+		int needed = wanted + (wantGuide ? 1 : 0);
+		if (needed <= 0) {
+			RefugeeAttachments.markDirty(player, selection);
+			Refugee.LOGGER.debug(
+					"[refugee starter] done player={} spawned=0 guide=false skipped=hardcore",
+					player.getGameProfile().getName()
+			);
+			return;
+		}
+		List<BlockPos> spots = findStarterSpots(level, origin, needed);
 		Refugee.LOGGER.debug(
 				"[refugee starter] spots={} needed={} first={} last={}",
 				spots.size(),
-				Math.max(1, wanted + 1),
+				needed,
 				spots.isEmpty() ? "none" : spots.getFirst().toShortString(),
 				spots.isEmpty() ? "none" : spots.getLast().toShortString()
 		);
@@ -267,20 +283,25 @@ public final class RosterService {
 				spawned++;
 			}
 		}
-		BlockPos guideFeet = spots.size() > genericSpots ? spots.get(genericSpots) : null;
-		if (guideFeet == null && wanted <= 0 && !spots.isEmpty()) {
-			guideFeet = spots.getFirst();
-		}
-		if (guideFeet == null && !spots.isEmpty()) {
-			Set<BlockPos> reserved = new HashSet<>(spots);
-			reserved.add(origin);
-			List<BlockPos> extra = StandableFinder.findStandable(level, spots.getLast(), reserved, 1);
-			if (!extra.isEmpty()) {
-				guideFeet = extra.getFirst();
+		BlockPos guideFeet = null;
+		if (wantGuide) {
+			guideFeet = spots.size() > genericSpots ? spots.get(genericSpots) : null;
+			if (guideFeet == null && !spots.isEmpty()) {
+				Set<BlockPos> reserved = new HashSet<>(spots);
+				reserved.add(origin);
+				List<BlockPos> extra = StandableFinder.findStandable(level, spots.getLast(), reserved, 1);
+				if (!extra.isEmpty()) {
+					guideFeet = extra.getFirst();
+				}
 			}
 		}
 		boolean guideSpawned = false;
-		if (guideFeet != null) {
+		if (wantGuide && SpecialRefugeeService.shareExistingSpecial(player, RefugeeSpecialRole.GUIDE)) {
+			Refugee.LOGGER.debug(
+					"[refugee starter] guide skipped=org_already_has player={}",
+					player.getGameProfile().getName()
+			);
+		} else if (wantGuide && guideFeet != null) {
 			Villager guide = SpecialRefugeeService.spawnBound(player, level, guideFeet, RefugeeSpecialRole.GUIDE, true);
 			if (guide != null) {
 				RefugeeVillagerData data = RefugeeAttachments.get(guide);
@@ -296,6 +317,9 @@ public final class RosterService {
 			}
 		}
 		RefugeeAttachments.markDirty(player, selection);
+		if (wantGuide && (guideSpawned || selection.guideId() != null) && !selection.isGuideIntroDone()) {
+			luowei.refugee.special.GuideTutorialService.markEligible(player, level);
+		}
 		if (spawned > 0) {
 			SelectionService.giveBanner(player);
 		} else if (wanted > 0) {

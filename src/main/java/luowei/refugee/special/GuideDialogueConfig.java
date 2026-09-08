@@ -35,7 +35,7 @@ import luowei.refugee.compat.FoodCompat;
 public final class GuideDialogueConfig {
 	public static final String DIRECTORY_NAME = "refugee";
 	public static final String FILE_NAME = "guide.json";
-	public static final int SCHEMA_VERSION = 2;
+	public static final int SCHEMA_VERSION = 3;
 
 	public static final String MOD_PBS = "player-block-status";
 	public static final String MOD_TRAVEL = "travel-business-team";
@@ -107,6 +107,9 @@ public final class GuideDialogueConfig {
 	public static List<String> talkLines(ServerPlayer player) {
 		List<String> lines = new ArrayList<>();
 		for (LocalizedEntry entry : localized(player)) {
+			if (entry.id() == null || !entry.id().startsWith("flavor")) {
+				continue;
+			}
 			for (String line : entry.lines()) {
 				if (line != null && !line.isBlank()) {
 					lines.add(line);
@@ -294,14 +297,14 @@ public final class GuideDialogueConfig {
 				"入境与领地",
 				"Immigration and territory",
 				List.of(
-						"在 PBS 领地上，占领区块足够多时会定期有难民入境，加入你的队伍。",
+						"在 PBS 领地上，白天每隔一段时间会按占领区块抽取难民入境；人数随占地档位波动，困难和普通比简单来得更多。",
 						"护士会在你的第一批入境难民到来时加入；绘图师会在占领区块超过 20 时加入。",
-						"空手右键绘图师可查看领地区块图。玩家死亡时会献祭一名普通居民；特殊居民会尽量留到最后。"
+						"空手右键绘图师可查看领地区块图。非和平难度下，玩家死亡会献祭一名普通居民；特殊居民会尽量留到最后。"
 				),
 				List.of(
-						"On PBS territory, extra refugees periodically immigrate once you own enough chunks, and join your roster.",
+						"On PBS territory, refugees roll to immigrate during daytime; arrival size scales with owned chunks, and Hard/Normal bring more than Easy.",
 						"A nurse joins with your first immigration; a cartographer joins after you own more than 20 chunks.",
-						"Empty-hand the cartographer to open a territory map. On player death a generic resident is sacrificed first; special residents are kept until last."
+						"Empty-hand the cartographer to open a territory map. Except on Peaceful, a generic resident is sacrificed on player death; special residents are kept until last."
 				)
 		));
 		entriesJson.add(entry(

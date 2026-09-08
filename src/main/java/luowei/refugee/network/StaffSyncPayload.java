@@ -15,16 +15,18 @@ import luowei.refugee.staff.StaffPage;
 import luowei.refugee.zone.AreaBox;
 
 /**
- * 服务端 → 客户端：指挥杖页面、仓库箱、工作区、建筑任务描边、导入框选预览。
+ * 服务端 → 客户端：指挥杖页面、仓库箱、工作区、建筑任务描边、导入框选预览、巡逻点。
  */
 public record StaffSyncPayload(
 		StaffMode mode,
 		StaffPage page,
 		List<BlockPos> chests,
+		List<BlockPos> foodChests,
 		List<AreaBox> zones,
 		List<AreaBox> builds,
 		Optional<BlockPos> pendingCorner,
-		Optional<AreaBox> importBox
+		Optional<AreaBox> importBox,
+		List<BlockPos> patrolPoints
 ) implements CustomPacketPayload {
 	public static final CustomPacketPayload.Type<StaffSyncPayload> TYPE =
 			new CustomPacketPayload.Type<>(Refugee.id("staff_sync"));
@@ -35,11 +37,13 @@ public record StaffSyncPayload(
 		this(
 				StaffMode.byOrdinal(buf.readVarInt()),
 				StaffPage.byOrdinal(buf.readVarInt()),
-				readChests(buf),
+				readPosList(buf),
+				readPosList(buf),
 				readBoxes(buf),
 				readBoxes(buf),
 				buf.readBoolean() ? Optional.of(buf.readBlockPos()) : Optional.empty(),
-				buf.readBoolean() ? Optional.of(new AreaBox(buf.readBlockPos(), buf.readBlockPos())) : Optional.empty()
+				buf.readBoolean() ? Optional.of(new AreaBox(buf.readBlockPos(), buf.readBlockPos())) : Optional.empty(),
+				readPosList(buf)
 		);
 	}
 
@@ -47,6 +51,7 @@ public record StaffSyncPayload(
 		buf.writeVarInt(mode == null ? 0 : mode.ordinal());
 		buf.writeVarInt(page == null ? 0 : page.ordinal());
 		writePosList(buf, chests);
+		writePosList(buf, foodChests);
 		writeBoxes(buf, zones);
 		writeBoxes(buf, builds);
 		buf.writeBoolean(pendingCorner != null && pendingCorner.isPresent());
@@ -58,6 +63,7 @@ public record StaffSyncPayload(
 			buf.writeBlockPos(importBox.get().min());
 			buf.writeBlockPos(importBox.get().max());
 		}
+		writePosList(buf, patrolPoints);
 	}
 
 	private static void writePosList(FriendlyByteBuf buf, List<BlockPos> list) {
@@ -81,7 +87,7 @@ public record StaffSyncPayload(
 		}
 	}
 
-	private static List<BlockPos> readChests(FriendlyByteBuf buf) {
+	private static List<BlockPos> readPosList(FriendlyByteBuf buf) {
 		int size = buf.readVarInt();
 		List<BlockPos> result = new ArrayList<>(Math.max(size, 1));
 		for (int i = 0; i < size; i++) {

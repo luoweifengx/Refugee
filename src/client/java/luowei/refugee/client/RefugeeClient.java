@@ -6,14 +6,21 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
 
 import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.util.ARGB;
+import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.level.block.Blocks;
 
 import luowei.refugee.client.model.RefugeeVillagerModel;
 import luowei.refugee.interact.VillagerKitMenus;
@@ -54,6 +61,18 @@ public class RefugeeClient implements ClientModInitializer {
 			}
 			return InteractionResult.SUCCESS;
 		});
+		UseEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
+			if (!level.isClientSide()) {
+				return InteractionResult.PASS;
+			}
+			if (!(player.getItemInHand(hand).getItem() instanceof CommandStaffItem)) {
+				return InteractionResult.PASS;
+			}
+			if (ClientStaffState.page() == StaffPage.COMBAT_FOLLOW) {
+				return InteractionResult.SUCCESS;
+			}
+			return InteractionResult.PASS;
+		});
 		UseItemCallback.EVENT.register((player, level, hand) -> {
 			if (!level.isClientSide()) {
 				return InteractionResult.PASS;
@@ -91,7 +110,13 @@ public class RefugeeClient implements ClientModInitializer {
 		});
 		ClientPlayNetworking.registerGlobalReceiver(StaffOpenPiePayload.TYPE, (payload, context) -> {
 			Minecraft client = context.client();
-			client.execute(() -> client.setScreen(new StaffPieScreen()));
+			client.execute(() -> {
+				StaffPage piePage = payload.page();
+				if (piePage != null && piePage.isPie()) {
+					ClientStaffState.setPage(piePage);
+				}
+				client.setScreen(new StaffPieScreen(piePage));
+			});
 		});
 		ClientPlayNetworking.registerGlobalReceiver(StaffSyncPayload.TYPE, (payload, context) -> {
 			Minecraft client = context.client();
@@ -100,10 +125,12 @@ public class RefugeeClient implements ClientModInitializer {
 						payload.mode(),
 						payload.page(),
 						payload.chests(),
+						payload.foodChests(),
 						payload.zones(),
 						payload.builds(),
 						payload.pendingCorner(),
-						payload.importBox()
+						payload.importBox(),
+						payload.patrolPoints()
 				);
 				StaffClientNav.applyScreenForPage(client, payload.page());
 			});
@@ -132,7 +159,11 @@ public class RefugeeClient implements ClientModInitializer {
 						payload.entityId(),
 						role,
 						payload.talkLines(),
-						payload.initialTalkKey()
+						payload.initialTalkKey(),
+						payload.screenMode(),
+						payload.introIndex(),
+						payload.interruptKey() == null ? "" : payload.interruptKey(),
+						payload.foodSecret()
 				));
 			});
 		});
@@ -163,24 +194,75 @@ public class RefugeeClient implements ClientModInitializer {
 	}
 
 	private static void renderPreviewHud(GuiGraphics graphics, net.minecraft.client.DeltaTracker tickCounter) {
-		if (ClientStaffState.page() != StaffPage.BUILD_PREVIEW) {
-			return;
-		}
 		Minecraft client = Minecraft.getInstance();
-		if (client.player == null || client.options.hideGui) {
+		if (client.player == null) {
 			return;
 		}
+		renderGuidePortalFx(graphics, client);
+		if (client.options.hideGui) {
+			return;
+		}
+		StaffPage page = ClientStaffState.page();
 		Font font = client.font;
 		int width = client.getWindow().getGuiScaledWidth();
 		int height = client.getWindow().getGuiScaledHeight();
-		Component channel = ClientBlueprintSelection.channelLabel();
-		Component hint = ClientBlueprintSelection.hintLabel();
-		graphics.drawCenteredString(font, channel, width / 2, height - 96, 0xFFE8F4FF);
-		graphics.drawCenteredString(font, hint, width / 2, height - 84, 0xFFAAAAAA);
+		if (page == StaffPage.BUILD_PREVIEW) {
+			Component channel = ClientBlueprintSelection.channelLabel();
+			Component hint = ClientBlueprintSelection.hintLabel();
+			graphics.drawCenteredString(font, channel, width / 2, height - 96, 0xFFE8F4FF);
+			graphics.drawCenteredString(font, hint, width / 2, height - 84, 0xFFAAAAAA);
+			return;
+		}
+		if (page == StaffPage.COMBAT_FOLLOW) {
+			graphics.drawCenteredString(
+					font,
+					Component.translatable("message.refugee.staff.follow.hint"),
+					width / 2,
+					height - 84,
+					0xFFAAAAAA
+			);
+			return;
+		}
+		if (page == StaffPage.COMBAT_PATROL) {
+			graphics.drawCenteredString(
+					font,
+					Component.translatable("message.refugee.staff.patrol.hint", ClientStaffState.patrolPoints().size()),
+					width / 2,
+					height - 84,
+					0xFFAAAAAA
+			);
+		}
 	}
 
 	public static void requestTerritoryRadius(int radius, int villagerEntityId) {
 		ClientPlayNetworking.send(new TerritoryMapRequestPayload(radius, villagerEntityId));
+	}
+
+	private static long guidePortalFxUntilMs;
+
+	private static void renderGuidePortalFx(GuiGraphics graphics, Minecraft client) {
+		long now = System.currentTimeMillis();
+		if (now >= guidePortalFxUntilMs) {
+			return;
+		}
+		float t = Mth.clamp((guidePortalFxUntilMs - now) / 4000f, 0f, 1f);
+		float alpha = t * t;
+		alpha *= alpha;
+		alpha = alpha * 0.8f + 0.2f * t;
+		TextureAtlasSprite sprite = client.getBlockRenderer()
+				.getBlockModelShaper()
+				.getParticleIcon(Blocks.NETHER_PORTAL.defaultBlockState());
+		int color = ARGB.colorFromFloat(alpha, 1f, 1f, 1f);
+		graphics.blitSprite(RenderType::guiTextured, sprite, 0, 0, graphics.guiWidth(), graphics.guiHeight(), color);
+	}
+
+	public static void playGuidePortalFx() {
+		Minecraft client = Minecraft.getInstance();
+		guidePortalFxUntilMs = System.currentTimeMillis() + 4000L;
+		if (client.player != null) {
+			client.player.playSound(SoundEvents.PORTAL_TRIGGER, 0.85f, 0.75f);
+			client.player.playSound(SoundEvents.PORTAL_AMBIENT, 0.55f, 1f);
+		}
 	}
 
 	public static void sendSplashAction(int entityId, SpecialSplashAction action) {

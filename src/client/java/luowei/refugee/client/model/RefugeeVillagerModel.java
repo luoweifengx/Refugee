@@ -96,12 +96,18 @@ public class RefugeeVillagerModel extends VillagerModel {
 		}
 		resetArm(rightArm);
 		resetArm(leftArm);
-		float walkPos = state.walkAnimationPos;
-		float walkSpeed = state.walkAnimationSpeed;
-		rightArm.xRot += Mth.cos(walkPos * 0.6662F + (float) Math.PI) * 2.0F * walkSpeed * 0.5F;
-		leftArm.xRot += Mth.cos(walkPos * 0.6662F) * 2.0F * walkSpeed * 0.5F;
 		if (!(state instanceof RefugeeVillagerArmState pose)) {
 			return;
+		}
+		boolean blocking = pose.refugee$usingItem() && RefugeeRoles.isShield(pose.refugee$useItem());
+		HumanoidArm blockArm = pose.refugee$useArm();
+		float walkPos = state.walkAnimationPos;
+		float walkSpeed = state.walkAnimationSpeed;
+		if (!blocking || blockArm != HumanoidArm.RIGHT) {
+			rightArm.xRot += Mth.cos(walkPos * 0.6662F + (float) Math.PI) * 2.0F * walkSpeed * 0.5F;
+		}
+		if (!blocking || blockArm != HumanoidArm.LEFT) {
+			leftArm.xRot += Mth.cos(walkPos * 0.6662F) * 2.0F * walkSpeed * 0.5F;
 		}
 		applyHeldPoses(pose);
 		applyAttackSwing(pose);
@@ -114,7 +120,8 @@ public class RefugeeVillagerModel extends VillagerModel {
 			return;
 		}
 		if (pose.refugee$usingItem() && RefugeeRoles.isShield(use)) {
-			applyBlock(use == pose.refugee$offHand() ? leftArm : rightArm, use == pose.refugee$offHand());
+			boolean left = pose.refugee$useArm() == HumanoidArm.LEFT;
+			applyBlock(arm(pose.refugee$useArm()), left);
 			return;
 		}
 		if (pose.refugee$usingItem() && isBow(use)) {

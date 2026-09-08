@@ -16,6 +16,8 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 
 import luowei.refugee.network.SpecialSplashAction;
+import luowei.refugee.network.SpecialSplashPayload;
+import luowei.refugee.special.GuideTutorialService;
 import luowei.refugee.special.NurseService;
 import luowei.refugee.special.RefugeeSpecialRole;
 
@@ -38,13 +40,19 @@ public class SpecialSplashScreen extends Screen {
 
 	private static final float MARKER_DUR_MS = 280f;
 	private static final float TALK_SWAP_MS = 180f;
-	private static final float LOOK_TURN_MS = 600f;
+	private static final float LOOK_MIN_DEG_S = 1f;
+	private static final float LOOK_QUAD = 1f;
+	private static final float LOOK_MAX_DEG_S = 220f;
+	private static final float LOOK_ARRIVE_DEG = 0.15f;
 	private static final long FAREWELL_HOLD_MS = 900L;
 
 	private final int villagerEntityId;
 	private final RefugeeSpecialRole role;
-	private final List<MenuOption> options;
+	private List<MenuOption> options;
 	private final List<Component> talkPool;
+	private final byte screenMode;
+	private final boolean foodSecret;
+	private final List<String> rawTalkLines;
 
 	private int selectedIndex;
 	private int hoveredIndex = -1;
@@ -53,8 +61,13 @@ public class SpecialSplashScreen extends Screen {
 	private long talkSwapStartMs = -1L;
 	private boolean farewellPending;
 	private long farewellCloseAtMs = -1L;
+	private boolean suppressInterrupt;
+	private int introIndex;
+	private boolean interruptPending;
+	private AskLevel askLevel = AskLevel.NONE;
+	private String askTopic = "";
 
-	private final float[] markerProgress;
+	private float[] markerProgress;
 	private long lastAnimMs = -1L;
 
 	private int menuLeft;
@@ -75,30 +88,69 @@ public class SpecialSplashScreen extends Screen {
 	private int dialogueWidth;
 	private int dialogueHeight;
 
-	private float lookStartYaw;
-	private float lookStartPitch;
-	private long lookStartMs = -1L;
+	private long lookLastMs = -1L;
 	private boolean lookActive;
 
 	public SpecialSplashScreen(int villagerEntityId, RefugeeSpecialRole role, List<String> talkLines) {
-		this(villagerEntityId, role, talkLines, null);
+		this(villagerEntityId, role, talkLines, null, SpecialSplashPayload.MODE_NORMAL, 0, "", false);
 	}
 
 	public SpecialSplashScreen(int villagerEntityId, RefugeeSpecialRole role, List<String> talkLines, String initialTalkKey) {
+		this(villagerEntityId, role, talkLines, initialTalkKey, SpecialSplashPayload.MODE_NORMAL, 0, "", false);
+	}
+
+	public SpecialSplashScreen(
+			int villagerEntityId,
+			RefugeeSpecialRole role,
+			List<String> talkLines,
+			String initialTalkKey,
+			byte screenMode,
+			int introIndex,
+			String interruptKey,
+			boolean foodSecret
+	) {
 		super(Component.translatable("role.refugee." + role.id()));
 		this.villagerEntityId = villagerEntityId;
 		this.role = role;
-		this.options = optionsFor(role);
-		this.talkPool = buildTalkPool(role, talkLines);
-		this.markerProgress = new float[this.options.size()];
-		if (this.markerProgress.length > 0) {
-			this.markerProgress[0] = 1f;
-		}
-		if (initialTalkKey != null && !initialTalkKey.isBlank()) {
+		this.rawTalkLines = talkLines == null ? List.of() : List.copyOf(talkLines);
+		this.talkPool = buildTalkPool(role, this.rawTalkLines);
+		this.screenMode = screenMode;
+		this.foodSecret = foodSecret;
+		this.introIndex = Mth.clamp(introIndex, 0, GuideTutorialService.INTRO_LINES - 1);
+		this.options = new ArrayList<>(optionsFor(role, screenMode));
+		this.markerProgress = newMarkers(this.options.size());
+		if (screenMode == SpecialSplashPayload.MODE_ABANDON) {
+			this.suppressInterrupt = true;
+			this.talkText = Component.translatable(GuideTutorialService.ABANDON_KEY);
+			this.farewellPending = true;
+			this.farewellCloseAtMs = System.currentTimeMillis() + FAREWELL_HOLD_MS;
+		} else if (screenMode == SpecialSplashPayload.MODE_INTRO) {
+			if (interruptKey != null && !interruptKey.isBlank()) {
+				this.interruptPending = true;
+				this.talkText = Component.translatable(interruptKey);
+			} else {
+				this.talkText = Component.translatable(GuideTutorialService.INTRO_KEY_PREFIX + this.introIndex);
+			}
+		} else if (initialTalkKey != null && !initialTalkKey.isBlank()) {
 			this.talkText = Component.translatable(initialTalkKey);
 		} else {
 			this.talkText = Component.translatable(lineKey(role, "greeting"));
 		}
+	}
+
+	public static SpecialSplashScreen ask(int entityId, RefugeeSpecialRole role, List<String> talkLines, boolean foodSecret) {
+		SpecialSplashScreen screen = new SpecialSplashScreen(
+				entityId,
+				role,
+				talkLines,
+				"screen.refugee.splash.guide.what",
+				SpecialSplashPayload.MODE_NORMAL,
+				0,
+				"",
+				foodSecret
+		);
+		screen.enterAskCategories();
+		return screen;
 	}
 
 	public boolean matchesEntity(int entityId) {
@@ -115,7 +167,7 @@ public class SpecialSplashScreen extends Screen {
 	@Override
 	protected void init() {
 		super.init();
-		if (this.lookStartMs < 0L) {
+		if (this.lookLastMs < 0L) {
 			beginLookAtNpc();
 		}
 	}
@@ -127,8 +179,29 @@ public class SpecialSplashScreen extends Screen {
 	}
 
 	@Override
+	public void onClose() {
+		if (this.askLevel != AskLevel.NONE && this.minecraft != null) {
+			this.minecraft.setScreen(new SpecialSplashScreen(
+					this.villagerEntityId,
+					this.role,
+					this.rawTalkLines,
+					lineKey(this.role, "greeting"),
+					SpecialSplashPayload.MODE_NORMAL,
+					0,
+					"",
+					this.foodSecret
+			));
+			return;
+		}
+		super.onClose();
+	}
+
+	@Override
 	public void removed() {
 		this.lookActive = false;
+		if (this.screenMode == SpecialSplashPayload.MODE_INTRO && !this.suppressInterrupt && !this.farewellPending) {
+			RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.INTRO_INTERRUPT);
+		}
 		super.removed();
 	}
 
@@ -139,7 +212,7 @@ public class SpecialSplashScreen extends Screen {
 
 	@Override
 	public boolean shouldCloseOnEsc() {
-		return true;
+		return this.askLevel != AskLevel.ITEMS;
 	}
 
 	@Override
@@ -160,6 +233,13 @@ public class SpecialSplashScreen extends Screen {
 		if (button != 0) {
 			return true;
 		}
+		if (this.screenMode == SpecialSplashPayload.MODE_INTRO) {
+			advanceIntro();
+			return true;
+		}
+		if (this.screenMode == SpecialSplashPayload.MODE_ABANDON) {
+			return true;
+		}
 		int hit = menuHitIndex(mouseX, mouseY);
 		if (hit < 0) {
 			return true;
@@ -171,9 +251,21 @@ public class SpecialSplashScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+		if (keyCode == GLFW.GLFW_KEY_ESCAPE && this.askLevel == AskLevel.ITEMS) {
+			enterAskCategories();
+			return true;
+		}
+		if (this.screenMode == SpecialSplashPayload.MODE_INTRO
+				&& (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_SPACE || keyCode == GLFW.GLFW_KEY_KP_ENTER)) {
+			advanceIntro();
+			return true;
+		}
 		if (isInventoryKey(keyCode, scanCode)) {
 			this.onClose();
 			return true;
+		}
+		if (this.screenMode == SpecialSplashPayload.MODE_INTRO || this.screenMode == SpecialSplashPayload.MODE_ABANDON) {
+			return super.keyPressed(keyCode, scanCode, modifiers);
 		}
 		if (keyCode == GLFW.GLFW_KEY_DOWN) {
 			moveSelection(0, 1);
@@ -239,14 +331,12 @@ public class SpecialSplashScreen extends Screen {
 		if (this.minecraft == null || this.minecraft.player == null) {
 			return;
 		}
-		this.lookStartYaw = this.minecraft.player.getYRot();
-		this.lookStartPitch = this.minecraft.player.getXRot();
-		this.lookStartMs = System.currentTimeMillis();
+		this.lookLastMs = System.currentTimeMillis();
 		this.lookActive = true;
 	}
 
 	private void applyLookAtNpc() {
-		if (!this.lookActive || this.lookStartMs < 0L) {
+		if (!this.lookActive || this.lookLastMs < 0L) {
 			return;
 		}
 		if (this.minecraft == null || this.minecraft.player == null || this.minecraft.level == null) {
@@ -267,12 +357,27 @@ public class SpecialSplashScreen extends Screen {
 			return;
 		}
 		float targetYaw = (float) (Mth.atan2(dz, dx) * (180.0 / Math.PI)) - 90.0F;
-		float targetPitch = (float) -(Mth.atan2(dy, distXZ) * (180.0 / Math.PI));
-		targetPitch = Mth.clamp(targetPitch, -90.0F, 90.0F);
-		float t = Mth.clamp((System.currentTimeMillis() - this.lookStartMs) / LOOK_TURN_MS, 0f, 1f);
-		float e = easeOutCubic(t);
-		float yaw = Mth.rotLerp(e, this.lookStartYaw, targetYaw);
-		float pitch = Mth.lerp(e, this.lookStartPitch, targetPitch);
+		float targetPitch = Mth.clamp((float) -(Mth.atan2(dy, distXZ) * (180.0 / Math.PI)), -90.0F, 90.0F);
+		float yawErr = Mth.wrapDegrees(targetYaw - player.getYRot());
+		float pitchErr = targetPitch - player.getXRot();
+		float remaining = (float) Math.hypot(yawErr, pitchErr);
+		if (remaining < LOOK_ARRIVE_DEG) {
+			applyPlayerLook(player, targetYaw, targetPitch);
+			this.lookLastMs = System.currentTimeMillis();
+			return;
+		}
+		long now = System.currentTimeMillis();
+		float dt = Math.min(0.05f, Math.max(0f, now - this.lookLastMs) / 1000f);
+		this.lookLastMs = now;
+		if (dt <= 0f) {
+			return;
+		}
+		float speed = Mth.clamp(LOOK_MIN_DEG_S + LOOK_QUAD * remaining * remaining, LOOK_MIN_DEG_S, LOOK_MAX_DEG_S);
+		float step = Math.min(1f, (speed * dt) / remaining);
+		applyPlayerLook(player, player.getYRot() + yawErr * step, player.getXRot() + pitchErr * step);
+	}
+
+	private static void applyPlayerLook(Player player, float yaw, float pitch) {
 		player.setYRot(yaw);
 		player.setXRot(pitch);
 		player.yRotO = yaw;
@@ -324,12 +429,20 @@ public class SpecialSplashScreen extends Screen {
 	}
 
 	private int menuCount() {
-		return Math.max(1, this.options.size());
+		return hideMenu() ? 0 : Math.max(0, this.options.size());
+	}
+
+	private boolean hideMenu() {
+		return this.screenMode == SpecialSplashPayload.MODE_INTRO || this.screenMode == SpecialSplashPayload.MODE_ABANDON;
 	}
 
 	/** 超过 2 项时右侧再开一列，与旅商开屏一致。 */
 	private int splashMenuColumns() {
-		return menuCount() > 2 ? 2 : 1;
+		int count = menuCount();
+		if (count <= 0) {
+			return 1;
+		}
+		return count > 2 ? 2 : 1;
 	}
 
 	private int splashMenuRows() {
@@ -354,6 +467,9 @@ public class SpecialSplashScreen extends Screen {
 		MenuOption option = this.options.get(this.selectedIndex);
 		switch (option.kind()) {
 			case TALK -> cycleTalk();
+			case ASK -> openAskWindow();
+			case ASK_CATEGORY -> enterAskItems(option.id());
+			case ASK_ITEM -> showAskBody(option);
 			case HEAL -> RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.HEAL);
 			case MAP -> RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.MAP);
 			case TRADE -> RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.TRADE);
@@ -361,30 +477,79 @@ public class SpecialSplashScreen extends Screen {
 		}
 	}
 
+	private void advanceIntro() {
+		if (this.farewellPending) {
+			return;
+		}
+		if (this.interruptPending) {
+			this.interruptPending = false;
+			startTalkSwap(Component.translatable(GuideTutorialService.INTRO_KEY_PREFIX + this.introIndex));
+			return;
+		}
+		if (this.introIndex >= GuideTutorialService.INTRO_LINES - 1) {
+			this.suppressInterrupt = true;
+			RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.INTRO_FINISH);
+			return;
+		}
+		this.introIndex++;
+		RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.INTRO_ADVANCE);
+		startTalkSwap(Component.translatable(GuideTutorialService.INTRO_KEY_PREFIX + this.introIndex));
+	}
+
+	private void openAskWindow() {
+		if (this.minecraft == null) {
+			return;
+		}
+		this.minecraft.setScreen(ask(this.villagerEntityId, this.role, this.rawTalkLines, this.foodSecret));
+	}
+
+	private void enterAskCategories() {
+		this.askLevel = AskLevel.CATEGORIES;
+		this.askTopic = "";
+		replaceOptions(askCategoryOptions(this.foodSecret));
+		startTalkSwap(Component.translatable("screen.refugee.splash.guide.what"));
+	}
+
+	private void enterAskItems(String topic) {
+		this.askLevel = AskLevel.ITEMS;
+		this.askTopic = topic == null ? "" : topic;
+		replaceOptions(askItemOptions(this.askTopic, this.foodSecret));
+		startTalkSwap(Component.translatable("screen.refugee.splash.guide.what"));
+	}
+
+	private void showAskBody(MenuOption option) {
+		if (option.bodyKey() == null || option.bodyKey().isBlank()) {
+			return;
+		}
+		startTalkSwap(Component.translatable(option.bodyKey()));
+		if (option.portalFx()) {
+			RefugeeClient.playGuidePortalFx();
+		}
+	}
+
+	private void replaceOptions(List<MenuOption> next) {
+		this.options = new ArrayList<>(next);
+		this.markerProgress = newMarkers(this.options.size());
+		this.selectedIndex = 0;
+		this.hoveredIndex = -1;
+	}
+
+	private static float[] newMarkers(int size) {
+		float[] markers = new float[Math.max(0, size)];
+		if (markers.length > 0) {
+			markers[0] = 1f;
+		}
+		return markers;
+	}
+
 	/**
 	 * 舞台自下而上：菜单 → 白线（选项上方）→ 对话。
-	 * 面板按文案行数加高，避免白线切字；高度有上限以免挡住热键栏太多。
+	 * 面板高度随当前文案换行数与菜单行数变化；超长文案才裁切。
 	 */
 	private void layoutSplashMenu() {
-		int count = menuCount();
 		int lineWidth = Math.min(this.width * 2 / 3, this.width - 24);
 		int lineX = (this.width - lineWidth) / 2;
-		this.talkMaxWidth = Math.min(440, this.width * 2 / 3);
-
-		int oldPadBottom = 8;
-		int oldPadTop = 12;
-		int oldRowH = 18;
-		int oldStageBottom = this.height - Math.max(28, this.height / 8);
-		int oldMenuTop = oldStageBottom - count * oldRowH;
-		int oldRuleLineY = oldMenuTop - 12;
-		int oldTalkLineH = this.font.lineHeight + 2;
-		int talkLines = Math.max(1, this.font.split(this.talkText, this.talkMaxWidth).size());
-		int oldTalkH = talkLines * oldTalkLineH;
-		int brandY = Math.max(16, this.height / 12);
-		int titleBottom = brandY + 18 + Math.round(this.font.lineHeight * 2.4f) + 12;
-		int oldTalkY = Math.max(titleBottom, oldRuleLineY - 10 - oldTalkH);
-		int oldBottom = this.height - oldPadBottom;
-		int oldHeight = Math.max(48, oldBottom - (oldTalkY - oldPadTop));
+		this.talkMaxWidth = Math.max(16, lineWidth - 8);
 
 		int padX = 14;
 		this.dialogueLeft = Math.max(8, lineX - padX);
@@ -395,31 +560,25 @@ public class SpecialSplashScreen extends Screen {
 		this.menuRows = splashMenuRows();
 		this.talkScale = 1f;
 		this.talkLineHeight = this.font.lineHeight + 2;
+		int talkLines = Math.max(1, this.font.split(this.talkText, this.talkMaxWidth).size());
 		int talkH = talkLines * this.talkLineHeight;
-		int minRowH = this.font.lineHeight + 5;
-		int minMenuH = this.menuRows * minRowH;
+		int menuRowH = hideMenu() ? 0 : Math.max(this.font.lineHeight + 5, 18);
+		int menuH = hideMenu() ? 0 : Math.max(1, this.menuRows) * menuRowH;
 		int padTop = 8;
 		int padBottom = 6;
 		int gapTalkLine = 6;
 		int gapLineMenu = 6;
-		int needed = padTop + talkH + gapTalkLine + 1 + gapLineMenu + minMenuH + padBottom;
-		int baseline = Math.max(64, Math.round(oldHeight / 3f * 1.2f * 1.1f * 1.35f));
-		int cap = Math.max(baseline, Math.min(this.height * 2 / 5, this.height - 36));
-		this.dialogueHeight = Mth.clamp(Math.max(baseline, needed), 64, cap);
-		this.dialogueTop = oldBottom - this.dialogueHeight;
-
-		int panelBottom = this.dialogueTop + this.dialogueHeight;
-		int innerTop = this.dialogueTop + padTop;
-		int innerBottom = panelBottom - padBottom;
-		int innerH = Math.max(1, innerBottom - innerTop);
-
-		int maxTalkH = Math.max(this.talkLineHeight, innerH - minMenuH - gapTalkLine - 1 - gapLineMenu);
-		if (talkH > maxTalkH) {
-			talkH = maxTalkH;
+		int chrome = padTop + gapTalkLine + 1 + gapLineMenu + menuH + padBottom;
+		int cap = Math.max(chrome + this.talkLineHeight, this.height - 36);
+		if (chrome + talkH > cap) {
+			talkH = Math.max(this.talkLineHeight, cap - chrome);
 		}
+		this.dialogueHeight = chrome + talkH;
+		this.dialogueTop = this.height - 8 - this.dialogueHeight;
 
-		int menuBudget = Math.max(minMenuH, innerH - talkH - gapTalkLine - 1 - gapLineMenu);
-		this.menuRowHeight = Math.max(minRowH, Math.min(18, menuBudget / this.menuRows));
+		int innerTop = this.dialogueTop + padTop;
+		int innerBottom = this.dialogueTop + this.dialogueHeight - padBottom;
+		this.menuRowHeight = menuRowH;
 		this.menuScale = 1f;
 		this.menuColGap = 24;
 		int innerW = Math.max(48, lineWidth - 8);
@@ -497,6 +656,10 @@ public class SpecialSplashScreen extends Screen {
 		graphics.disableScissor();
 
 		drawRuleLine(graphics, lineX, this.ruleLineY, lineWidth);
+
+		if (hideMenu()) {
+			return;
+		}
 
 		float scale = this.menuScale;
 		int markerGlyphW = this.font.width("<");
@@ -585,18 +748,86 @@ public class SpecialSplashScreen extends Screen {
 		return (a << 24) | (argb & 0x00FFFFFF);
 	}
 
-	private static List<MenuOption> optionsFor(RefugeeSpecialRole role) {
+	private static List<MenuOption> optionsFor(RefugeeSpecialRole role, byte screenMode) {
+		if (screenMode == SpecialSplashPayload.MODE_INTRO || screenMode == SpecialSplashPayload.MODE_ABANDON) {
+			return List.of();
+		}
 		List<MenuOption> list = new ArrayList<>();
-		list.add(new MenuOption(Kind.TALK, "screen.refugee.splash.talk"));
+		if (role == RefugeeSpecialRole.GUIDE) {
+			list.add(new MenuOption(Kind.TALK, "screen.refugee.splash.guide.chat", "", "", false));
+			list.add(new MenuOption(Kind.ASK, "screen.refugee.splash.guide.ask", "", "", false));
+			list.add(new MenuOption(Kind.FAREWELL, "screen.refugee.splash.farewell", "", "", false));
+			return List.copyOf(list);
+		}
+		list.add(new MenuOption(Kind.TALK, "screen.refugee.splash.talk", "", "", false));
 		switch (role) {
-			case NURSE -> list.add(new MenuOption(Kind.HEAL, "screen.refugee.splash.heal"));
-			case CARTOGRAPHER -> list.add(new MenuOption(Kind.MAP, "screen.refugee.splash.map"));
-			case ENCHANTER -> list.add(new MenuOption(Kind.TRADE, "screen.refugee.splash.trade"));
-			case GUIDE -> {
+			case NURSE -> list.add(new MenuOption(Kind.HEAL, "screen.refugee.splash.heal", "", "", false));
+			case CARTOGRAPHER -> list.add(new MenuOption(Kind.MAP, "screen.refugee.splash.map", "", "", false));
+			case ENCHANTER -> list.add(new MenuOption(Kind.TRADE, "screen.refugee.splash.trade", "", "", false));
+			default -> {
 			}
 		}
-		list.add(new MenuOption(Kind.FAREWELL, "screen.refugee.splash.farewell"));
+		list.add(new MenuOption(Kind.FAREWELL, "screen.refugee.splash.farewell", "", "", false));
 		return List.copyOf(list);
+	}
+
+	private static List<MenuOption> askCategoryOptions(boolean foodSecret) {
+		List<MenuOption> list = new ArrayList<>();
+		list.add(category("combat"));
+		list.add(category("build"));
+		list.add(category("town"));
+		list.add(category("secret"));
+		return List.copyOf(list);
+	}
+
+	private static MenuOption category(String id) {
+		return new MenuOption(Kind.ASK_CATEGORY, "screen.refugee.splash.guide.ask." + id, id, "", false);
+	}
+
+	private static List<MenuOption> askItemOptions(String topic, boolean foodSecret) {
+		List<MenuOption> list = new ArrayList<>();
+		switch (topic == null ? "" : topic) {
+			case "combat" -> {
+				list.add(item("combat", "garrison"));
+				list.add(item("combat", "follow"));
+				list.add(item("combat", "patrol"));
+				list.add(item("combat", "formation"));
+			}
+			case "build" -> {
+				list.add(item("build", "build"));
+				list.add(item("build", "mine"));
+			}
+			case "town" -> {
+				list.add(item("town", "kit"));
+				list.add(item("town", "armor"));
+				list.add(item("town", "why"));
+			}
+			case "secret" -> {
+				if (foodSecret) {
+					list.add(item("secret", "ritual"));
+				}
+				list.add(new MenuOption(
+						Kind.ASK_ITEM,
+						"screen.refugee.splash.guide.ask.secret.portal",
+						"portal",
+						"screen.refugee.splash.guide.ask.secret.portal.body",
+						true
+				));
+			}
+			default -> {
+			}
+		}
+		return List.copyOf(list);
+	}
+
+	private static MenuOption item(String topic, String id) {
+		return new MenuOption(
+				Kind.ASK_ITEM,
+				"screen.refugee.splash.guide.ask." + topic + "." + id,
+				id,
+				"screen.refugee.splash.guide.ask." + topic + "." + id + ".body",
+				false
+		);
 	}
 
 	private static List<Component> buildTalkPool(RefugeeSpecialRole role, List<String> talkLines) {
@@ -623,12 +854,21 @@ public class SpecialSplashScreen extends Screen {
 
 	private enum Kind {
 		TALK,
+		ASK,
+		ASK_CATEGORY,
+		ASK_ITEM,
 		HEAL,
 		MAP,
 		TRADE,
 		FAREWELL
 	}
 
-	private record MenuOption(Kind kind, String labelKey) {
+	private enum AskLevel {
+		NONE,
+		CATEGORIES,
+		ITEMS
+	}
+
+	private record MenuOption(Kind kind, String labelKey, String id, String bodyKey, boolean portalFx) {
 	}
 }

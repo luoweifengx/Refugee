@@ -46,12 +46,13 @@ public class Refugee implements ModInitializer {
 		luowei.refugee.warehouse.WarehouseService.register();
 		LandmarkSpawnService.register();
 		SpecialRefugeeService.register();
+		luowei.refugee.special.GuideTutorialService.register();
 		luowei.refugee.pbs.OrgMergeService.register();
 		RefugeeImmigration.register();
 		RefugeeCommands.register();
 		ServerLivingEntityEvents.AFTER_DAMAGE.register((entity, source, base, taken, blocked) -> {
 			if (entity instanceof Villager villager) {
-				RefugeeCombat.onDamaged(villager);
+				RefugeeCombat.onDamaged(villager, source);
 			}
 		});
 		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {

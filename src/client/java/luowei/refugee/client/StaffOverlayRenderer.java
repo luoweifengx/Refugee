@@ -1,5 +1,7 @@
 package luowei.refugee.client;
 
+import java.util.List;
+
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 
@@ -24,7 +26,7 @@ import luowei.refugee.staff.StaffPage;
 import luowei.refugee.zone.AreaBox;
 
 /**
- * 手持指挥杖或处于对应模式时，绘制仓库红框与工作区绿框。
+ * 手持指挥杖或处于对应模式时，绘制物块仓红框、食物仓橙框与工作区绿框。
  */
 public final class StaffOverlayRenderer {
 	private StaffOverlayRenderer() {
@@ -43,6 +45,10 @@ public final class StaffOverlayRenderer {
 		boolean holding = isHoldingStaff(player);
 		boolean active = ClientStaffState.page() != StaffPage.ROOT;
 		if (!holding && !active) {
+			return;
+		}
+		if (ClientStaffState.page() == StaffPage.COMBAT_FOLLOW
+				|| ClientStaffState.mode() == StaffMode.FOLLOW_ENTITY) {
 			return;
 		}
 		PoseStack poseStack = context.matrixStack();
@@ -73,6 +79,25 @@ public final class StaffOverlayRenderer {
 				);
 			}
 		}
+		if (holding || ClientStaffState.mode() == StaffMode.FOOD_WAREHOUSE) {
+			for (BlockPos pos : ClientStaffState.foodChests()) {
+				AABB box = AABB.encapsulatingFullBlocks(pos, pos).inflate(0.002);
+				ShapeRenderer.renderLineBox(
+						poseStack,
+						lines,
+						box.minX,
+						box.minY,
+						box.minZ,
+						box.maxX,
+						box.maxY,
+						box.maxZ,
+						1.0f,
+						0.55f,
+						0.12f,
+						1.0f
+				);
+			}
+		}
 		if (holding || ClientStaffState.mode() == StaffMode.ZONE) {
 			for (AreaBox zone : ClientStaffState.zones()) {
 				drawBox(poseStack, lines, zone.aabb(), 0.2f, 0.9f, 0.25f);
@@ -98,7 +123,59 @@ public final class StaffOverlayRenderer {
 				}
 			}
 		}
+		if (holding || ClientStaffState.mode() == StaffMode.PATROL) {
+			List<BlockPos> points = ClientStaffState.patrolPoints();
+			float orangeR = 0.95f;
+			float orangeG = 0.55f;
+			float orangeB = 0.15f;
+			for (BlockPos point : points) {
+				drawBlock(poseStack, lines, point, orangeR, orangeG, orangeB);
+			}
+			int count = points.size();
+			if (count > 1) {
+				for (int i = 0; i < count; i++) {
+					BlockPos from = points.get(i);
+					BlockPos to = points.get((i + 1) % count);
+					drawLine(poseStack, lines, center(from), center(to), orangeR, orangeG, orangeB);
+				}
+			}
+			if (client.hitResult instanceof BlockHitResult blockHit && client.hitResult.getType() == HitResult.Type.BLOCK) {
+				BlockPos hover = blockHit.getBlockPos();
+				drawBlock(poseStack, lines, hover, 1.0f, 0.72f, 0.22f);
+				if (count > 0 && (count == 1 || !hover.equals(points.getLast()))) {
+					drawLine(poseStack, lines, center(points.getLast()), center(hover), 1.0f, 0.72f, 0.22f);
+				}
+			}
+		}
 		poseStack.popPose();
+	}
+
+	private static Vec3 center(BlockPos pos) {
+		return Vec3.atCenterOf(pos);
+	}
+
+	private static void drawBlock(PoseStack poseStack, VertexConsumer lines, BlockPos pos, float r, float g, float b) {
+		drawBox(poseStack, lines, AABB.encapsulatingFullBlocks(pos, pos), r, g, b);
+	}
+
+	private static void drawLine(PoseStack poseStack, VertexConsumer lines, Vec3 from, Vec3 to, float r, float g, float b) {
+		PoseStack.Pose pose = poseStack.last();
+		float dx = (float) (to.x - from.x);
+		float dy = (float) (to.y - from.y);
+		float dz = (float) (to.z - from.z);
+		float len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+		if (len < 1.0e-4f) {
+			return;
+		}
+		float nx = dx / len;
+		float ny = dy / len;
+		float nz = dz / len;
+		lines.addVertex(pose, (float) from.x, (float) from.y, (float) from.z)
+				.setColor(r, g, b, 1.0f)
+				.setNormal(pose, nx, ny, nz);
+		lines.addVertex(pose, (float) to.x, (float) to.y, (float) to.z)
+				.setColor(r, g, b, 1.0f)
+				.setNormal(pose, nx, ny, nz);
 	}
 
 	private static boolean isHoldingStaff(LocalPlayer player) {

@@ -9,21 +9,62 @@ import net.minecraft.world.item.Items;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 import luowei.refugee.network.StaffPiePayload;
+import luowei.refugee.staff.StaffPage;
 import luowei.refugee.staff.StaffPieAction;
 
 /**
- * 指挥杖扇形菜单：四象限，物品图标，不暂停世界。
+ * 指挥杖扇形菜单：按当前页绘制扇区，物品图标，不暂停世界。
  */
 public class StaffPieScreen extends Screen {
-	private static final int RADIUS = 45;
+	private static final int RADIUS = 52;
 	private static final int INNER = 8;
-	private static final ItemStack ICON_WAREHOUSE = new ItemStack(Items.CHEST);
-	private static final ItemStack ICON_ZONE = new ItemStack(Items.STONE_PICKAXE);
-	private static final ItemStack ICON_SELECT = new ItemStack(Items.PAPER);
-	private static final ItemStack ICON_IMPORT = new ItemStack(Items.WRITABLE_BOOK);
+	private static final Slice[] ROOT_SLICES = {
+			new Slice(StaffPieAction.WAREHOUSE, new ItemStack(Items.CHEST), 0xCC3A6EA5, "screen.refugee.staff.pie.warehouse"),
+			new Slice(StaffPieAction.ZONE, new ItemStack(Items.STONE_PICKAXE), 0xCC3D8B4A, "screen.refugee.staff.pie.zone"),
+			new Slice(StaffPieAction.SELECT, new ItemStack(Items.PAPER), 0xCCB07A2E, "screen.refugee.staff.pie.select"),
+			new Slice(StaffPieAction.IMPORT, new ItemStack(Items.WRITABLE_BOOK), 0xCC8B5A9E, "screen.refugee.staff.pie.import"),
+			new Slice(StaffPieAction.COMBAT, new ItemStack(Items.IRON_SWORD), 0xCC8B3A3A, "screen.refugee.staff.pie.combat"),
+			new Slice(StaffPieAction.RALLY, new ItemStack(Items.GOAT_HORN), 0xCCC4A35A, "screen.refugee.staff.pie.rally")
+	};
+	private static final Slice[] COMBAT_SLICES = {
+			new Slice(StaffPieAction.FOLLOW_ENTITY, new ItemStack(Items.LEAD), 0xCC3A6EA5, "screen.refugee.staff.pie.follow"),
+			new Slice(StaffPieAction.PATROL, new ItemStack(Items.COMPASS), 0xCCB07A2E, "screen.refugee.staff.pie.patrol"),
+			new Slice(StaffPieAction.FORMATION, new ItemStack(Items.SHIELD), 0xCC6E6E6E, "screen.refugee.staff.pie.formation")
+	};
+	private static final Slice[] WAREHOUSE_SLICES = {
+			new Slice(StaffPieAction.WAREHOUSE_BLOCKS, new ItemStack(Items.CHEST), 0xCC8B3A3A, "screen.refugee.staff.pie.warehouse_blocks"),
+			new Slice(StaffPieAction.WAREHOUSE_FOOD, new ItemStack(Items.BREAD), 0xCCE08A2A, "screen.refugee.staff.pie.warehouse_food")
+	};
+
+	private final StaffPage page;
 
 	public StaffPieScreen() {
-		super(Component.translatable("screen.refugee.staff.pie.title"));
+		this(ClientStaffState.page());
+	}
+
+	public StaffPieScreen(StaffPage page) {
+		super(titleFor(page));
+		this.page = page == null ? StaffPage.PIE : page;
+	}
+
+	private static Component titleFor(StaffPage page) {
+		if (page == StaffPage.COMBAT_PIE) {
+			return Component.translatable("screen.refugee.staff.pie.combat");
+		}
+		if (page == StaffPage.WAREHOUSE_PIE) {
+			return Component.translatable("screen.refugee.staff.pie.warehouse");
+		}
+		return Component.translatable("screen.refugee.staff.pie.title");
+	}
+
+	private Slice[] slices() {
+		if (page == StaffPage.COMBAT_PIE) {
+			return COMBAT_SLICES;
+		}
+		if (page == StaffPage.WAREHOUSE_PIE) {
+			return WAREHOUSE_SLICES;
+		}
+		return ROOT_SLICES;
 	}
 
 	@Override
@@ -40,32 +81,28 @@ public class StaffPieScreen extends Screen {
 		super.render(graphics, mouseX, mouseY, delta);
 		int cx = width / 2;
 		int cy = height / 2;
-		StaffPieAction hover = hit(mouseX, mouseY, cx, cy);
-		drawSector(graphics, cx, cy, StaffPieAction.WAREHOUSE, hover == StaffPieAction.WAREHOUSE, 0xCC3A6EA5);
-		drawSector(graphics, cx, cy, StaffPieAction.ZONE, hover == StaffPieAction.ZONE, 0xCC3D8B4A);
-		drawSector(graphics, cx, cy, StaffPieAction.SELECT, hover == StaffPieAction.SELECT, 0xCCB07A2E);
-		drawSector(graphics, cx, cy, StaffPieAction.IMPORT, hover == StaffPieAction.IMPORT, 0xCC8B5A9E);
-		drawSeparators(graphics, cx, cy);
-		drawIcon(graphics, cx, cy, StaffPieAction.WAREHOUSE, ICON_WAREHOUSE);
-		drawIcon(graphics, cx, cy, StaffPieAction.ZONE, ICON_ZONE);
-		drawIcon(graphics, cx, cy, StaffPieAction.SELECT, ICON_SELECT);
-		drawIcon(graphics, cx, cy, StaffPieAction.IMPORT, ICON_IMPORT);
+		Slice[] slices = slices();
+		Slice hover = hit(mouseX, mouseY, cx, cy, slices);
+		for (int i = 0; i < slices.length; i++) {
+			drawSector(graphics, cx, cy, i, slices.length, hover == slices[i], slices[i].color);
+		}
+		drawSeparators(graphics, cx, cy, slices.length);
+		for (int i = 0; i < slices.length; i++) {
+			drawIcon(graphics, cx, cy, i, slices.length, slices[i].icon);
+		}
 		graphics.drawCenteredString(font, title, cx, cy - RADIUS - 16, 0xFFECECEC);
-		graphics.drawCenteredString(
-				font,
-				Component.translatable("screen.refugee.staff.pie.hint"),
-				cx,
-				cy + RADIUS + 12,
-				0xFFAAAAAA
-		);
+		Component hoverName = hover == null
+				? Component.translatable("screen.refugee.staff.pie.hint")
+				: Component.translatable(hover.labelKey);
+		graphics.drawCenteredString(font, hoverName, cx, cy + RADIUS + 12, hover == null ? 0xFFAAAAAA : 0xFFECECEC);
 	}
 
 	@Override
 	public boolean mouseClicked(double mouseX, double mouseY, int button) {
 		if (button == 0) {
-			StaffPieAction action = hit(mouseX, mouseY, width / 2.0, height / 2.0);
+			Slice action = hit(mouseX, mouseY, width / 2.0, height / 2.0, slices());
 			if (action != null) {
-				ClientPlayNetworking.send(new StaffPiePayload(action));
+				ClientPlayNetworking.send(new StaffPiePayload(action.action));
 				onClose();
 				return true;
 			}
@@ -90,45 +127,42 @@ public class StaffPieScreen extends Screen {
 		return super.keyPressed(keyCode, scanCode, modifiers);
 	}
 
-	private void drawIcon(GuiGraphics graphics, int cx, int cy, StaffPieAction action, ItemStack stack) {
-		double[] range = sectorRange(action);
+	private void drawIcon(GuiGraphics graphics, int cx, int cy, int index, int count, ItemStack stack) {
+		double[] range = sectorRange(index, count);
 		double mid = (range[0] + range[1]) / 2.0;
 		int x = cx + (int) Math.round(Math.cos(mid) * RADIUS * 0.58);
 		int y = cy + (int) Math.round(Math.sin(mid) * RADIUS * 0.58);
 		graphics.renderFakeItem(stack, x - 8, y - 8);
 	}
 
-	private static StaffPieAction hit(double mouseX, double mouseY, double cx, double cy) {
+	private static Slice hit(double mouseX, double mouseY, double cx, double cy, Slice[] slices) {
 		double dx = mouseX - cx;
 		double dy = mouseY - cy;
 		double dist = Math.hypot(dx, dy);
 		if (dist < INNER || dist > RADIUS + 8) {
 			return null;
 		}
-		double angle = Math.toDegrees(Math.atan2(dy, dx));
-		if (angle >= -90.0 && angle < 0.0) {
-			return StaffPieAction.WAREHOUSE;
+		double angle = Math.atan2(dy, dx);
+		if (angle < -Math.PI / 2.0) {
+			angle += Math.PI * 2.0;
 		}
-		if (angle >= 0.0 && angle < 90.0) {
-			return StaffPieAction.ZONE;
+		double start = -Math.PI / 2.0;
+		double span = (Math.PI * 2.0) / slices.length;
+		int index = (int) Math.floor((angle - start) / span);
+		if (index < 0 || index >= slices.length) {
+			return null;
 		}
-		if (angle >= 90.0 && angle < 180.0) {
-			return StaffPieAction.SELECT;
-		}
-		return StaffPieAction.IMPORT;
+		return slices[index];
 	}
 
-	private static double[] sectorRange(StaffPieAction action) {
-		return switch (action) {
-			case WAREHOUSE -> new double[] { Math.toRadians(-90), Math.toRadians(0) };
-			case ZONE -> new double[] { Math.toRadians(0), Math.toRadians(90) };
-			case SELECT -> new double[] { Math.toRadians(90), Math.toRadians(180) };
-			case IMPORT -> new double[] { Math.toRadians(180), Math.toRadians(270) };
-		};
+	private static double[] sectorRange(int index, int count) {
+		double start = -Math.PI / 2.0 + (Math.PI * 2.0) * index / count;
+		double end = -Math.PI / 2.0 + (Math.PI * 2.0) * (index + 1) / count;
+		return new double[] { start, end };
 	}
 
-	private static void drawSector(GuiGraphics graphics, int cx, int cy, StaffPieAction action, boolean hover, int color) {
-		double[] range = sectorRange(action);
+	private static void drawSector(GuiGraphics graphics, int cx, int cy, int index, int count, boolean hover, int color) {
+		double[] range = sectorRange(index, count);
 		int argb = hover ? (0xF0000000 | (color & 0x00FFFFFF)) : color;
 		for (int i = 0; i <= 72; i++) {
 			double t = range[0] + (range[1] - range[0]) * i / 72.0;
@@ -142,10 +176,9 @@ public class StaffPieScreen extends Screen {
 		drawArc(graphics, cx, cy, INNER, range[0], range[1], argb);
 	}
 
-	private static void drawSeparators(GuiGraphics graphics, int cx, int cy) {
-		int[] degrees = { 0, 90, 180, 270 };
-		for (int deg : degrees) {
-			double t = Math.toRadians(deg);
+	private static void drawSeparators(GuiGraphics graphics, int cx, int cy, int count) {
+		for (int i = 0; i < count; i++) {
+			double t = -Math.PI / 2.0 + (Math.PI * 2.0) * i / count;
 			int x1 = cx + (int) Math.round(Math.cos(t) * INNER);
 			int y1 = cy + (int) Math.round(Math.sin(t) * INNER);
 			int x2 = cx + (int) Math.round(Math.cos(t) * RADIUS);
@@ -198,5 +231,8 @@ public class StaffPieScreen extends Screen {
 				y += sy;
 			}
 		}
+	}
+
+	private record Slice(StaffPieAction action, ItemStack icon, int color, String labelKey) {
 	}
 }

@@ -1,14 +1,17 @@
 package luowei.refugee.staff;
 
 /**
- * 指挥杖当前交互模式。
+ * 指挥杖当前交互模式。只追加，以免网络 ordinal 错位。
  */
 public enum StaffMode {
 	NONE,
 	WAREHOUSE,
 	ZONE,
 	BUILD,
-	IMPORT;
+	IMPORT,
+	FOLLOW_ENTITY,
+	PATROL,
+	FOOD_WAREHOUSE;
 
 	public static StaffMode byOrdinal(int ordinal) {
 		StaffMode[] values = values();

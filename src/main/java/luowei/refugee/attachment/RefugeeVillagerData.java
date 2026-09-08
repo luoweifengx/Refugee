@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.mojang.serialization.Codec;
+import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 
 import net.minecraft.core.BlockPos;
@@ -22,7 +23,13 @@ import luowei.refugee.special.RefugeeSpecialRole;
  * 挂在村民实体上的难民数据：所属玩家/组织、跟随、守卫中心、建造进度。
  */
 public final class RefugeeVillagerData {
-	public static final Codec<RefugeeVillagerData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+	private static final Codec<StationData> STATION_CODEC = RecordCodecBuilder.create(instance -> instance.group(
+			UUIDUtil.CODEC.optionalFieldOf("follow_entity").forGetter(StationData::followEntity),
+			BlockPos.CODEC.listOf().optionalFieldOf("patrol_points", List.of()).forGetter(StationData::patrolPoints),
+			Codec.INT.optionalFieldOf("patrol_index", 0).forGetter(StationData::patrolIndex)
+	).apply(instance, StationData::new));
+
+	private static final MapCodec<RefugeeVillagerData> BASE_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
 			UUIDUtil.CODEC.optionalFieldOf("subject").forGetter(data -> Optional.ofNullable(data.subjectId)),
 			UUIDUtil.CODEC.optionalFieldOf("follow_player").forGetter(data -> Optional.ofNullable(data.followPlayerId)),
 			Codec.BOOL.optionalFieldOf("following", false).forGetter(data -> data.following),
@@ -30,7 +37,7 @@ public final class RefugeeVillagerData {
 			BlockPos.CODEC.optionalFieldOf("container").forGetter(data -> Optional.ofNullable(data.containerPos)),
 			BlockPos.CODEC.optionalFieldOf("build_origin").forGetter(data -> Optional.ofNullable(data.buildOrigin)),
 			Codec.STRING.optionalFieldOf("structure_id", "").forGetter(data -> data.structureId == null ? "" : data.structureId.toString()),
-			ItemStack.OPTIONAL_CODEC.optionalFieldOf("blueprint", ItemStack.EMPTY).forGetter(data -> ItemStack.EMPTY),
+			STATION_CODEC.optionalFieldOf("station").forGetter(RefugeeVillagerData::stationData),
 			Codec.INT.optionalFieldOf("build_index", 0).forGetter(data -> data.buildIndex),
 			UUIDUtil.CODEC.optionalFieldOf("job_id").forGetter(data -> Optional.ofNullable(data.jobId)),
 			Codec.STRING.optionalFieldOf("role", "").forGetter(data -> data.role == null ? "" : data.role),
@@ -44,10 +51,21 @@ public final class RefugeeVillagerData {
 			ItemStack.OPTIONAL_CODEC.optionalFieldOf("eat_stash").forGetter(data -> Optional.empty())
 	).apply(instance, RefugeeVillagerData::fromCodec));
 
+	public static final Codec<RefugeeVillagerData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+			BASE_CODEC.forGetter(data -> data),
+			Codec.LONG.optionalFieldOf("last_depth_curse_tick", 0L).forGetter(data -> data.lastDepthCurseTick)
+	).apply(instance, (data, lastDepthCurseTick) -> {
+		data.lastDepthCurseTick = lastDepthCurseTick;
+		return data;
+	}));
+
 	private UUID subjectId;
 	private UUID followPlayerId;
 	private boolean following;
 	private BlockPos guardCenter;
+	private UUID followEntityId;
+	private final List<BlockPos> patrolPoints = new ArrayList<>();
+	private int patrolIndex;
 	private BlockPos containerPos;
 	private BlockPos buildOrigin;
 	private ResourceLocation structureId;
@@ -74,6 +92,7 @@ public final class RefugeeVillagerData {
 	private int eatCooldown;
 	private int mainAttackCooldown;
 	private int offAttackCooldown;
+	private long lastDepthCurseTick;
 
 	public RefugeeVillagerData() {
 	}
@@ -86,7 +105,7 @@ public final class RefugeeVillagerData {
 			Optional<BlockPos> container,
 			Optional<BlockPos> buildOrigin,
 			String structureId,
-			ItemStack ignoredBlueprint,
+			Optional<StationData> station,
 			int buildIndex,
 			Optional<UUID> jobId,
 			String role,
@@ -101,6 +120,9 @@ public final class RefugeeVillagerData {
 		data.followPlayerId = followPlayer.orElse(null);
 		data.following = following;
 		data.guardCenter = guardCenter.orElse(null);
+		if (station != null && station.isPresent()) {
+			station.get().applyTo(data);
+		}
 		data.containerPos = container.orElse(null);
 		data.buildOrigin = buildOrigin.orElse(null);
 		data.structureId = structureId == null || structureId.isBlank() ? null : ResourceLocation.tryParse(structureId);
@@ -145,6 +167,8 @@ public final class RefugeeVillagerData {
 		this.followPlayerId = playerId;
 		this.following = playerId != null;
 		this.guardCenter = null;
+		clearFollowEntity();
+		clearPatrol();
 	}
 
 	/** 清跟随并清空守卫中心（工人取消跟随、派工作区、派建筑）。 */
@@ -152,6 +176,8 @@ public final class RefugeeVillagerData {
 		this.following = false;
 		this.followPlayerId = null;
 		this.guardCenter = null;
+		clearFollowEntity();
+		clearPatrol();
 	}
 
 	/** 清跟随并写入守卫中心（仅剑/弓/弩守卫）。 */
@@ -159,6 +185,8 @@ public final class RefugeeVillagerData {
 		this.following = false;
 		this.followPlayerId = null;
 		this.guardCenter = newGuardCenter == null ? null : newGuardCenter.immutable();
+		clearFollowEntity();
+		clearPatrol();
 	}
 
 	public BlockPos guardCenter() {
@@ -167,6 +195,86 @@ public final class RefugeeVillagerData {
 
 	public void setGuardCenter(BlockPos guardCenter) {
 		this.guardCenter = guardCenter == null ? null : guardCenter.immutable();
+	}
+
+	public UUID followEntityId() {
+		return followEntityId;
+	}
+
+	public boolean isFollowingEntity() {
+		return followEntityId != null;
+	}
+
+	public void startFollowingEntity(UUID entityId) {
+		this.following = false;
+		this.followPlayerId = null;
+		this.guardCenter = null;
+		this.followEntityId = entityId;
+		clearPatrol();
+	}
+
+	public void clearFollowEntity() {
+		this.followEntityId = null;
+	}
+
+	public List<BlockPos> patrolPoints() {
+		return patrolPoints;
+	}
+
+	public int patrolIndex() {
+		return patrolIndex;
+	}
+
+	public boolean isPatrolling() {
+		return !patrolPoints.isEmpty();
+	}
+
+	public void startPatrol(List<BlockPos> points) {
+		this.following = false;
+		this.followPlayerId = null;
+		this.guardCenter = null;
+		clearFollowEntity();
+		patrolPoints.clear();
+		if (points != null) {
+			for (BlockPos point : points) {
+				if (point != null) {
+					patrolPoints.add(point.immutable());
+				}
+			}
+		}
+		this.patrolIndex = 0;
+	}
+
+	public void clearPatrol() {
+		patrolPoints.clear();
+		patrolIndex = 0;
+	}
+
+	public BlockPos currentPatrolPoint() {
+		if (patrolPoints.isEmpty()) {
+			return null;
+		}
+		int index = Math.floorMod(patrolIndex, patrolPoints.size());
+		return patrolPoints.get(index);
+	}
+
+	public void advancePatrolPoint() {
+		if (patrolPoints.isEmpty()) {
+			return;
+		}
+		patrolIndex = Math.floorMod(patrolIndex + 1, patrolPoints.size());
+	}
+
+	/**
+	 * 到达判定：选中点水平 5×5（切比雪夫距离 ≤ 2），高度 ±2。
+	 */
+	public static boolean reachedPatrolPoint(BlockPos villagerPos, BlockPos point) {
+		if (villagerPos == null || point == null) {
+			return false;
+		}
+		return Math.abs(villagerPos.getX() - point.getX()) <= 2
+				&& Math.abs(villagerPos.getZ() - point.getZ()) <= 2
+				&& Math.abs(villagerPos.getY() - point.getY()) <= 2;
 	}
 
 	public BlockPos containerPos() {
@@ -402,6 +510,14 @@ public final class RefugeeVillagerData {
 		this.eatCooldown = Math.max(0, eatCooldown);
 	}
 
+	public long lastDepthCurseTick() {
+		return lastDepthCurseTick;
+	}
+
+	public void setLastDepthCurseTick(long lastDepthCurseTick) {
+		this.lastDepthCurseTick = lastDepthCurseTick;
+	}
+
 	public int mainAttackCooldown() {
 		return mainAttackCooldown;
 	}
@@ -424,6 +540,32 @@ public final class RefugeeVillagerData {
 		}
 		if (offAttackCooldown > 0) {
 			offAttackCooldown--;
+		}
+	}
+
+	private Optional<StationData> stationData() {
+		if (followEntityId == null && patrolPoints.isEmpty()) {
+			return Optional.empty();
+		}
+		return Optional.of(new StationData(
+				Optional.ofNullable(followEntityId),
+				List.copyOf(patrolPoints),
+				patrolIndex
+		));
+	}
+
+	private record StationData(Optional<UUID> followEntity, List<BlockPos> patrolPoints, int patrolIndex) {
+		private void applyTo(RefugeeVillagerData data) {
+			data.followEntityId = followEntity == null ? null : followEntity.orElse(null);
+			data.patrolPoints.clear();
+			if (patrolPoints != null) {
+				for (BlockPos point : patrolPoints) {
+					if (point != null) {
+						data.patrolPoints.add(point.immutable());
+					}
+				}
+			}
+			data.patrolIndex = Math.max(0, patrolIndex);
 		}
 	}
 }

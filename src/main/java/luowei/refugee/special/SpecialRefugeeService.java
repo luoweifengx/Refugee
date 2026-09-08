@@ -23,10 +23,10 @@ import net.minecraft.world.level.ChunkPos;
 
 import luowei.refugee.Refugee;
 import luowei.refugee.attachment.PlayerSelectionData;
+import luowei.refugee.attachment.PlayerSelectionData.RosterEntry;
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.compat.FoodCompat;
-import luowei.refugee.interact.RosterService;
 import luowei.refugee.network.RefugeeNetworking;
 import luowei.refugee.network.SpecialSplashAction;
 import luowei.refugee.pbs.PbsAdapter;
@@ -58,7 +58,13 @@ public final class SpecialRefugeeService {
 		}
 		boolean empty = held == null || held.isEmpty();
 		return switch (role) {
-			case GUIDE, CARTOGRAPHER, ENCHANTER -> {
+			case GUIDE -> {
+				if (!empty) {
+					yield false;
+				}
+				yield GuideTutorialService.handleGuideInteract(player, villager);
+			}
+			case CARTOGRAPHER, ENCHANTER -> {
 				if (!empty) {
 					yield false;
 				}
@@ -101,6 +107,18 @@ public final class SpecialRefugeeService {
 
 	public static void handleSplashAction(ServerPlayer player, int entityId, SpecialSplashAction action) {
 		if (player == null || action == null || !(player.level() instanceof ServerLevel level)) {
+			return;
+		}
+		if (action == SpecialSplashAction.INTRO_ADVANCE
+				|| action == SpecialSplashAction.INTRO_FINISH
+				|| action == SpecialSplashAction.INTRO_INTERRUPT) {
+			switch (action) {
+				case INTRO_ADVANCE -> GuideTutorialService.onIntroAdvance(player, entityId);
+				case INTRO_FINISH -> GuideTutorialService.onIntroFinish(player, entityId);
+				case INTRO_INTERRUPT -> GuideTutorialService.onIntroInterrupt(player, entityId);
+				default -> {
+				}
+			}
 			return;
 		}
 		Entity entity = level.getEntity(entityId);
@@ -152,7 +170,26 @@ public final class SpecialRefugeeService {
 		if (!RefugeeSpecialRole.isSpecial(villager) || stack == null || stack.isEmpty()) {
 			return false;
 		}
-		return luowei.refugee.interact.RefugeeRoles.isGiveableTool(stack);
+		return luowei.refugee.interact.RefugeeRoles.isGiveableTool(stack)
+				|| luowei.refugee.item.ArmorKitItem.isKit(stack);
+	}
+
+	/**
+	 * 组织已有该角色时，把绑定抄给该玩家及在线成员。
+	 *
+	 * @return 组织里已经有这个角色（含刚共享的）
+	 */
+	public static boolean shareExistingSpecial(ServerPlayer player, RefugeeSpecialRole role) {
+		if (player == null || role == null) {
+			return false;
+		}
+		MinecraftServer server = player.level().getServer();
+		UUID subjectId = PbsAdapter.resolveSubject(player);
+		if (adoptOrgSpecial(server, subjectId, role)) {
+			return true;
+		}
+		PlayerSelectionData data = RefugeeAttachments.get(player);
+		return data.specialId(role) != null || data.isSpecialGranted(role);
 	}
 
 	/**
@@ -163,11 +200,18 @@ public final class SpecialRefugeeService {
 			return "none";
 		}
 		MinecraftServer server = level.getServer();
+		List<ServerPlayer> members = playersOfSubject(server, subjectId);
+		if (members.isEmpty()) {
+			return "none";
+		}
+		if (adoptOrgSpecial(server, subjectId, RefugeeSpecialRole.NURSE)
+				|| orgRoleTaken(server, subjectId, RefugeeSpecialRole.NURSE)) {
+			return "none";
+		}
 		String subjectName = PbsAdapter.displayName(server, subjectId);
 		boolean attempted = false;
-		boolean spawned = false;
 		boolean failed = false;
-		for (ServerPlayer player : playersOfSubject(server, subjectId)) {
+		for (ServerPlayer player : members) {
 			PlayerSelectionData data = RefugeeAttachments.get(player);
 			if (data.isNurseGranted() || data.nurseId() != null) {
 				continue;
@@ -181,7 +225,6 @@ public final class SpecialRefugeeService {
 			);
 			String playerName = player.getGameProfile().getName();
 			if (outcome.status() == TrySpawnResult.SPAWNED) {
-				spawned = true;
 				Refugee.LOGGER.debug(
 						"{} nurse result=spawned subject={} uuid={} player={} around={} pos={}",
 						IMMIGRATION_LOG_PREFIX,
@@ -191,23 +234,23 @@ public final class SpecialRefugeeService {
 						formatPos(around),
 						formatPos(outcome.feet())
 				);
-			} else {
-				failed = true;
-				if (nurseAttemptLoggedPlayers.add(player.getUUID())) {
-					Refugee.LOGGER.debug(
-							"{} nurse result=failed reason={} subject={} uuid={} player={} around={}",
-							IMMIGRATION_LOG_PREFIX,
-							outcome.status().reasonKey(),
-							subjectName == null || subjectName.isBlank() ? "-" : subjectName,
-							subjectId,
-							playerName,
-							formatPos(around)
-					);
-				}
+				return "nurse";
 			}
-		}
-		if (spawned) {
-			return "nurse";
+			if (outcome.status() == TrySpawnResult.SKIPPED) {
+				return "none";
+			}
+			failed = true;
+			if (nurseAttemptLoggedPlayers.add(player.getUUID())) {
+				Refugee.LOGGER.debug(
+						"{} nurse result=failed reason={} subject={} uuid={} player={} around={}",
+						IMMIGRATION_LOG_PREFIX,
+						outcome.status().reasonKey(),
+						subjectName == null || subjectName.isBlank() ? "-" : subjectName,
+						subjectId,
+						playerName,
+						formatPos(around)
+				);
+			}
 		}
 		if (attempted && failed) {
 			return "nurse_failed";
@@ -228,11 +271,18 @@ public final class SpecialRefugeeService {
 	}
 
 	/**
-	 * 指令强制生成：忽略入境解锁标记，但同角色已绑定且仍在名册时拒绝重复。
+	 * 指令强制生成：忽略入境解锁标记，但组织内同角色已存在时拒绝重复。
 	 */
 	public static CommandSpawnResult spawnForCommand(ServerPlayer player, RefugeeSpecialRole role) {
 		if (player == null || role == null || !(player.level() instanceof ServerLevel level)) {
 			return CommandSpawnResult.fail(CommandSpawnResult.Status.FAILED);
+		}
+		MinecraftServer server = level.getServer();
+		UUID subjectId = PbsAdapter.resolveSubject(player);
+		UUID orgExisting = findOrgSpecialId(server, subjectId, role);
+		if (orgExisting != null) {
+			shareSpecial(server, subjectId, role, orgExisting);
+			return CommandSpawnResult.fail(CommandSpawnResult.Status.ALREADY_HAS);
 		}
 		PlayerSelectionData data = RefugeeAttachments.get(player);
 		UUID existing = data.specialId(role);
@@ -292,13 +342,12 @@ public final class SpecialRefugeeService {
 		if (!level.addFreshEntity(villager)) {
 			return null;
 		}
-		PlayerSelectionData selection = RefugeeAttachments.get(player);
 		if (follow) {
+			PlayerSelectionData selection = RefugeeAttachments.get(player);
 			selection.addSelected(villager.getUUID());
+			RefugeeAttachments.markDirty(player, selection);
 		}
-		selection.addRoster(villager);
-		selection.bindSpecial(role, villager.getUUID());
-		RefugeeAttachments.markDirty(player, selection);
+		shareSpecial(level.getServer(), data.subjectId(), role, villager.getUUID());
 		return villager;
 	}
 
@@ -323,8 +372,24 @@ public final class SpecialRefugeeService {
 			data.setHadLapis(true);
 			RefugeeAttachments.markDirty(player, data);
 		}
+		adoptMissingOrgSpecials(player);
 		tryUnlockEnchanter(player);
 		tryUnlockCartographer(player);
+	}
+
+	private static void adoptMissingOrgSpecials(ServerPlayer player) {
+		if (player == null || !(player.level() instanceof ServerLevel)) {
+			return;
+		}
+		MinecraftServer server = player.level().getServer();
+		UUID subjectId = PbsAdapter.resolveSubject(player);
+		PlayerSelectionData data = RefugeeAttachments.get(player);
+		for (RefugeeSpecialRole role : RefugeeSpecialRole.values()) {
+			if (data.specialId(role) != null) {
+				continue;
+			}
+			adoptOrgSpecial(server, subjectId, role);
+		}
 	}
 
 	private static void tryUnlockEnchanter(ServerPlayer player) {
@@ -396,20 +461,16 @@ public final class SpecialRefugeeService {
 			BlockPos around,
 			String messageKey
 	) {
-		if (player == null || level == null) {
+		if (player == null || level == null || role == null) {
+			return TrySpawnOutcome.fail(TrySpawnResult.SKIPPED);
+		}
+		MinecraftServer server = level.getServer();
+		UUID subjectId = PbsAdapter.resolveSubject(player);
+		if (adoptOrgSpecial(server, subjectId, role) || orgRoleTaken(server, subjectId, role)) {
 			return TrySpawnOutcome.fail(TrySpawnResult.SKIPPED);
 		}
 		PlayerSelectionData data = RefugeeAttachments.get(player);
-		if (data.specialId(role) != null) {
-			return TrySpawnOutcome.fail(TrySpawnResult.SKIPPED);
-		}
-		if (role == RefugeeSpecialRole.NURSE && data.isNurseGranted()) {
-			return TrySpawnOutcome.fail(TrySpawnResult.SKIPPED);
-		}
-		if (role == RefugeeSpecialRole.CARTOGRAPHER && data.isCartographerGranted()) {
-			return TrySpawnOutcome.fail(TrySpawnResult.SKIPPED);
-		}
-		if (role == RefugeeSpecialRole.ENCHANTER && data.isEnchanterGranted()) {
+		if (data.specialId(role) != null || data.isSpecialGranted(role)) {
 			return TrySpawnOutcome.fail(TrySpawnResult.SKIPPED);
 		}
 		BlockPos preferred = around == null ? player.blockPosition() : around;
@@ -427,7 +488,7 @@ public final class SpecialRefugeeService {
 			villagerData.setGuardCenter(feet);
 			RefugeeAttachments.markDirty(villager, villagerData);
 		}
-		player.sendSystemMessage(Component.translatable(messageKey));
+		notifyMembers(server, subjectId, messageKey);
 		return new TrySpawnOutcome(TrySpawnResult.SPAWNED, feet);
 	}
 
@@ -488,5 +549,108 @@ public final class SpecialRefugeeService {
 			}
 		}
 		return result;
+	}
+
+	private static boolean adoptOrgSpecial(MinecraftServer server, UUID subjectId, RefugeeSpecialRole role) {
+		UUID existing = findOrgSpecialId(server, subjectId, role);
+		if (existing == null) {
+			return false;
+		}
+		shareSpecial(server, subjectId, role, existing);
+		return true;
+	}
+
+	private static boolean orgRoleTaken(MinecraftServer server, UUID subjectId, RefugeeSpecialRole role) {
+		if (findOrgSpecialId(server, subjectId, role) != null) {
+			return true;
+		}
+		for (ServerPlayer member : playersOfSubject(server, subjectId)) {
+			PlayerSelectionData data = RefugeeAttachments.get(member);
+			if (data.specialId(role) != null || data.isSpecialGranted(role)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static UUID findOrgSpecialId(MinecraftServer server, UUID subjectId, RefugeeSpecialRole role) {
+		if (server == null || subjectId == null || role == null) {
+			return null;
+		}
+		for (ServerPlayer member : playersOfSubject(server, subjectId)) {
+			UUID bound = RefugeeAttachments.get(member).specialId(role);
+			if (bound != null) {
+				return bound;
+			}
+		}
+		for (ServerLevel level : server.getAllLevels()) {
+			for (Entity entity : level.getAllEntities()) {
+				if (!(entity instanceof Villager villager) || !villager.isAlive()) {
+					continue;
+				}
+				if (!RefugeeSpecialRole.is(villager, role)) {
+					continue;
+				}
+				UUID villagerSubject = RefugeeAttachments.get(villager).subjectId();
+				if (subjectId.equals(villagerSubject)) {
+					return villager.getUUID();
+				}
+			}
+		}
+		return null;
+	}
+
+	private static void shareSpecial(MinecraftServer server, UUID subjectId, RefugeeSpecialRole role, UUID villagerId) {
+		if (server == null || subjectId == null || role == null || villagerId == null) {
+			return;
+		}
+		Villager loaded = findLoadedVillager(server, villagerId);
+		RosterEntry copied = null;
+		if (loaded == null) {
+			for (ServerPlayer member : playersOfSubject(server, subjectId)) {
+				for (RosterEntry entry : RefugeeAttachments.get(member).rosterEntries()) {
+					if (villagerId.equals(entry.villagerId())) {
+						copied = entry;
+						break;
+					}
+				}
+				if (copied != null) {
+					break;
+				}
+			}
+		}
+		for (ServerPlayer member : playersOfSubject(server, subjectId)) {
+			PlayerSelectionData data = RefugeeAttachments.get(member);
+			if (loaded != null) {
+				data.addRoster(loaded);
+			} else if (copied != null) {
+				data.addRoster(copied.villagerId(), copied.dimension(), copied.pos());
+			}
+			data.bindSpecial(role, villagerId);
+			RefugeeAttachments.markDirty(member, data);
+		}
+	}
+
+	private static Villager findLoadedVillager(MinecraftServer server, UUID villagerId) {
+		if (server == null || villagerId == null) {
+			return null;
+		}
+		for (ServerLevel level : server.getAllLevels()) {
+			Entity entity = level.getEntity(villagerId);
+			if (entity instanceof Villager villager && villager.isAlive()) {
+				return villager;
+			}
+		}
+		return null;
+	}
+
+	private static void notifyMembers(MinecraftServer server, UUID subjectId, String messageKey) {
+		if (server == null || subjectId == null || messageKey == null || messageKey.isBlank()) {
+			return;
+		}
+		Component message = Component.translatable(messageKey);
+		for (ServerPlayer player : playersOfSubject(server, subjectId)) {
+			player.sendSystemMessage(message);
+		}
 	}
 }

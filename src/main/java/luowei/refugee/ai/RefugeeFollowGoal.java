@@ -3,6 +3,8 @@ package luowei.refugee.ai;
 import java.util.EnumSet;
 
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.npc.Villager;
 
@@ -28,10 +30,13 @@ public class RefugeeFollowGoal extends Goal {
 
 	@Override
 	public boolean canUse() {
-		return RefugeeAttachments.get(villager).isFollowing()
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		return (data.isFollowing() || data.isFollowingEntity())
 				&& !villager.isBaby()
 				&& !RefugeeRoles.isGuard(villager)
-				&& !RefugeeCombat.isBusy(villager);
+				&& !RefugeeCombat.isBusy(villager)
+				&& !RefugeeCombat.isEating(villager)
+				&& !RefugeeCombat.hasHostilesInGuardRadius(villager);
 	}
 
 	@Override
@@ -41,24 +46,42 @@ public class RefugeeFollowGoal extends Goal {
 
 	@Override
 	public void tick() {
+		RefugeeSwim.tick(villager);
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		if (!(villager.level().getPlayerByUUID(data.followPlayerId()) instanceof ServerPlayer player) || !player.isAlive()) {
+		LivingEntity target = resolveTarget(data);
+		if (target == null) {
 			return;
 		}
-		villager.getLookControl().setLookAt(player, 10.0f, villager.getMaxHeadXRot());
-		double dist = villager.distanceTo(player);
+		villager.getLookControl().setLookAt(target, 10.0f, villager.getMaxHeadXRot());
+		double dist = villager.distanceTo(target);
 		boolean walking = dist > FOLLOW_STAY_DISTANCE;
 		if (walking) {
 			moveToCount++;
-			villager.getNavigation().moveTo(player, RefugeeConfig.followSpeed);
+			villager.getNavigation().moveTo(target, RefugeeConfig.followSpeed);
 		} else {
 			stopCount++;
 			villager.getNavigation().stop();
 		}
-		logFollow(player, dist, walking);
+		logFollow(target, dist, walking);
 	}
 
-	private void logFollow(ServerPlayer player, double dist, boolean walking) {
+	private LivingEntity resolveTarget(RefugeeVillagerData data) {
+		if (data.isFollowing()) {
+			if (villager.level().getPlayerByUUID(data.followPlayerId()) instanceof ServerPlayer player && player.isAlive()) {
+				return player;
+			}
+			return null;
+		}
+		if (data.isFollowingEntity() && villager.level() instanceof net.minecraft.server.level.ServerLevel level) {
+			Entity entity = level.getEntity(data.followEntityId());
+			if (entity instanceof LivingEntity living && living.isAlive() && living != villager) {
+				return living;
+			}
+		}
+		return null;
+	}
+
+	private void logFollow(LivingEntity target, double dist, boolean walking) {
 		if (!Refugee.LOGGER.isDebugEnabled()) {
 			return;
 		}
@@ -66,11 +89,14 @@ public class RefugeeFollowGoal extends Goal {
 			return;
 		}
 		lastLogTick = villager.tickCount;
+		String targetName = target instanceof ServerPlayer player
+				? player.getGameProfile().getName()
+				: target.getType().toShortString() + "/" + target.getUUID().toString().substring(0, 8);
 		Refugee.LOGGER.debug(
-				"[refugee follow] id={} pos={} player={} dist={} walking={} navDone={} moveTo={} stop={} interval={}",
+				"[refugee follow] id={} pos={} target={} dist={} walking={} navDone={} moveTo={} stop={} interval={}",
 				villager.getUUID().toString().substring(0, 8),
 				villager.blockPosition().toShortString(),
-				player.getGameProfile().getName(),
+				targetName,
 				String.format("%.2f", dist),
 				walking,
 				villager.getNavigation().isDone(),

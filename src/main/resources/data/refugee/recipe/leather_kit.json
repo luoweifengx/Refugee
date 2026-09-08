@@ -1,0 +1,19 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "equipment",
+	"ingredients": [
+		"#minecraft:logs",
+		"#minecraft:logs",
+		"#minecraft:logs",
+		"#minecraft:logs",
+		"#minecraft:logs",
+		"#minecraft:logs",
+		"#minecraft:logs",
+		"#minecraft:logs",
+		"#minecraft:logs"
+	],
+	"result": {
+		"count": 1,
+		"id": "refugee:leather_kit"
+	}
+}

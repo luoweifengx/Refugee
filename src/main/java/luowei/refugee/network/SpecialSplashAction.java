@@ -7,7 +7,10 @@ public enum SpecialSplashAction {
 	TALK,
 	HEAL,
 	MAP,
-	TRADE;
+	TRADE,
+	INTRO_ADVANCE,
+	INTRO_FINISH,
+	INTRO_INTERRUPT;
 
 	public static SpecialSplashAction byId(int id) {
 		SpecialSplashAction[] values = values();

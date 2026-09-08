@@ -205,7 +205,7 @@ public final class StaffClientNav {
 			return;
 		}
 		Screen screen = client.screen;
-		if (page != StaffPage.PIE && screen instanceof StaffPieScreen) {
+		if (!page.isPie() && screen instanceof StaffPieScreen) {
 			client.setScreen(null);
 		}
 		if (page != StaffPage.BUILD_CATALOG && screen instanceof BlueprintSelectScreen) {

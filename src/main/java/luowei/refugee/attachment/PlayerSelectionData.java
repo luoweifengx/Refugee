@@ -34,14 +34,10 @@ public final class PlayerSelectionData {
 			UUIDUtil.CODEC.listOf().optionalFieldOf("pending_kill", List.of()).forGetter(data -> List.copyOf(data.pendingKills)),
 			Codec.BOOL.optionalFieldOf("starter_granted", false).forGetter(data -> data.starterGranted),
 			Codec.BOOL.optionalFieldOf("defeated", false).forGetter(data -> data.defeated),
-			UUIDUtil.CODEC.optionalFieldOf("guide").forGetter(data -> Optional.ofNullable(data.guideId)),
-			UUIDUtil.CODEC.optionalFieldOf("nurse").forGetter(data -> Optional.ofNullable(data.nurseId)),
-			UUIDUtil.CODEC.optionalFieldOf("cartographer").forGetter(data -> Optional.ofNullable(data.cartographerId)),
-			UUIDUtil.CODEC.optionalFieldOf("enchanter").forGetter(data -> Optional.ofNullable(data.enchanterId)),
-			Codec.BOOL.optionalFieldOf("had_lapis", false).forGetter(data -> data.hadLapis),
-			Codec.BOOL.optionalFieldOf("nurse_granted", false).forGetter(data -> data.nurseGranted),
-			Codec.BOOL.optionalFieldOf("cartographer_granted", false).forGetter(data -> data.cartographerGranted),
-			Codec.BOOL.optionalFieldOf("enchanter_granted", false).forGetter(data -> data.enchanterGranted)
+			SpecialBindings.CODEC.optionalFieldOf("special_bindings", SpecialBindings.EMPTY)
+					.forGetter(data -> SpecialBindings.from(data)),
+			GuideIntroState.CODEC.optionalFieldOf("guide_intro", GuideIntroState.EMPTY)
+					.forGetter(data -> GuideIntroState.from(data))
 	).apply(instance, PlayerSelectionData::fromCodec));
 
 	private BlockPos containerPos;
@@ -60,6 +56,13 @@ public final class PlayerSelectionData {
 	private boolean nurseGranted;
 	private boolean cartographerGranted;
 	private boolean enchanterGranted;
+	private boolean guideIntroDone;
+	private int guideIntroStep;
+	private boolean guideStaffGranted;
+	private int guideInterruptCount;
+	private long guideSilentUntil;
+	private long guideIntroEligibleAt;
+	private boolean guideIntroOpen;
 
 	public PlayerSelectionData() {
 	}
@@ -73,14 +76,8 @@ public final class PlayerSelectionData {
 			List<UUID> pendingKill,
 			boolean starterGranted,
 			boolean defeated,
-			Optional<UUID> guide,
-			Optional<UUID> nurse,
-			Optional<UUID> cartographer,
-			Optional<UUID> enchanter,
-			boolean hadLapis,
-			boolean nurseGranted,
-			boolean cartographerGranted,
-			boolean enchanterGranted
+			SpecialBindings specialBindings,
+			GuideIntroState guideIntro
 	) {
 		PlayerSelectionData data = new PlayerSelectionData();
 		data.containerPos = container.orElse(null);
@@ -95,14 +92,12 @@ public final class PlayerSelectionData {
 		data.pendingKills.addAll(pendingKill);
 		data.starterGranted = starterGranted;
 		data.defeated = defeated;
-		data.guideId = guide.orElse(null);
-		data.nurseId = nurse.orElse(null);
-		data.cartographerId = cartographer.orElse(null);
-		data.enchanterId = enchanter.orElse(null);
-		data.hadLapis = hadLapis;
-		data.nurseGranted = nurseGranted;
-		data.cartographerGranted = cartographerGranted;
-		data.enchanterGranted = enchanterGranted;
+		if (specialBindings != null) {
+			specialBindings.applyTo(data);
+		}
+		if (guideIntro != null) {
+			guideIntro.applyTo(data);
+		}
 		return data;
 	}
 
@@ -336,6 +331,74 @@ public final class PlayerSelectionData {
 		return enchanterGranted;
 	}
 
+	public boolean isGuideIntroDone() {
+		return guideIntroDone;
+	}
+
+	public void setGuideIntroDone(boolean guideIntroDone) {
+		this.guideIntroDone = guideIntroDone;
+	}
+
+	public int guideIntroStep() {
+		return guideIntroStep;
+	}
+
+	public void setGuideIntroStep(int guideIntroStep) {
+		this.guideIntroStep = Math.max(0, guideIntroStep);
+	}
+
+	public boolean isGuideStaffGranted() {
+		return guideStaffGranted;
+	}
+
+	public void setGuideStaffGranted(boolean guideStaffGranted) {
+		this.guideStaffGranted = guideStaffGranted;
+	}
+
+	public int guideInterruptCount() {
+		return guideInterruptCount;
+	}
+
+	public void setGuideInterruptCount(int guideInterruptCount) {
+		this.guideInterruptCount = Math.max(0, guideInterruptCount);
+	}
+
+	public long guideSilentUntil() {
+		return guideSilentUntil;
+	}
+
+	public void setGuideSilentUntil(long guideSilentUntil) {
+		this.guideSilentUntil = guideSilentUntil;
+	}
+
+	public long guideIntroEligibleAt() {
+		return guideIntroEligibleAt;
+	}
+
+	public void setGuideIntroEligibleAt(long guideIntroEligibleAt) {
+		this.guideIntroEligibleAt = guideIntroEligibleAt;
+	}
+
+	public boolean isGuideIntroOpen() {
+		return guideIntroOpen;
+	}
+
+	public void setGuideIntroOpen(boolean guideIntroOpen) {
+		this.guideIntroOpen = guideIntroOpen;
+	}
+
+	public boolean isSpecialGranted(RefugeeSpecialRole role) {
+		if (role == null) {
+			return false;
+		}
+		return switch (role) {
+			case GUIDE -> false;
+			case NURSE -> nurseGranted;
+			case CARTOGRAPHER -> cartographerGranted;
+			case ENCHANTER -> enchanterGranted;
+		};
+	}
+
 	public UUID specialId(RefugeeSpecialRole role) {
 		if (role == null) {
 			return null;
@@ -450,6 +513,209 @@ public final class PlayerSelectionData {
 			n++;
 		}
 		return n;
+	}
+
+	/**
+	 * 特殊难民绑定与解锁标记（嵌套序列化，避免 RecordCodecBuilder 16 字段上限）。
+	 */
+	public static final class SpecialBindings {
+		public static final SpecialBindings EMPTY = new SpecialBindings(
+				Optional.empty(),
+				Optional.empty(),
+				Optional.empty(),
+				Optional.empty(),
+				false,
+				false,
+				false,
+				false
+		);
+		public static final Codec<SpecialBindings> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+				UUIDUtil.CODEC.optionalFieldOf("guide").forGetter(SpecialBindings::guide),
+				UUIDUtil.CODEC.optionalFieldOf("nurse").forGetter(SpecialBindings::nurse),
+				UUIDUtil.CODEC.optionalFieldOf("cartographer").forGetter(SpecialBindings::cartographer),
+				UUIDUtil.CODEC.optionalFieldOf("enchanter").forGetter(SpecialBindings::enchanter),
+				Codec.BOOL.optionalFieldOf("had_lapis", false).forGetter(SpecialBindings::hadLapis),
+				Codec.BOOL.optionalFieldOf("nurse_granted", false).forGetter(SpecialBindings::nurseGranted),
+				Codec.BOOL.optionalFieldOf("cartographer_granted", false).forGetter(SpecialBindings::cartographerGranted),
+				Codec.BOOL.optionalFieldOf("enchanter_granted", false).forGetter(SpecialBindings::enchanterGranted)
+		).apply(instance, SpecialBindings::new));
+
+		private final Optional<UUID> guide;
+		private final Optional<UUID> nurse;
+		private final Optional<UUID> cartographer;
+		private final Optional<UUID> enchanter;
+		private final boolean hadLapis;
+		private final boolean nurseGranted;
+		private final boolean cartographerGranted;
+		private final boolean enchanterGranted;
+
+		private SpecialBindings(
+				Optional<UUID> guide,
+				Optional<UUID> nurse,
+				Optional<UUID> cartographer,
+				Optional<UUID> enchanter,
+				boolean hadLapis,
+				boolean nurseGranted,
+				boolean cartographerGranted,
+				boolean enchanterGranted
+		) {
+			this.guide = guide;
+			this.nurse = nurse;
+			this.cartographer = cartographer;
+			this.enchanter = enchanter;
+			this.hadLapis = hadLapis;
+			this.nurseGranted = nurseGranted;
+			this.cartographerGranted = cartographerGranted;
+			this.enchanterGranted = enchanterGranted;
+		}
+
+		private static SpecialBindings from(PlayerSelectionData data) {
+			return new SpecialBindings(
+					Optional.ofNullable(data.guideId),
+					Optional.ofNullable(data.nurseId),
+					Optional.ofNullable(data.cartographerId),
+					Optional.ofNullable(data.enchanterId),
+					data.hadLapis,
+					data.nurseGranted,
+					data.cartographerGranted,
+					data.enchanterGranted
+			);
+		}
+
+		private void applyTo(PlayerSelectionData data) {
+			data.guideId = guide.orElse(null);
+			data.nurseId = nurse.orElse(null);
+			data.cartographerId = cartographer.orElse(null);
+			data.enchanterId = enchanter.orElse(null);
+			data.hadLapis = hadLapis;
+			data.nurseGranted = nurseGranted;
+			data.cartographerGranted = cartographerGranted;
+			data.enchanterGranted = enchanterGranted;
+		}
+
+		private Optional<UUID> guide() {
+			return guide;
+		}
+
+		private Optional<UUID> nurse() {
+			return nurse;
+		}
+
+		private Optional<UUID> cartographer() {
+			return cartographer;
+		}
+
+		private Optional<UUID> enchanter() {
+			return enchanter;
+		}
+
+		private boolean hadLapis() {
+			return hadLapis;
+		}
+
+		private boolean nurseGranted() {
+			return nurseGranted;
+		}
+
+		private boolean cartographerGranted() {
+			return cartographerGranted;
+		}
+
+		private boolean enchanterGranted() {
+			return enchanterGranted;
+		}
+	}
+
+	/**
+	 * 向导开场教程状态（嵌套序列化）。
+	 */
+	public static final class GuideIntroState {
+		public static final GuideIntroState EMPTY = new GuideIntroState(false, 0, false, 0, 0L, 0L, false);
+		public static final Codec<GuideIntroState> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+				Codec.BOOL.optionalFieldOf("done", false).forGetter(GuideIntroState::done),
+				Codec.INT.optionalFieldOf("step", 0).forGetter(GuideIntroState::step),
+				Codec.BOOL.optionalFieldOf("staff_granted", false).forGetter(GuideIntroState::staffGranted),
+				Codec.INT.optionalFieldOf("interrupt_count", 0).forGetter(GuideIntroState::interruptCount),
+				Codec.LONG.optionalFieldOf("silent_until", 0L).forGetter(GuideIntroState::silentUntil),
+				Codec.LONG.optionalFieldOf("eligible_at", 0L).forGetter(GuideIntroState::eligibleAt),
+				Codec.BOOL.optionalFieldOf("open", false).forGetter(GuideIntroState::open)
+		).apply(instance, GuideIntroState::new));
+
+		private final boolean done;
+		private final int step;
+		private final boolean staffGranted;
+		private final int interruptCount;
+		private final long silentUntil;
+		private final long eligibleAt;
+		private final boolean open;
+
+		private GuideIntroState(
+				boolean done,
+				int step,
+				boolean staffGranted,
+				int interruptCount,
+				long silentUntil,
+				long eligibleAt,
+				boolean open
+		) {
+			this.done = done;
+			this.step = step;
+			this.staffGranted = staffGranted;
+			this.interruptCount = interruptCount;
+			this.silentUntil = silentUntil;
+			this.eligibleAt = eligibleAt;
+			this.open = open;
+		}
+
+		private static GuideIntroState from(PlayerSelectionData data) {
+			return new GuideIntroState(
+					data.guideIntroDone,
+					data.guideIntroStep,
+					data.guideStaffGranted,
+					data.guideInterruptCount,
+					data.guideSilentUntil,
+					data.guideIntroEligibleAt,
+					data.guideIntroOpen
+			);
+		}
+
+		private void applyTo(PlayerSelectionData data) {
+			data.guideIntroDone = done;
+			data.guideIntroStep = Math.max(0, step);
+			data.guideStaffGranted = staffGranted;
+			data.guideInterruptCount = Math.max(0, interruptCount);
+			data.guideSilentUntil = silentUntil;
+			data.guideIntroEligibleAt = eligibleAt;
+			data.guideIntroOpen = open;
+		}
+
+		private boolean done() {
+			return done;
+		}
+
+		private int step() {
+			return step;
+		}
+
+		private boolean staffGranted() {
+			return staffGranted;
+		}
+
+		private int interruptCount() {
+			return interruptCount;
+		}
+
+		private long silentUntil() {
+			return silentUntil;
+		}
+
+		private long eligibleAt() {
+			return eligibleAt;
+		}
+
+		private boolean open() {
+			return open;
+		}
 	}
 
 	/**

@@ -2,9 +2,7 @@ package luowei.refugee.spawn;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -24,20 +22,19 @@ import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.config.RefugeeConfig;
 import luowei.refugee.config.RefugeeConfig.ImmigrationTier;
+import luowei.refugee.config.RefugeePlayDifficulty;
 import luowei.refugee.interact.RosterService;
 import luowei.refugee.pbs.PbsAdapter;
 import luowei.refugee.settle.StandableFinder;
 import luowei.refugee.special.SpecialRefugeeService;
 
 /**
- * 黎明按持有区块定当日配额，白天每 {@link RefugeeConfig#immigrationIntervalTicks}
- * 在白名单维度滴入 1 人。指令 force 跳过白天与 P日，仍仅在白名单维度生效。
+ * 每 {@link RefugeeConfig#immigrationIntervalTicks} 游戏刻、且仅在白天（dayTime 0–12000）按占领区块抽一次。
+ * 中了后在档位人数区间抽取，再乘难度并向上取整。指令 force 跳过抽签与白天限制，仍仅在白名单维度生效。
  */
 public final class RefugeeImmigration {
 	private static final String LOG_PREFIX = "[refugee immigration]";
-	private static final Map<UUID, Long> quotaDayBySubject = new HashMap<>();
-	private static final Map<UUID, Integer> remainingQuotaBySubject = new HashMap<>();
-	private static final Map<UUID, Integer> dailyQuotaBySubject = new HashMap<>();
+	private static final long DAYTIME_END = 12000L;
 
 	private RefugeeImmigration() {
 	}
@@ -48,7 +45,31 @@ public final class RefugeeImmigration {
 
 	private static void onServerTick(MinecraftServer server) {
 		int interval = RefugeeConfig.immigrationIntervalTicks;
-		if (interval <= 0 || server.getTickCount() % interval != 0) {
+		if (interval <= 0) {
+			return;
+		}
+		boolean intervalTick = false;
+		ServerLevel slotLevel = null;
+		for (ServerLevel level : server.getAllLevels()) {
+			if (!RefugeeConfig.isImmigrationDimension(level)) {
+				continue;
+			}
+			if (level.getGameTime() % interval != 0) {
+				continue;
+			}
+			intervalTick = true;
+			if (isDaytime(level)) {
+				slotLevel = level;
+				break;
+			}
+		}
+		if (slotLevel == null) {
+			if (intervalTick) {
+				ServerLevel probe = server.overworld();
+				log("interval skipped=night serverTick=" + server.getTickCount()
+						+ " intervalTicks=" + interval
+						+ (probe == null ? "" : " " + timeCtx(probe)));
+			}
 			return;
 		}
 		List<UUID> subjects = PbsAdapter.pollEntities(server);
@@ -60,33 +81,33 @@ public final class RefugeeImmigration {
 		}
 		log("interval serverTick=" + server.getTickCount()
 				+ " intervalTicks=" + interval
+				+ " " + timeCtx(slotLevel)
 				+ " subjects=" + subjectCount
 				+ (subjectCount == 0 ? " skipped=no_subjects" : ""));
 		for (UUID subjectId : subjects) {
 			if (subjectId == null) {
 				continue;
 			}
-			dripSubject(server, subjectId);
+			tickSubject(server, subjectId);
 		}
 	}
 
-	private static void dripSubject(MinecraftServer server, UUID subjectId) {
+	private static void tickSubject(MinecraftServer server, UUID subjectId) {
 		boolean sawWhitelist = false;
 		for (ServerLevel level : server.getAllLevels()) {
 			if (!RefugeeConfig.isImmigrationDimension(level)) {
 				continue;
 			}
 			sawWhitelist = true;
-			if (!level.isBrightOutside()) {
-				logSkip(level, subjectId, false, "not_daytime", "isBrightOutside=false");
-				continue;
-			}
 			ImmigrationResult result = tryImmigrate(level, subjectId, false);
 			if (result.status() == ImmigrationResult.Status.SUCCESS) {
 				return;
 			}
 			if (result.status() == ImmigrationResult.Status.SKIPPED_CHANCE) {
 				return;
+			}
+			if (result.status() == ImmigrationResult.Status.SKIPPED_NIGHT) {
+				continue;
 			}
 		}
 		if (!sawWhitelist) {
@@ -97,7 +118,7 @@ public final class RefugeeImmigration {
 	}
 
 	/**
-	 * @param force 为 true 时跳过白天与当日 P日配额，立即尝试刷 1 人（指令用）
+	 * @param force 为 true 时跳过抽签，立即尝试刷 1 人（指令用）
 	 */
 	public static ImmigrationResult tryImmigrate(ServerLevel level, UUID subjectId, boolean force) {
 		if (level == null || subjectId == null) {
@@ -111,94 +132,69 @@ public final class RefugeeImmigration {
 					"whitelist=" + whitelistText());
 			return ImmigrationResult.fail(ImmigrationResult.Status.SKIPPED_DIMENSION);
 		}
+		if (!force && !isDaytime(level)) {
+			logSkip(level, subjectId, false, "night", timeCtx(level));
+			return ImmigrationResult.fail(ImmigrationResult.Status.SKIPPED_NIGHT);
+		}
+		int wanted = 1;
 		if (force) {
-			log("check force=true skipDay=true skipPDay=true " + subjectCtx(level.getServer(), subjectId)
+			log("check force=true skipChance=true " + subjectCtx(level.getServer(), subjectId)
 					+ " " + timeCtx(level));
 		} else {
-			if (!level.isBrightOutside()) {
-				logSkip(level, subjectId, false, "not_daytime", "isBrightOutside=false");
+			int owned = PbsAdapter.territoryCounts(level, subjectId).owned();
+			ImmigrationTier tier = RefugeeConfig.immigrationTier(owned);
+			double chance = tier == null ? 0.0 : tier.chance();
+			double roll = level.random.nextDouble();
+			boolean hit = chance > 0.0 && roll < chance;
+			log("roll " + subjectCtx(level.getServer(), subjectId)
+					+ " " + timeCtx(level)
+					+ " owned=" + owned
+					+ " " + formatTier(tier)
+					+ " roll=" + roll
+					+ " chance=" + chance
+					+ " hit=" + hit);
+			if (!hit) {
+				logSkip(level, subjectId, false, "chance_miss",
+						"owned=" + owned + " " + formatTier(tier) + " roll=" + roll + " chance=" + chance);
 				return ImmigrationResult.fail(ImmigrationResult.Status.SKIPPED_CHANCE);
 			}
-			ensureDailyQuota(level, subjectId);
-			int remaining = remainingQuotaBySubject.getOrDefault(subjectId, 0);
-			int dailyQuota = dailyQuotaBySubject.getOrDefault(subjectId, 0);
-			if (remaining <= 0) {
-				String reason = dailyQuota <= 0 ? "quota_miss" : "quota_exhausted";
-				logSkip(level, subjectId, false, reason,
-						"remaining=" + remaining + " dailyQuota=" + dailyQuota);
+			RefugeePlayDifficulty difficulty = RefugeePlayDifficulty.of(level);
+			int minCount = tier == null ? 1 : tier.minCount();
+			int maxCount = tier == null ? 1 : tier.maxCount();
+			wanted = difficulty.rollArrivalCount(level.random, minCount, maxCount);
+			log("arrival " + subjectCtx(level.getServer(), subjectId)
+					+ " " + formatTier(tier)
+					+ " difficulty=" + difficulty.name()
+					+ " multiplier=" + difficulty.arrivalMultiplier()
+					+ " wanted=" + wanted);
+			if (wanted <= 0) {
+				logSkip(level, subjectId, false, "arrival_zero", formatTier(tier));
 				return ImmigrationResult.fail(ImmigrationResult.Status.SKIPPED_CHANCE);
 			}
 		}
-		int remainingBefore = remainingQuotaBySubject.getOrDefault(subjectId, 0);
-		int dailyQuota = dailyQuotaBySubject.getOrDefault(subjectId, remainingBefore);
-		ImmigrationResult spawned = spawnFromLoadedCandidates(level, subjectId, force);
+		ImmigrationResult spawned = spawnFromLoadedCandidates(level, subjectId, force, wanted);
 		if (spawned.status() == ImmigrationResult.Status.SUCCESS) {
-			int remainingAfter = remainingBefore;
-			if (!force) {
-				remainingAfter = Math.max(0, remainingBefore - 1);
-				remainingQuotaBySubject.put(subjectId, remainingAfter);
-			}
-			int dripIndex = (!force && dailyQuota > 0) ? (dailyQuota - remainingBefore + 1) : 0;
 			log("spawn " + subjectCtx(level.getServer(), subjectId)
 					+ " " + timeCtx(level)
 					+ " chunk=" + formatChunk(spawned.chunk())
 					+ " pos=" + formatPos(spawned.pos())
-					+ " dailyQuota=" + dailyQuota
-					+ " remainingBefore=" + remainingBefore
-					+ " remainingAfter=" + remainingAfter
-					+ " drip=" + (force ? "force" : dripIndex + "/" + dailyQuota)
+					+ " wanted=" + wanted
+					+ " spawned=" + spawned.count()
 					+ " force=" + force
 					+ " specialNpc=" + spawned.specialNpc());
 		}
 		return spawned;
 	}
 
-	private static void ensureDailyQuota(ServerLevel level, UUID subjectId) {
-		long dayId = Math.floorDiv(level.getDayTime(), 24000L);
-		Long rolledDay = quotaDayBySubject.get(subjectId);
-		if (rolledDay != null && rolledDay == dayId) {
-			int remaining = remainingQuotaBySubject.getOrDefault(subjectId, 0);
-			if (remaining > 0) {
-				log("quota-existing " + subjectCtx(level.getServer(), subjectId)
-						+ " " + timeCtx(level)
-						+ " remaining=" + remaining
-						+ " dailyQuota=" + dailyQuotaBySubject.getOrDefault(subjectId, 0));
-			}
-			return;
-		}
-		int owned = PbsAdapter.territoryCounts(level, subjectId).owned();
-		ImmigrationTier tier = RefugeeConfig.immigrationTier(owned);
-		double roll = level.random.nextDouble();
-		double pDay = tier == null ? 0.0 : tier.dayChance();
-		boolean hit = tier != null && pDay > 0.0 && roll < pDay;
-		int quota = hit ? rollCount(tier, level) : 0;
-		quotaDayBySubject.put(subjectId, dayId);
-		remainingQuotaBySubject.put(subjectId, quota);
-		dailyQuotaBySubject.put(subjectId, quota);
-		log("quota-roll " + subjectCtx(level.getServer(), subjectId)
-				+ " " + timeCtx(level)
-				+ " owned=" + owned
-				+ " " + formatTier(tier)
-				+ " roll=" + roll
-				+ " pDay=" + pDay
-				+ " hit=" + hit
-				+ " quota=" + quota);
-	}
-
-	private static int rollCount(ImmigrationTier tier, ServerLevel level) {
-		int min = Math.min(tier.minCount(), tier.maxCount());
-		int max = Math.max(tier.minCount(), tier.maxCount());
-		if (max <= min) {
-			return Math.max(0, min);
-		}
-		return min + level.random.nextInt(max - min + 1);
-	}
-
-	private static ImmigrationResult spawnFromLoadedCandidates(ServerLevel level, UUID subjectId, boolean force) {
-		String quotaExtra = quotaExtra(subjectId);
+	private static ImmigrationResult spawnFromLoadedCandidates(
+			ServerLevel level,
+			UUID subjectId,
+			boolean force,
+			int wanted
+	) {
 		List<ChunkPos> candidates = new ArrayList<>(PbsAdapter.immigrationChunks(level, subjectId));
 		if (candidates.isEmpty()) {
-			logSkip(level, subjectId, force, "no_territory", "candidates=0 " + quotaExtra);
+			logSkip(level, subjectId, force, "no_territory", "candidates=0 wanted=" + wanted);
 			return ImmigrationResult.fail(ImmigrationResult.Status.NO_TERRITORY);
 		}
 		candidates = shuffled(candidates, level);
@@ -210,7 +206,7 @@ public final class RefugeeImmigration {
 				continue;
 			}
 			loaded++;
-			ImmigrationResult spawned = spawnInChunk(level, subjectId, chunk, force);
+			ImmigrationResult spawned = spawnInChunk(level, subjectId, chunk, force, wanted);
 			if (spawned.status() == ImmigrationResult.Status.SUCCESS) {
 				return spawned;
 			}
@@ -220,11 +216,11 @@ public final class RefugeeImmigration {
 		}
 		if (loaded == 0) {
 			logSkip(level, subjectId, force, "chunk_unloaded",
-					"candidates=" + candidates.size() + " tried=" + unloaded + " allUnloaded=true " + quotaExtra);
+					"candidates=" + candidates.size() + " tried=" + unloaded + " allUnloaded=true wanted=" + wanted);
 			return ImmigrationResult.fail(ImmigrationResult.Status.CHUNK_UNLOADED);
 		}
 		logSkip(level, subjectId, force, "no_standable",
-				"candidates=" + candidates.size() + " loaded=" + loaded + " unloaded=" + unloaded + " " + quotaExtra);
+				"candidates=" + candidates.size() + " loaded=" + loaded + " unloaded=" + unloaded + " wanted=" + wanted);
 		return ImmigrationResult.fail(ImmigrationResult.Status.NO_STANDABLE);
 	}
 
@@ -236,26 +232,55 @@ public final class RefugeeImmigration {
 		return copy;
 	}
 
-	private static ImmigrationResult spawnInChunk(ServerLevel level, UUID subjectId, ChunkPos chunk, boolean force) {
-		BlockPos feet = StandableFinder.findInChunk(level, chunk, null);
-		if (feet == null) {
+	private static ImmigrationResult spawnInChunk(
+			ServerLevel level,
+			UUID subjectId,
+			ChunkPos chunk,
+			boolean force,
+			int wanted
+	) {
+		List<BlockPos> spots = StandableFinder.findInChunk(level, chunk, null, Math.max(1, wanted));
+		if (spots.isEmpty()) {
 			return ImmigrationResult.fail(ImmigrationResult.Status.NO_STANDABLE);
 		}
+		Villager first = null;
+		BlockPos firstFeet = null;
+		int spawned = 0;
+		for (BlockPos feet : spots) {
+			Villager villager = spawnOne(level, subjectId, feet);
+			if (villager == null) {
+				if (spawned == 0) {
+					logSkip(level, subjectId, force, "create_failed",
+							"chunk=" + formatChunk(chunk) + " pos=" + formatPos(feet) + " wanted=" + wanted);
+					return ImmigrationResult.fail(ImmigrationResult.Status.CREATE_FAILED);
+				}
+				break;
+			}
+			if (first == null) {
+				first = villager;
+				firstFeet = feet;
+			}
+			spawned++;
+		}
+		notifyArrival(level.getServer(), subjectId, spawned);
+		String specialNpc = SpecialRefugeeService.onImmigrationSuccess(level, subjectId, firstFeet);
+		return new ImmigrationResult(ImmigrationResult.Status.SUCCESS, first, firstFeet, chunk, specialNpc, spawned);
+	}
+
+	private static Villager spawnOne(ServerLevel level, UUID subjectId, BlockPos feet) {
 		Villager villager = EntityType.VILLAGER.create(level, EntitySpawnReason.MOB_SUMMONED);
 		if (villager == null) {
-			logSkip(level, subjectId, force, "create_failed",
-					"chunk=" + formatChunk(chunk) + " pos=" + formatPos(feet) + " " + quotaExtra(subjectId));
-			return ImmigrationResult.fail(ImmigrationResult.Status.CREATE_FAILED);
+			return null;
 		}
 		StandableFinder.snapToStandable(villager, level, feet, level.random.nextFloat() * 360.0f, 0.0f);
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		data.setSubjectId(subjectId);
 		RefugeeAttachments.markDirty(villager, data);
-		level.addFreshEntity(villager);
+		if (!level.addFreshEntity(villager)) {
+			return null;
+		}
 		RosterService.registerOwnedIfPlayer(level.getServer(), subjectId, villager);
-		notifyArrival(level.getServer(), subjectId, 1);
-		String specialNpc = SpecialRefugeeService.onImmigrationSuccess(level, subjectId, feet);
-		return new ImmigrationResult(ImmigrationResult.Status.SUCCESS, villager, feet, chunk, specialNpc);
+		return villager;
 	}
 
 	private static void notifyArrival(MinecraftServer server, UUID subjectId, int count) {
@@ -326,20 +351,19 @@ public final class RefugeeImmigration {
 		return names.isEmpty() ? "-" : String.join(",", names);
 	}
 
+	private static boolean isDaytime(ServerLevel level) {
+		return Math.floorMod(level.getDayTime(), 24000L) < DAYTIME_END;
+	}
+
 	private static String formatTier(ImmigrationTier tier) {
 		if (tier == null) {
-			return "tier=none maxOwned=- dayChance=- minCount=- maxCount=-";
+			return "tier=none maxOwned=- chance=- minCount=- maxCount=-";
 		}
 		String maxOwned = tier.maxOwned() == Integer.MAX_VALUE ? "unbounded" : Integer.toString(tier.maxOwned());
 		return "maxOwned=" + maxOwned
-				+ " dayChance=" + tier.dayChance()
+				+ " chance=" + tier.chance()
 				+ " minCount=" + tier.minCount()
 				+ " maxCount=" + tier.maxCount();
-	}
-
-	private static String quotaExtra(UUID subjectId) {
-		return "dailyQuota=" + dailyQuotaBySubject.getOrDefault(subjectId, 0)
-				+ " remaining=" + remainingQuotaBySubject.getOrDefault(subjectId, 0);
 	}
 
 	private static String whitelistText() {
@@ -354,10 +378,18 @@ public final class RefugeeImmigration {
 		return chunk == null ? "-" : chunk.x + "," + chunk.z;
 	}
 
-	public record ImmigrationResult(Status status, Villager villager, BlockPos pos, ChunkPos chunk, String specialNpc) {
+	public record ImmigrationResult(
+			Status status,
+			Villager villager,
+			BlockPos pos,
+			ChunkPos chunk,
+			String specialNpc,
+			int count
+	) {
 		public enum Status {
 			SUCCESS,
 			SKIPPED_CHANCE,
+			SKIPPED_NIGHT,
 			SKIPPED_DIMENSION,
 			NO_TERRITORY,
 			CHUNK_UNLOADED,
@@ -366,7 +398,7 @@ public final class RefugeeImmigration {
 		}
 
 		public static ImmigrationResult fail(Status status) {
-			return new ImmigrationResult(status, null, null, null, "none");
+			return new ImmigrationResult(status, null, null, null, "none", 0);
 		}
 	}
 }

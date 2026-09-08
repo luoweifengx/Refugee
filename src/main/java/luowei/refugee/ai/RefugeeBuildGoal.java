@@ -54,7 +54,17 @@ public class RefugeeBuildGoal extends Goal {
 
 	@Override
 	public boolean canUse() {
-		return !villager.isBaby() && RefugeeRoles.isBuilder(villager) && RefugeeAttachments.get(villager).isBuilding();
+		if (villager.isBaby() || !RefugeeRoles.isBuilder(villager)) {
+			return false;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (data.isFollowing() || data.isFollowingEntity() || data.isPatrolling()) {
+			return false;
+		}
+		if (RefugeeCombat.isEating(villager)) {
+			return false;
+		}
+		return data.isBuilding();
 	}
 
 	@Override

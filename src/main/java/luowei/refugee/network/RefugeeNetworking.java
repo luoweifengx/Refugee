@@ -27,6 +27,7 @@ import luowei.refugee.blueprint.BlueprintRegistry;
 import luowei.refugee.config.RefugeeConfig;
 import luowei.refugee.pbs.PbsAdapter;
 import luowei.refugee.special.GuideDialogueConfig;
+import luowei.refugee.special.GuideTutorialService;
 import luowei.refugee.special.RefugeeSpecialRole;
 import luowei.refugee.special.SpecialRefugeeService;
 import luowei.refugee.special.TerritoryMapService;
@@ -123,7 +124,40 @@ public final class RefugeeNetworking {
 		List<String> talkLines = role == RefugeeSpecialRole.GUIDE
 				? GuideDialogueConfig.talkLines(player)
 				: List.of();
-		ServerPlayNetworking.send(player, new SpecialSplashPayload(villager.getId(), role.id(), talkLines, initialTalkKey));
+		boolean foodSecret = role == RefugeeSpecialRole.GUIDE && GuideTutorialService.foodSecretVisible();
+		ServerPlayNetworking.send(player, new SpecialSplashPayload(
+				villager.getId(),
+				role.id(),
+				talkLines,
+				initialTalkKey,
+				SpecialSplashPayload.MODE_NORMAL,
+				0,
+				"",
+				foodSecret
+		));
+	}
+
+	public static void openGuideIntro(
+			ServerPlayer player,
+			Villager villager,
+			int introIndex,
+			String interruptKey,
+			boolean abandon
+	) {
+		if (player == null || villager == null) {
+			return;
+		}
+		List<String> talkLines = GuideDialogueConfig.talkLines(player);
+		ServerPlayNetworking.send(player, new SpecialSplashPayload(
+				villager.getId(),
+				RefugeeSpecialRole.GUIDE.id(),
+				talkLines,
+				abandon ? GuideTutorialService.ABANDON_KEY : null,
+				abandon ? SpecialSplashPayload.MODE_ABANDON : SpecialSplashPayload.MODE_INTRO,
+				introIndex,
+				interruptKey == null ? "" : interruptKey,
+				GuideTutorialService.foodSecretVisible()
+		));
 	}
 
 	public static void updateSpecialSplashTalk(ServerPlayer player, int entityId, String talkKey) {
@@ -241,10 +275,14 @@ public final class RefugeeNetworking {
 	}
 
 	public static void openStaffPie(ServerPlayer player) {
+		openStaffPie(player, StaffPage.PIE);
+	}
+
+	public static void openStaffPie(ServerPlayer player, StaffPage page) {
 		if (player == null) {
 			return;
 		}
-		ServerPlayNetworking.send(player, new StaffOpenPiePayload());
+		ServerPlayNetworking.send(player, new StaffOpenPiePayload(page == null ? StaffPage.PIE : page));
 	}
 
 	public static void syncStaff(
@@ -252,10 +290,12 @@ public final class RefugeeNetworking {
 			StaffMode mode,
 			StaffPage page,
 			List<BlockPos> chests,
+			List<BlockPos> foodChests,
 			List<AreaBox> zones,
 			List<AreaBox> builds,
 			BlockPos pendingCorner,
-			AreaBox importBox
+			AreaBox importBox,
+			List<BlockPos> patrolPoints
 	) {
 		if (player == null) {
 			return;
@@ -264,10 +304,12 @@ public final class RefugeeNetworking {
 				mode == null ? StaffMode.NONE : mode,
 				page == null ? StaffPage.ROOT : page,
 				chests == null ? List.of() : chests,
+				foodChests == null ? List.of() : foodChests,
 				zones == null ? List.of() : zones,
 				builds == null ? List.of() : builds,
 				Optional.ofNullable(pendingCorner),
-				Optional.ofNullable(importBox)
+				Optional.ofNullable(importBox),
+				patrolPoints == null ? List.of() : patrolPoints
 		));
 	}
 

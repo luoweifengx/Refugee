@@ -46,11 +46,21 @@ public final class StandableFinder {
 	 * 入境：在区块内从中心 BFS 找一个可站立格。
 	 */
 	public static BlockPos findInChunk(ServerLevel level, ChunkPos chunk, Set<BlockPos> reserved) {
+		List<BlockPos> found = findInChunk(level, chunk, reserved, 1);
+		return found.isEmpty() ? null : found.getFirst();
+	}
+
+	/**
+	 * 入境：在区块内从中心 BFS 找 {@code needed} 个可站立格。
+	 */
+	public static List<BlockPos> findInChunk(ServerLevel level, ChunkPos chunk, Set<BlockPos> reserved, int needed) {
+		if (level == null || chunk == null || needed <= 0) {
+			return List.of();
+		}
 		int x = chunk.getMinBlockX() + 8;
 		int z = chunk.getMinBlockZ() + 8;
 		int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-		List<BlockPos> found = search(level, new BlockPos(x, y, z), reserved, 1, chunk);
-		return found.isEmpty() ? null : found.getFirst();
+		return search(level, new BlockPos(x, y, z), reserved, needed, chunk);
 	}
 
 	/**

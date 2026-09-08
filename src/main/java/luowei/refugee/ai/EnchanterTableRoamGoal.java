@@ -10,6 +10,7 @@ import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.level.block.Blocks;
 
 import luowei.refugee.attachment.RefugeeAttachments;
+import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.config.RefugeeConfig;
 import luowei.refugee.settle.StandableFinder;
 import luowei.refugee.special.RefugeeSpecialRole;
@@ -43,7 +44,11 @@ public class EnchanterTableRoamGoal extends Goal {
 		if (villager.isBaby() || !RefugeeSpecialRole.is(villager, RefugeeSpecialRole.ENCHANTER)) {
 			return false;
 		}
-		if (RefugeeAttachments.get(villager).isFollowing() || villager.getTradingPlayer() != null) {
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (data.isFollowing() || data.isFollowingEntity() || data.isPatrolling() || villager.getTradingPlayer() != null) {
+			return false;
+		}
+		if (RefugeeCombat.isEating(villager)) {
 			return false;
 		}
 		return findTable() != null;

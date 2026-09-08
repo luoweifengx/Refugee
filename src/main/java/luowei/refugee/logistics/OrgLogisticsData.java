@@ -77,6 +77,11 @@ public final class OrgLogisticsData extends SavedData {
 		return org == null ? List.of() : List.copyOf(org.warehouses);
 	}
 
+	public List<ContainerRef> foodWarehouses(UUID subjectId) {
+		OrgRecord org = orgs.get(subjectId);
+		return org == null ? List.of() : List.copyOf(org.foodWarehouses);
+	}
+
 	public Set<UUID> subjectIds() {
 		return Set.copyOf(orgs.keySet());
 	}
@@ -90,6 +95,7 @@ public final class OrgLogisticsData extends SavedData {
 		if (org.warehouses.contains(ref)) {
 			return false;
 		}
+		org.foodWarehouses.remove(ref);
 		org.warehouses.add(ref);
 		setDirty();
 		return true;
@@ -113,6 +119,41 @@ public final class OrgLogisticsData extends SavedData {
 	public boolean hasWarehouse(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
 		OrgRecord org = orgs.get(subjectId);
 		return org != null && org.warehouses.contains(new ContainerRef(dimension, pos.immutable()));
+	}
+
+	public boolean addFoodWarehouse(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		if (subjectId == null || dimension == null || pos == null) {
+			return false;
+		}
+		OrgRecord org = org(subjectId);
+		ContainerRef ref = new ContainerRef(dimension, pos.immutable());
+		if (org.foodWarehouses.contains(ref)) {
+			return false;
+		}
+		org.warehouses.remove(ref);
+		org.foodWarehouses.add(ref);
+		setDirty();
+		return true;
+	}
+
+	public boolean removeFoodWarehouse(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		if (subjectId == null || dimension == null || pos == null) {
+			return false;
+		}
+		OrgRecord org = orgs.get(subjectId);
+		if (org == null) {
+			return false;
+		}
+		boolean removed = org.foodWarehouses.remove(new ContainerRef(dimension, pos.immutable()));
+		if (removed) {
+			setDirty();
+		}
+		return removed;
+	}
+
+	public boolean hasFoodWarehouse(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		OrgRecord org = orgs.get(subjectId);
+		return org != null && org.foodWarehouses.contains(new ContainerRef(dimension, pos.immutable()));
 	}
 
 	public void addZone(UUID subjectId, WorkZone zone) {
@@ -182,8 +223,13 @@ public final class OrgLogisticsData extends SavedData {
 		}
 		OrgRecord dest = org(to);
 		for (ContainerRef ref : src.warehouses) {
-			if (!dest.warehouses.contains(ref)) {
+			if (!dest.warehouses.contains(ref) && !dest.foodWarehouses.contains(ref)) {
 				dest.warehouses.add(ref);
+			}
+		}
+		for (ContainerRef ref : src.foodWarehouses) {
+			if (!dest.foodWarehouses.contains(ref) && !dest.warehouses.contains(ref)) {
+				dest.foodWarehouses.add(ref);
 			}
 		}
 		dest.zones.addAll(src.zones);
@@ -301,21 +347,31 @@ public final class OrgLogisticsData extends SavedData {
 	public static final class OrgRecord {
 		public static final Codec<OrgRecord> CODEC = RecordCodecBuilder.create(instance -> instance.group(
 				ContainerRef.CODEC.listOf().optionalFieldOf("warehouses", List.of()).forGetter(org -> List.copyOf(org.warehouses)),
+				ContainerRef.CODEC.listOf().optionalFieldOf("food_warehouses", List.of()).forGetter(org -> List.copyOf(org.foodWarehouses)),
 				WorkZone.CODEC.listOf().optionalFieldOf("zones", List.of()).forGetter(org -> List.copyOf(org.zones)),
 				BuildJob.CODEC.listOf().optionalFieldOf("jobs", List.of()).forGetter(org -> List.copyOf(org.jobs))
 		).apply(instance, OrgRecord::fromCodec));
 
 		private final List<ContainerRef> warehouses = new ArrayList<>();
+		private final List<ContainerRef> foodWarehouses = new ArrayList<>();
 		private final List<WorkZone> zones = new ArrayList<>();
 		private final List<BuildJob> jobs = new ArrayList<>();
 
 		public OrgRecord() {
 		}
 
-		private static OrgRecord fromCodec(List<ContainerRef> warehouses, List<WorkZone> zones, List<BuildJob> jobs) {
+		private static OrgRecord fromCodec(
+				List<ContainerRef> warehouses,
+				List<ContainerRef> foodWarehouses,
+				List<WorkZone> zones,
+				List<BuildJob> jobs
+		) {
 			OrgRecord org = new OrgRecord();
 			if (warehouses != null) {
 				org.warehouses.addAll(warehouses);
+			}
+			if (foodWarehouses != null) {
+				org.foodWarehouses.addAll(foodWarehouses);
 			}
 			if (zones != null) {
 				org.zones.addAll(zones);
@@ -328,6 +384,10 @@ public final class OrgLogisticsData extends SavedData {
 
 		public List<ContainerRef> warehouses() {
 			return warehouses;
+		}
+
+		public List<ContainerRef> foodWarehouses() {
+			return foodWarehouses;
 		}
 
 		public List<WorkZone> zones() {

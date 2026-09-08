@@ -3,8 +3,10 @@ package luowei.refugee.ai;
 import java.util.EnumSet;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.monster.Monster;
@@ -18,7 +20,7 @@ import luowei.refugee.interact.RefugeeRoles;
 import luowei.refugee.logistics.OrgLogisticsData;
 
 /**
- * 守卫与战斗总控：IDLE 让路给工具 AI；COMBAT 主手作战；慌乱不回岗。
+ * 守卫与战斗总控：战斗圈看村民自身；IDLE 才按距离回岗；慌乱不回岗。
  */
 public class RefugeeGuardGoal extends Goal {
 	private static final double ARRIVED_AT_CENTER_DISTANCE = 1.5;
@@ -39,15 +41,18 @@ public class RefugeeGuardGoal extends Goal {
 		if (RefugeeCombat.isBusy(villager)) {
 			return true;
 		}
-		boolean assigned = RefugeeRoles.isGuard(villager) || RefugeeRoles.isBuilder(villager);
-		if (assigned && RefugeeCombat.hasHostilesInGuardRadius(villager)) {
+		// 守卫、工人、以及 Brain 已接管的空手居民（巡逻/跟随等）见敌则接管；空手走工人的逃跑。
+		if (RefugeeRoles.overridesBrain(villager) && RefugeeCombat.hasHostilesInGuardRadius(villager)) {
 			return true;
 		}
 		if (!RefugeeRoles.isGuard(villager)) {
 			return false;
 		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		if (!data.isFollowing() && RefugeeRoles.isBuilder(villager) && hasAssignedWork(data)) {
+		if (!data.isFollowing() && !data.isFollowingEntity() && RefugeeRoles.isBuilder(villager) && hasAssignedWork(data)) {
+			return false;
+		}
+		if (data.isPatrolling() && !data.isFollowing() && !data.isFollowingEntity()) {
 			return false;
 		}
 		return true;
@@ -73,7 +78,11 @@ public class RefugeeGuardGoal extends Goal {
 	public void start() {
 		returningToCenter = false;
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		if (RefugeeRoles.isGuard(villager) && !data.isFollowing() && data.guardCenter() == null) {
+		if (RefugeeRoles.isGuard(villager)
+				&& !data.isFollowing()
+				&& !data.isFollowingEntity()
+				&& !data.isPatrolling()
+				&& data.guardCenter() == null) {
 			data.setGuardCenter(villager.blockPosition());
 			RefugeeAttachments.markDirty(villager, data);
 		}
@@ -83,16 +92,17 @@ public class RefugeeGuardGoal extends Goal {
 	public void stop() {
 		returningToCenter = false;
 		villager.getNavigation().stop();
-		villager.stopUsingItem();
+		RefugeeCombat.tickShield(villager, false);
 	}
 
 	@Override
 	public void tick() {
+		RefugeeSwim.tick(villager);
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		data.tickCombatCooldowns();
 		RefugeeCombat.Mood mood = data.combatMood();
 		if (mood.isPanic()) {
-			tickPanic(data, mood);
+			tickPanic(mood);
 			return;
 		}
 		boolean hostiles = RefugeeCombat.hasHostilesInGuardRadius(villager);
@@ -114,61 +124,29 @@ public class RefugeeGuardGoal extends Goal {
 		tickIdle(data);
 	}
 
-	private void tickPanic(RefugeeVillagerData data, RefugeeCombat.Mood mood) {
+	private void tickPanic(RefugeeCombat.Mood mood) {
 		returningToCenter = false;
-		if (mood == RefugeeCombat.Mood.FLEE) {
-			if (!RefugeeRoles.hasFood(villager)) {
-				RefugeeCombat.logPanic(villager, "FLEE tick: no food -> LAST_STAND");
-				RefugeeCombat.setMood(villager, RefugeeCombat.Mood.LAST_STAND);
-				tickCombat(true);
-				return;
-			}
-			Monster nearby = RefugeeCombat.nearestHostile(villager, villager.position(), RefugeeConfig.panicClearRadius);
-			if (nearby == null) {
-				RefugeeCombat.logPanic(villager, "FLEE tick: no monster in panicClearRadius -> RECOVER");
-				RefugeeCombat.setMood(villager, RefugeeCombat.Mood.RECOVER);
-				villager.getNavigation().stop();
-				RefugeeCombat.tryEat(villager, (float) RefugeeConfig.recoverHealthRatio);
-				return;
-			}
+		if (RefugeeCombat.leavePanicIfHealthy(villager)) {
+			return;
+		}
+		Monster nearby = RefugeeCombat.nearestHostile(villager, villager.position(), RefugeeConfig.panicClearRadius);
+		RefugeeCombat.Mood next = RefugeeCombat.panicMoodWhenHurt(villager, nearby);
+		if (next != mood) {
+			RefugeeCombat.logPanic(villager, mood + " tick -> " + next
+					+ " nearby=" + (nearby == null ? "none" : nearby.getType().toShortString())
+					+ " food=" + RefugeeRoles.hasFood(villager));
+			RefugeeCombat.setMood(villager, next);
+		}
+		if (next == RefugeeCombat.Mood.FLEE) {
+			RefugeeCombat.tickShield(villager, false);
 			RefugeeCombat.flee(villager, nearby);
 			return;
 		}
-		if (mood == RefugeeCombat.Mood.RECOVER) {
-			if (!RefugeeRoles.hasFood(villager)) {
-				RefugeeCombat.logPanic(villager, "RECOVER tick: no food -> LAST_STAND");
-				RefugeeCombat.setMood(villager, RefugeeCombat.Mood.LAST_STAND);
-				tickCombat(true);
-				return;
-			}
+		if (next == RefugeeCombat.Mood.RECOVER) {
 			villager.setTarget(null);
 			villager.getNavigation().stop();
 			RefugeeCombat.tickShield(villager, false);
 			RefugeeCombat.tryEat(villager, (float) RefugeeConfig.recoverHealthRatio);
-			if (RefugeeCombat.healthAtLeast(villager, (float) RefugeeConfig.recoverHealthRatio)) {
-				if (RefugeeCombat.hasHostilesInGuardRadius(villager)) {
-					RefugeeCombat.logPanic(villager, "RECOVER done, hostiles in guard radius -> COMBAT");
-					RefugeeCombat.setMood(villager, RefugeeCombat.Mood.COMBAT);
-				} else {
-					RefugeeCombat.logPanic(villager, "RECOVER done, no hostiles -> IDLE");
-					RefugeeCombat.setMood(villager, RefugeeCombat.Mood.IDLE);
-				}
-			}
-			return;
-		}
-		Monster nearby = RefugeeCombat.nearestHostile(villager, villager.position(), RefugeeConfig.panicClearRadius);
-		if (nearby == null) {
-			if (RefugeeRoles.hasFood(villager)) {
-				RefugeeCombat.logPanic(villager, "LAST_STAND tick: no monster in panicClearRadius -> RECOVER");
-				RefugeeCombat.setMood(villager, RefugeeCombat.Mood.RECOVER);
-				villager.getNavigation().stop();
-				RefugeeCombat.tryEat(villager, (float) RefugeeConfig.recoverHealthRatio);
-			} else {
-				RefugeeCombat.logPanic(villager, "LAST_STAND tick: no monster in panicClearRadius, no food -> IDLE");
-				RefugeeCombat.setMood(villager, RefugeeCombat.Mood.IDLE);
-				villager.setTarget(null);
-				villager.getNavigation().stop();
-			}
 			return;
 		}
 		tickCombat(true);
@@ -252,6 +230,24 @@ public class RefugeeGuardGoal extends Goal {
 			tickFollowPlayer(followPlayer);
 			return;
 		}
+		if (data.isFollowingEntity()) {
+			LivingEntity followTarget = resolveFollowEntity(villager, data);
+			if (followTarget == null) {
+				data.clearFollowEntity();
+				if (data.guardCenter() == null) {
+					data.setGuardCenter(villager.blockPosition());
+				}
+				RefugeeAttachments.markDirty(villager, data);
+				villager.getNavigation().stop();
+				return;
+			}
+			tickFollowEntity(followTarget);
+			return;
+		}
+		if (data.isPatrolling()) {
+			villager.getNavigation().stop();
+			return;
+		}
 		BlockPos stationCenter = data.guardCenter();
 		if (stationCenter == null) {
 			data.setGuardCenter(villager.blockPosition());
@@ -262,16 +258,24 @@ public class RefugeeGuardGoal extends Goal {
 	}
 
 	private void tickFollowPlayer(ServerPlayer player) {
-		villager.getLookControl().setLookAt(player, 10.0f, villager.getMaxHeadXRot());
-		double distSq = villager.distanceToSqr(player);
+		tickFollowLiving(player);
+	}
+
+	private void tickFollowEntity(LivingEntity target) {
+		tickFollowLiving(target);
+	}
+
+	private void tickFollowLiving(LivingEntity target) {
+		villager.getLookControl().setLookAt(target, 10.0f, villager.getMaxHeadXRot());
+		double distSq = villager.distanceToSqr(target);
 		double teleport = RefugeeConfig.guardReturnTeleportDistance;
 		if (distSq > teleport * teleport) {
-			villager.teleportTo(player.getX(), player.getY(), player.getZ());
+			villager.teleportTo(target.getX(), target.getY(), target.getZ());
 			villager.getNavigation().stop();
 			return;
 		}
-		if (villager.distanceTo(player) > RefugeeFollowGoal.FOLLOW_STAY_DISTANCE) {
-			villager.getNavigation().moveTo(player, RefugeeConfig.followSpeed);
+		if (villager.distanceTo(target) > RefugeeFollowGoal.FOLLOW_STAY_DISTANCE) {
+			villager.getNavigation().moveTo(target, RefugeeConfig.followSpeed);
 		} else {
 			villager.getNavigation().stop();
 		}
@@ -315,11 +319,26 @@ public class RefugeeGuardGoal extends Goal {
 		return null;
 	}
 
+	static LivingEntity resolveFollowEntity(Villager villager, RefugeeVillagerData data) {
+		if (!data.isFollowingEntity() || !(villager.level() instanceof ServerLevel level)) {
+			return null;
+		}
+		Entity entity = level.getEntity(data.followEntityId());
+		if (entity instanceof LivingEntity living && living.isAlive() && living != villager) {
+			return living;
+		}
+		return null;
+	}
+
 	static Vec3 resolveGuardCenter(Villager villager) {
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		if (data.isFollowing()) {
 			ServerPlayer player = resolveFollowPlayer(villager, data);
 			return player == null ? null : player.position();
+		}
+		if (data.isFollowingEntity()) {
+			LivingEntity target = resolveFollowEntity(villager, data);
+			return target == null ? null : target.position();
 		}
 		BlockPos pos = data.guardCenter();
 		if (pos == null) {

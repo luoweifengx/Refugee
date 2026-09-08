@@ -16,11 +16,13 @@ import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.AttachedStemBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.NetherWartBlock;
+import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.StemBlock;
 import net.minecraft.world.level.block.SweetBerryBushBlock;
 import net.minecraft.world.level.block.entity.BaseContainerBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -66,7 +68,10 @@ public class RefugeeMineGoal extends Goal {
 			return false;
 		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		if (data.isBuilding() || data.isFollowing() || zone() == null) {
+		if (data.isBuilding() || data.isFollowing() || data.isFollowingEntity() || data.isPatrolling() || zone() == null) {
+			return false;
+		}
+		if (RefugeeCombat.isEating(villager)) {
 			return false;
 		}
 		return true;
@@ -106,7 +111,7 @@ public class RefugeeMineGoal extends Goal {
 		}
 		AreaBox box = zone.box();
 		BlockPos feet = villager.blockPosition();
-		if (isFarFromZone(box, feet)) {
+		if (RefugeeConfig.workReachLimit && isFarFromZone(box, feet)) {
 			abortMining(level);
 			WorkMove.goTo(villager, level, findZoneApproach(level, box));
 			return;
@@ -308,9 +313,12 @@ public class RefugeeMineGoal extends Goal {
 			return true;
 		}
 		if (isHarvestable(state)) {
+			boolean fruit = isPumpkinOrMelon(state);
 			BlockState soil = level.getBlockState(pos.below());
 			breakAndDeposit(level, pos, state);
-			tryPlant(level, pos, soil);
+			if (!fruit) {
+				tryPlant(level, pos, soil);
+			}
 			return true;
 		}
 		if (isPlantable(level, pos)) {
@@ -440,6 +448,9 @@ public class RefugeeMineGoal extends Goal {
 
 	private static boolean isHarvestable(BlockState state) {
 		Block block = state.getBlock();
+		if (block instanceof StemBlock || block instanceof AttachedStemBlock) {
+			return false;
+		}
 		if (block instanceof CropBlock crop) {
 			return crop.isMaxAge(state);
 		}
@@ -449,7 +460,11 @@ public class RefugeeMineGoal extends Goal {
 		if (block instanceof SweetBerryBushBlock) {
 			return state.getValue(BlockStateProperties.AGE_3) >= 3;
 		}
-		return false;
+		return isPumpkinOrMelon(state);
+	}
+
+	private static boolean isPumpkinOrMelon(BlockState state) {
+		return state.is(Blocks.PUMPKIN) || state.is(Blocks.MELON);
 	}
 
 	private static boolean isPlantable(ServerLevel level, BlockPos pos) {

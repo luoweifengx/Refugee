@@ -22,12 +22,21 @@ public final class ModItems {
 			ResourceKey.create(Registries.CREATIVE_MODE_TAB, Refugee.id("main"));
 
 	public static Item COMMAND_STAFF;
+	public static Item LEATHER_KIT;
+	public static Item CHAIN_KIT;
+	public static Item IRON_KIT;
+	public static Item DIAMOND_KIT;
 
 	private ModItems() {
 	}
 
 	public static void register() {
 		COMMAND_STAFF = registerItem("command_staff", props -> new CommandStaffItem(props.stacksTo(1)));
+		LEATHER_KIT = registerItem("leather_kit", props -> new ArmorKitItem(props, ArmorKitItem.Kind.LEATHER));
+		CHAIN_KIT = registerItem("chain_kit", props -> new ArmorKitItem(props, ArmorKitItem.Kind.CHAIN));
+		IRON_KIT = registerItem("iron_kit", props -> new ArmorKitItem(props, ArmorKitItem.Kind.IRON));
+		DIAMOND_KIT = registerItem("diamond_kit", props -> new ArmorKitItem(props, ArmorKitItem.Kind.DIAMOND));
+		ChainmailDefense.register();
 
 		Registry.register(
 				BuiltInRegistries.CREATIVE_MODE_TAB,
@@ -35,11 +44,23 @@ public final class ModItems {
 				FabricItemGroup.builder()
 						.title(Component.translatable("itemGroup.refugee.main"))
 						.icon(() -> new ItemStack(COMMAND_STAFF))
-						.displayItems((params, output) -> output.accept(COMMAND_STAFF))
+						.displayItems((params, output) -> {
+							output.accept(COMMAND_STAFF);
+							output.accept(LEATHER_KIT);
+							output.accept(CHAIN_KIT);
+							output.accept(IRON_KIT);
+							output.accept(DIAMOND_KIT);
+						})
 						.build()
 		);
 
-		ItemGroupEvents.modifyEntriesEvent(TAB_KEY).register(entries -> entries.accept(COMMAND_STAFF));
+		ItemGroupEvents.modifyEntriesEvent(TAB_KEY).register(entries -> {
+			entries.accept(COMMAND_STAFF);
+			entries.accept(LEATHER_KIT);
+			entries.accept(CHAIN_KIT);
+			entries.accept(IRON_KIT);
+			entries.accept(DIAMOND_KIT);
+		});
 	}
 
 	private static Item registerItem(String path, Function<Item.Properties, Item> factory) {

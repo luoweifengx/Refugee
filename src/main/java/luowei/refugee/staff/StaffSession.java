@@ -9,10 +9,11 @@ import net.minecraft.resources.ResourceLocation;
 import luowei.refugee.zone.AreaBox;
 
 /**
- * 玩家当前指挥杖会话（不落盘）：页面栈 + 框选/导入临时状态。
+ * 玩家当前指挥杖会话（不落盘）：页面栈 + 框选/导入/巡逻临时状态。
  */
 public final class StaffSession {
 	private final List<StaffPage> stack = new ArrayList<>();
+	private final List<BlockPos> patrolPoints = new ArrayList<>();
 	private BlockPos zoneCorner;
 	private ResourceLocation zoneDimension;
 	private AreaBox pendingImport;
@@ -33,10 +34,13 @@ public final class StaffSession {
 		StaffMode next = mode == null ? StaffMode.NONE : mode;
 		switch (next) {
 			case NONE -> resetToRoot();
-			case WAREHOUSE -> setPages(StaffPage.WAREHOUSE);
+			case WAREHOUSE -> setPages(StaffPage.WAREHOUSE_PIE, StaffPage.WAREHOUSE);
+			case FOOD_WAREHOUSE -> setPages(StaffPage.WAREHOUSE_PIE, StaffPage.FOOD_WAREHOUSE);
 			case ZONE -> setPages(StaffPage.ZONE);
 			case BUILD -> setPages(StaffPage.BUILD_CATALOG, StaffPage.BUILD_PREVIEW);
 			case IMPORT -> setPages(StaffPage.IMPORT);
+			case FOLLOW_ENTITY -> setPages(StaffPage.COMBAT_PIE, StaffPage.COMBAT_FOLLOW);
+			case PATROL -> setPages(StaffPage.COMBAT_PIE, StaffPage.COMBAT_PATROL);
 		}
 	}
 
@@ -56,6 +60,7 @@ public final class StaffSession {
 		stack.clear();
 		clearZoneCorner();
 		clearImportBox();
+		clearPatrolPoints();
 	}
 
 	private void onPageChanged() {
@@ -65,6 +70,9 @@ public final class StaffSession {
 		}
 		if (page != StaffPage.IMPORT && page != StaffPage.IMPORT_NAME) {
 			clearImportBox();
+		}
+		if (page != StaffPage.COMBAT_PATROL) {
+			clearPatrolPoints();
 		}
 	}
 
@@ -96,5 +104,25 @@ public final class StaffSession {
 	public void clearZoneCorner() {
 		this.zoneCorner = null;
 		this.zoneDimension = null;
+	}
+
+	public List<BlockPos> patrolPoints() {
+		return List.copyOf(patrolPoints);
+	}
+
+	public boolean addPatrolPoint(BlockPos pos) {
+		if (pos == null) {
+			return false;
+		}
+		BlockPos immutable = pos.immutable();
+		if (!patrolPoints.isEmpty() && patrolPoints.getLast().equals(immutable)) {
+			return false;
+		}
+		patrolPoints.add(immutable);
+		return true;
+	}
+
+	public void clearPatrolPoints() {
+		patrolPoints.clear();
 	}
 }

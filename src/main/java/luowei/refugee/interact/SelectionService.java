@@ -7,6 +7,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.entity.player.Inventory;
@@ -18,6 +19,7 @@ import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.item.ItemData;
 import luowei.refugee.pbs.PbsAdapter;
+import luowei.refugee.staff.StaffService;
 import luowei.refugee.talk.RefugeeBubble;
 
 /**
@@ -118,6 +120,9 @@ public final class SelectionService {
 			PlayerSelectionData selection
 	) {
 		removeFromOtherSelections(player, villager.getUUID());
+		if (data.isBuilding()) {
+			StaffService.unbindWorker(villager);
+		}
 		data.startFollowing(player.getUUID());
 		selection.addSelected(villager.getUUID());
 		RefugeeAttachments.markDirty(villager, data);
@@ -195,6 +200,72 @@ public final class SelectionService {
 				RefugeeAttachments.markDirty(player, selection);
 				collectBannersIfEmpty(player);
 			}
+		}
+	}
+
+	/**
+	 * 列队：对选中表里所有人执行现有取消选中（停跟随、守卫就地设岗、收旗）。
+	 *
+	 * @return 实际处理的人数
+	 */
+	public static int deselectAll(ServerPlayer player) {
+		if (!(player.level() instanceof ServerLevel level)) {
+			return 0;
+		}
+		PlayerSelectionData selection = RefugeeAttachments.get(player);
+		List<UUID> selected = selection.snapshotSelected();
+		if (selected.isEmpty()) {
+			return 0;
+		}
+		int count = 0;
+		for (UUID villagerId : selected) {
+			if (deselectOne(player, level, villagerId)) {
+				count++;
+			}
+		}
+		if (count > 0 || !selection.selectedVillagers().isEmpty()) {
+			selection.clearSelected();
+			RefugeeAttachments.markDirty(player, selection);
+			collectBannersIfEmpty(player);
+		}
+		return count;
+	}
+
+	private static boolean deselectOne(ServerPlayer player, ServerLevel level, UUID villagerId) {
+		Entity entity = level.getEntity(villagerId);
+		if (!(entity instanceof Villager villager) || !villager.isAlive()) {
+			return false;
+		}
+		if (!canCommand(player, villager)) {
+			return false;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (RefugeeRoles.isGuard(villager)) {
+			data.stopFollowing(villager.blockPosition());
+		} else {
+			data.stopFollowing();
+		}
+		RefugeeAttachments.markDirty(villager, data);
+		return true;
+	}
+
+	/**
+	 * 只从选中表拿掉，不改村民 AI（跟随生物 / 巡逻写完状态后用）。
+	 */
+	public static void dropFromSelection(ServerPlayer player, List<UUID> villagerIds) {
+		if (player == null || villagerIds == null || villagerIds.isEmpty()) {
+			return;
+		}
+		PlayerSelectionData selection = RefugeeAttachments.get(player);
+		boolean changed = false;
+		for (UUID villagerId : villagerIds) {
+			if (selection.removeSelected(villagerId)) {
+				changed = true;
+			}
+		}
+		if (changed) {
+			RefugeeAttachments.markDirty(player, selection);
+			collectBannersIfEmpty(player);
 		}
 	}
 }

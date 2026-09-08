@@ -50,6 +50,13 @@ public final class EquipmentService {
 	}
 
 	private static boolean give(ServerPlayer player, Villager villager, InteractionHand hand, ItemStack held) {
+		if (luowei.refugee.item.ArmorKitItem.isKit(held)) {
+			boolean given = luowei.refugee.item.ArmorKitItem.give(player, villager, held);
+			if (given) {
+				settleIdleGuard(villager);
+			}
+			return given;
+		}
 		if (RefugeeRoles.isGiveableArmor(held)) {
 			EquipmentSlot slot = RefugeeRoles.armorSlot(villager, held);
 			return swapSlot(player, villager, slot, held);
@@ -67,14 +74,21 @@ public final class EquipmentService {
 		} else {
 			given = swapSlot(player, villager, EquipmentSlot.OFFHAND, held);
 		}
-		if (given && RefugeeRoles.isGuard(villager)) {
-			RefugeeVillagerData data = RefugeeAttachments.get(villager);
-			if (!data.isFollowing() && data.guardCenter() == null) {
-				data.setGuardCenter(villager.blockPosition());
-				RefugeeAttachments.markDirty(villager, data);
-			}
+		if (given) {
+			settleIdleGuard(villager);
 		}
 		return given;
+	}
+
+	private static void settleIdleGuard(Villager villager) {
+		if (!RefugeeRoles.isGuard(villager)) {
+			return;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (!data.isFollowing() && !data.isFollowingEntity() && !data.isPatrolling() && data.guardCenter() == null) {
+			data.setGuardCenter(villager.blockPosition());
+			RefugeeAttachments.markDirty(villager, data);
+		}
 	}
 
 	private static boolean giveFood(ServerPlayer player, Villager villager, ItemStack held) {
