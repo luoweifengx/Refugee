@@ -70,10 +70,17 @@ public final class RefugeeRoles {
 	}
 
 	public static boolean isRangedWeapon(ItemStack stack) {
+		if (stack == null || stack.isEmpty()) {
+			return false;
+		}
 		return stack.getItem() instanceof BowItem
 				|| stack.getItem() instanceof CrossbowItem
 				|| stack.is(Items.BOW)
 				|| stack.is(Items.CROSSBOW);
+	}
+
+	public static boolean isMeleeWeapon(ItemStack stack) {
+		return isWeapon(stack) && !isRangedWeapon(stack);
 	}
 
 	public static boolean isHoe(ItemStack stack) {
@@ -91,6 +98,15 @@ public final class RefugeeRoles {
 
 	public static boolean isShovel(ItemStack stack) {
 		return stack != null && !stack.isEmpty() && stack.is(ItemTags.SHOVELS);
+	}
+
+	/** 范围推进只用镐/斧/铲，不含锄。 */
+	public static boolean isAdvanceTool(ItemStack stack) {
+		return isPickaxe(stack) || isAxe(stack) || isShovel(stack);
+	}
+
+	public static boolean isAdvanceMiner(Villager villager) {
+		return villager != null && isAdvanceTool(workTool(villager));
 	}
 
 	public static boolean isBuilderTool(ItemStack stack) {
@@ -157,6 +173,34 @@ public final class RefugeeRoles {
 		return isBuilderTool(logicalMainHand(villager)) || isBuilderTool(villager.getOffhandItem());
 	}
 
+	public static boolean holdsMeleeWeapon(Villager villager) {
+		return isMeleeWeapon(logicalMainHand(villager)) || isMeleeWeapon(villager.getOffhandItem());
+	}
+
+	public static boolean holdsRangedWeapon(Villager villager) {
+		return isRangedWeapon(logicalMainHand(villager)) || isRangedWeapon(villager.getOffhandItem());
+	}
+
+	/** 持有工具即工人；即使同时持有武器也不进近战/远程集结。 */
+	public static boolean matchesRallyWorker(Villager villager) {
+		return isBuilder(villager);
+	}
+
+	public static boolean matchesRallyMelee(Villager villager) {
+		return !isBuilder(villager) && holdsMeleeWeapon(villager);
+	}
+
+	public static boolean matchesRallyRanged(Villager villager) {
+		return !isBuilder(villager) && holdsRangedWeapon(villager);
+	}
+
+	/** 散人：主副手皆空。盔甲与食物槽不算手持。 */
+	public static boolean matchesRallyCivilian(Villager villager) {
+		ItemStack main = logicalMainHand(villager);
+		ItemStack off = villager.getOffhandItem();
+		return (main == null || main.isEmpty()) && (off == null || off.isEmpty());
+	}
+
 	public static ItemStack workTool(Villager villager) {
 		ItemStack main = logicalMainHand(villager);
 		if (isBuilderTool(main)) {
@@ -191,7 +235,9 @@ public final class RefugeeRoles {
 			return true;
 		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		if (data.isFollowing() || data.isFollowingEntity() || data.isPatrolling() || data.isBuilding() || data.combatMood().isBusy()) {
+		if (data.isFollowing() || data.isFollowingEntity() || data.isPatrolling()
+				|| data.isBuilding() || data.isBuilderDuty() || data.isRepairerDuty()
+				|| data.combatMood().isBusy()) {
 			return true;
 		}
 		if (villager.level().getServer() != null) {

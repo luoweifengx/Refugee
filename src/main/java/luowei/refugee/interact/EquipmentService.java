@@ -38,7 +38,7 @@ public final class EquipmentService {
 			}
 			return given;
 		}
-		if (data.isBuilding()) {
+		if (data.isBuilding() || data.isBuilderDuty() || data.isRepairerDuty()) {
 			luowei.refugee.staff.StaffService.unbindWorker(villager);
 			player.displayClientMessage(Component.translatable("message.refugee.staff.build.stopped"), true);
 			return true;

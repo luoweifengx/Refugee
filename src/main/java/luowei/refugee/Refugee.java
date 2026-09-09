@@ -25,6 +25,7 @@ import luowei.refugee.network.RefugeeNetworking;
 import luowei.refugee.spawn.LandmarkSpawnService;
 import luowei.refugee.spawn.RefugeeImmigration;
 import luowei.refugee.spawn.RefugeeStructures;
+import luowei.refugee.special.RefugeeSpecialRole;
 import luowei.refugee.special.SpecialRefugeeService;
 
 public class Refugee implements ModInitializer {
@@ -57,6 +58,9 @@ public class Refugee implements ModInitializer {
 		});
 		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
 			if (entity instanceof Villager villager && entity.level() instanceof ServerLevel level) {
+				if (RefugeeSpecialRole.isSpecial(villager)) {
+					SpecialRefugeeService.markSpecialGone(level.getServer(), villager.getUUID());
+				}
 				DeathDropService.dropOnDeath(villager, level);
 				SelectionService.onVillagerRemoved(villager.getUUID(), level);
 			}

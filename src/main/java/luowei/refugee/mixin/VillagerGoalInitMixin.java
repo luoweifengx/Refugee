@@ -17,6 +17,7 @@ import luowei.refugee.ai.RefugeeGuardGoal;
 import luowei.refugee.ai.RefugeeGuardTargetGoal;
 import luowei.refugee.ai.RefugeeMineGoal;
 import luowei.refugee.ai.RefugeePatrolGoal;
+import luowei.refugee.ai.RefugeeRepairGoal;
 
 @Mixin(Villager.class)
 public abstract class VillagerGoalInitMixin extends AbstractVillager {
@@ -34,8 +35,9 @@ public abstract class VillagerGoalInitMixin extends AbstractVillager {
 		this.goalSelector.addGoal(1, new RefugeeFollowGoal(self));
 		this.goalSelector.addGoal(2, new RefugeeGuardGoal(self));
 		this.goalSelector.addGoal(3, new RefugeeBuildGoal(self));
-		this.goalSelector.addGoal(4, new RefugeeMineGoal(self));
-		this.goalSelector.addGoal(5, new EnchanterTableRoamGoal(self));
-		this.goalSelector.addGoal(6, new RefugeePatrolGoal(self));
+		this.goalSelector.addGoal(4, new RefugeeRepairGoal(self));
+		this.goalSelector.addGoal(5, new RefugeeMineGoal(self));
+		this.goalSelector.addGoal(6, new EnchanterTableRoamGoal(self));
+		this.goalSelector.addGoal(7, new RefugeePatrolGoal(self));
 	}
 }

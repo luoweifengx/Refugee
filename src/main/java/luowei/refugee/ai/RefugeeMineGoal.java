@@ -1,5 +1,6 @@
 package luowei.refugee.ai;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
@@ -35,6 +36,7 @@ import luowei.refugee.config.RefugeeConfig;
 import luowei.refugee.interact.RefugeeRoles;
 import luowei.refugee.logistics.OrgLogisticsData;
 import luowei.refugee.settle.StandableFinder;
+import luowei.refugee.staff.StaffService;
 import luowei.refugee.warehouse.MaterialCategory;
 import luowei.refugee.warehouse.WarehouseService;
 import luowei.refugee.zone.AreaBox;
@@ -68,7 +70,8 @@ public class RefugeeMineGoal extends Goal {
 			return false;
 		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		if (data.isBuilding() || data.isFollowing() || data.isFollowingEntity() || data.isPatrolling() || zone() == null) {
+		if (data.isBuilding() || data.isBuilderDuty() || data.isRepairerDuty()
+				|| data.isFollowing() || data.isFollowingEntity() || data.isPatrolling() || zone() == null) {
 			return false;
 		}
 		if (RefugeeCombat.isEating(villager)) {
@@ -110,13 +113,17 @@ public class RefugeeMineGoal extends Goal {
 			return;
 		}
 		AreaBox box = zone.box();
+		if (zone.isAdvance()) {
+			tickAdvance(level, zone);
+			return;
+		}
 		BlockPos feet = villager.blockPosition();
 		if (RefugeeConfig.workReachLimit && isFarFromZone(box, feet)) {
 			abortMining(level);
 			WorkMove.goTo(villager, level, findZoneApproach(level, box));
 			return;
 		}
-		if (target == null || !box.contains(target) || !isValidTarget(level, target)) {
+		if (target == null || !box.contains(target) || !canMine(villager, level, target)) {
 			abortMining(level);
 			target = findTarget(level, box);
 		}
@@ -136,6 +143,95 @@ public class RefugeeMineGoal extends Goal {
 			return;
 		}
 		tickMineProgress(level, target, state, tool);
+	}
+
+	private void tickAdvance(ServerLevel level, WorkZone zone) {
+		UUID id = villager.getUUID();
+		boolean miner = RefugeeRoles.isAdvanceMiner(villager);
+		if (!miner) {
+			if (zone.claimOf(id) != null) {
+				zone.clearClaim(id);
+				OrgLogisticsData.get(level.getServer()).setDirty();
+			}
+			abortMining(level);
+			target = null;
+		} else {
+			BlockPos assigned = zone.claimOf(id);
+			if (assigned != null) {
+				if (target == null || !assigned.equals(target)) {
+					abortMining(level);
+					target = assigned;
+				}
+			} else if (target != null) {
+				abortMining(level);
+				target = null;
+			}
+			if (target != null && (!zone.isAdvanceCell(target) || (level.isLoaded(target) && !canMine(villager, level, target)))) {
+				zone.clearClaim(id);
+				abortMining(level);
+				target = null;
+				OrgLogisticsData.get(level.getServer()).setDirty();
+			}
+		}
+		if (target == null) {
+			OrgLogisticsData logistics = OrgLogisticsData.get(level.getServer());
+			WorkZone.AdvanceDispatch result = zone.dispatch(
+					level,
+					advanceMembers(level, zone),
+					(member, pos) -> canMine(member, level, pos)
+			);
+			logistics.setDirty();
+			if (result == WorkZone.AdvanceDispatch.LAYER_DONE) {
+				if (!zone.claimedAnyThisLayer() || !zone.advanceLayer(level)) {
+					StaffService.finishAdvance(level, zone);
+					return;
+				}
+				UUID subjectId = RefugeeAttachments.get(villager).subjectId();
+				if (subjectId != null) {
+					StaffService.syncSubject(level.getServer(), subjectId);
+				}
+				return;
+			}
+			if (miner) {
+				target = zone.claimOf(id);
+			}
+		}
+		if (!miner) {
+			return;
+		}
+		AreaBox slice = zone.currentSlice();
+		if (target == null) {
+			if (RefugeeConfig.workReachLimit && isFarFromZone(slice, villager.blockPosition())) {
+				abortMining(level);
+				WorkMove.goTo(villager, level, findZoneApproach(level, slice));
+			}
+			return;
+		}
+		villager.getLookControl().setLookAt(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
+		WorkMove.moveToward(villager, target);
+		if (!level.isLoaded(target)) {
+			abortMining(level);
+			return;
+		}
+		if (RefugeeConfig.workReachLimit && !WorkMove.inReach(villager, target)) {
+			abortMining(level);
+			return;
+		}
+		ItemStack tool = RefugeeRoles.workTool(villager);
+		BlockState state = level.getBlockState(target);
+		tickMineProgress(level, target, state, tool);
+	}
+
+	private static List<Villager> advanceMembers(ServerLevel level, WorkZone zone) {
+		List<Villager> members = new ArrayList<>();
+		for (UUID workerId : zone.snapshotWorkers()) {
+			if (level.getEntity(workerId) instanceof Villager member
+					&& member.isAlive()
+					&& RefugeeRoles.isAdvanceMiner(member)) {
+				members.add(member);
+			}
+		}
+		return members;
 	}
 
 	private WorkZone zone() {
@@ -228,7 +324,7 @@ public class RefugeeMineGoal extends Goal {
 				Math.min(box.max().getZ(), origin.getZ() + radius)
 		);
 		for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
-			if (!isValidTarget(level, pos)) {
+			if (!canMine(villager, level, pos)) {
 				continue;
 			}
 			double dist = villager.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
@@ -253,7 +349,7 @@ public class RefugeeMineGoal extends Goal {
 				scanCursor = scanned;
 				break;
 			}
-			if (!isValidTarget(level, pos)) {
+			if (!canMine(villager, level, pos)) {
 				continue;
 			}
 			double dist = villager.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
@@ -275,8 +371,8 @@ public class RefugeeMineGoal extends Goal {
 		return Math.max(1L, box.volume());
 	}
 
-	private boolean isValidTarget(ServerLevel level, BlockPos pos) {
-		if (!level.isLoaded(pos)) {
+	static boolean canMine(Villager villager, ServerLevel level, BlockPos pos) {
+		if (villager == null || level == null || pos == null || !level.isLoaded(pos)) {
 			return false;
 		}
 		if (level.getBlockEntity(pos) instanceof BaseContainerBlockEntity) {
@@ -297,7 +393,7 @@ public class RefugeeMineGoal extends Goal {
 			return MaterialCategory.ofBlock(state) == MaterialCategory.SOIL;
 		}
 		if (RefugeeRoles.isHoe(tool)) {
-			return isTillable(state) || isHarvestable(state) || isPlantableSpot(level, pos);
+			return isTillable(state) || isHarvestable(state) || isPlantableSpot(villager, level, pos);
 		}
 		return false;
 	}
@@ -419,6 +515,13 @@ public class RefugeeMineGoal extends Goal {
 		level.destroyBlockProgress(villager.getId(), pos, -1);
 		mineProgress = 0.0f;
 		lastCrack = -1;
+		WorkZone zone = zone();
+		if (zone != null) {
+			zone.clearClaim(villager.getUUID());
+			if (level.getServer() != null) {
+				OrgLogisticsData.get(level.getServer()).setDirty();
+			}
+		}
 		target = null;
 	}
 
@@ -431,7 +534,7 @@ public class RefugeeMineGoal extends Goal {
 		WarehouseService.depositLoot(level, villager, subjectId, drops);
 	}
 
-	private boolean isPlantableSpot(ServerLevel level, BlockPos pos) {
+	private static boolean isPlantableSpot(Villager villager, ServerLevel level, BlockPos pos) {
 		if (!isPlantable(level, pos)) {
 			return false;
 		}

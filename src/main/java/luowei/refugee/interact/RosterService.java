@@ -62,7 +62,10 @@ public final class RosterService {
 			}
 		});
 		ServerLivingEntityEvents.MOB_CONVERSION.register((previous, converted, conversionContext) -> {
-			if (previous instanceof Villager && previous.level() instanceof ServerLevel level) {
+			if (previous instanceof Villager villager && previous.level() instanceof ServerLevel level) {
+				if (RefugeeSpecialRole.isSpecial(villager)) {
+					SpecialRefugeeService.markSpecialGone(level.getServer(), villager.getUUID());
+				}
 				SelectionService.onVillagerRemoved(previous.getUUID(), level);
 			}
 		});

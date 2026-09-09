@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
 
 import luowei.refugee.zone.AreaBox;
@@ -17,6 +18,8 @@ public final class StaffSession {
 	private BlockPos zoneCorner;
 	private ResourceLocation zoneDimension;
 	private AreaBox pendingImport;
+	private Direction.Axis advanceAxis = Direction.Axis.Y;
+	private boolean advancePositive = true;
 
 	public StaffPage page() {
 		return stack.isEmpty() ? StaffPage.ROOT : stack.getLast();
@@ -36,7 +39,8 @@ public final class StaffSession {
 			case NONE -> resetToRoot();
 			case WAREHOUSE -> setPages(StaffPage.WAREHOUSE_PIE, StaffPage.WAREHOUSE);
 			case FOOD_WAREHOUSE -> setPages(StaffPage.WAREHOUSE_PIE, StaffPage.FOOD_WAREHOUSE);
-			case ZONE -> setPages(StaffPage.ZONE);
+			case ZONE -> setPages(StaffPage.ZONE_PIE, StaffPage.ZONE);
+			case ADVANCE -> setPages(StaffPage.ZONE_PIE, StaffPage.ZONE_ADVANCE);
 			case BUILD -> setPages(StaffPage.BUILD_CATALOG, StaffPage.BUILD_PREVIEW);
 			case IMPORT -> setPages(StaffPage.IMPORT);
 			case FOLLOW_ENTITY -> setPages(StaffPage.COMBAT_PIE, StaffPage.COMBAT_FOLLOW);
@@ -61,11 +65,12 @@ public final class StaffSession {
 		clearZoneCorner();
 		clearImportBox();
 		clearPatrolPoints();
+		resetAdvanceTune();
 	}
 
 	private void onPageChanged() {
 		StaffPage page = page();
-		if (page != StaffPage.ZONE && page != StaffPage.IMPORT && page != StaffPage.IMPORT_NAME) {
+		if (page != StaffPage.ZONE && page != StaffPage.ZONE_ADVANCE && page != StaffPage.IMPORT && page != StaffPage.IMPORT_NAME) {
 			clearZoneCorner();
 		}
 		if (page != StaffPage.IMPORT && page != StaffPage.IMPORT_NAME) {
@@ -73,6 +78,9 @@ public final class StaffSession {
 		}
 		if (page != StaffPage.COMBAT_PATROL) {
 			clearPatrolPoints();
+		}
+		if (page != StaffPage.ZONE_ADVANCE) {
+			resetAdvanceTune();
 		}
 	}
 
@@ -104,6 +112,30 @@ public final class StaffSession {
 	public void clearZoneCorner() {
 		this.zoneCorner = null;
 		this.zoneDimension = null;
+	}
+
+	public Direction.Axis advanceAxis() {
+		return advanceAxis == null ? Direction.Axis.Y : advanceAxis;
+	}
+
+	public boolean advancePositive() {
+		return advancePositive;
+	}
+
+	public void cycleAdvanceAxis(boolean forward) {
+		Direction.Axis[] values = Direction.Axis.values();
+		int index = advanceAxis().ordinal();
+		index = forward ? (index + 1) % values.length : (index + values.length - 1) % values.length;
+		advanceAxis = values[index];
+	}
+
+	public void setAdvancePositive(boolean positive) {
+		this.advancePositive = positive;
+	}
+
+	public void resetAdvanceTune() {
+		this.advanceAxis = Direction.Axis.Y;
+		this.advancePositive = true;
 	}
 
 	public List<BlockPos> patrolPoints() {

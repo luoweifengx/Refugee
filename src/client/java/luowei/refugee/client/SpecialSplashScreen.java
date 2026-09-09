@@ -63,7 +63,9 @@ public class SpecialSplashScreen extends Screen {
 	private long farewellCloseAtMs = -1L;
 	private boolean suppressInterrupt;
 	private int introIndex;
+	private boolean seekPending;
 	private boolean interruptPending;
+	private String interruptTalkKey = "";
 	private AskLevel askLevel = AskLevel.NONE;
 	private String askTopic = "";
 
@@ -92,11 +94,11 @@ public class SpecialSplashScreen extends Screen {
 	private boolean lookActive;
 
 	public SpecialSplashScreen(int villagerEntityId, RefugeeSpecialRole role, List<String> talkLines) {
-		this(villagerEntityId, role, talkLines, null, SpecialSplashPayload.MODE_NORMAL, 0, "", false);
+		this(villagerEntityId, role, talkLines, null, SpecialSplashPayload.MODE_NORMAL, 0, "", false, false);
 	}
 
 	public SpecialSplashScreen(int villagerEntityId, RefugeeSpecialRole role, List<String> talkLines, String initialTalkKey) {
-		this(villagerEntityId, role, talkLines, initialTalkKey, SpecialSplashPayload.MODE_NORMAL, 0, "", false);
+		this(villagerEntityId, role, talkLines, initialTalkKey, SpecialSplashPayload.MODE_NORMAL, 0, "", false, false);
 	}
 
 	public SpecialSplashScreen(
@@ -108,6 +110,20 @@ public class SpecialSplashScreen extends Screen {
 			int introIndex,
 			String interruptKey,
 			boolean foodSecret
+	) {
+		this(villagerEntityId, role, talkLines, initialTalkKey, screenMode, introIndex, interruptKey, foodSecret, false);
+	}
+
+	public SpecialSplashScreen(
+			int villagerEntityId,
+			RefugeeSpecialRole role,
+			List<String> talkLines,
+			String initialTalkKey,
+			byte screenMode,
+			int introIndex,
+			String interruptKey,
+			boolean foodSecret,
+			boolean seek
 	) {
 		super(Component.translatable("role.refugee." + role.id()));
 		this.villagerEntityId = villagerEntityId;
@@ -127,7 +143,13 @@ public class SpecialSplashScreen extends Screen {
 		} else if (screenMode == SpecialSplashPayload.MODE_INTRO) {
 			if (interruptKey != null && !interruptKey.isBlank()) {
 				this.interruptPending = true;
-				this.talkText = Component.translatable(interruptKey);
+				this.interruptTalkKey = interruptKey;
+			}
+			if (seek) {
+				this.seekPending = true;
+				this.talkText = Component.translatable(GuideTutorialService.SEEK_KEY);
+			} else if (this.interruptPending) {
+				this.talkText = Component.translatable(this.interruptTalkKey);
 			} else {
 				this.talkText = Component.translatable(GuideTutorialService.INTRO_KEY_PREFIX + this.introIndex);
 			}
@@ -481,6 +503,15 @@ public class SpecialSplashScreen extends Screen {
 		if (this.farewellPending) {
 			return;
 		}
+		if (this.seekPending) {
+			this.seekPending = false;
+			if (this.interruptPending) {
+				startTalkSwap(Component.translatable(this.interruptTalkKey));
+				return;
+			}
+			startTalkSwap(Component.translatable(GuideTutorialService.INTRO_KEY_PREFIX + this.introIndex));
+			return;
+		}
 		if (this.interruptPending) {
 			this.interruptPending = false;
 			startTalkSwap(Component.translatable(GuideTutorialService.INTRO_KEY_PREFIX + this.introIndex));
@@ -794,8 +825,10 @@ public class SpecialSplashScreen extends Screen {
 				list.add(item("combat", "formation"));
 			}
 			case "build" -> {
+				list.add(item("build", "repair"));
 				list.add(item("build", "build"));
 				list.add(item("build", "mine"));
+				list.add(item("build", "advance"));
 			}
 			case "town" -> {
 				list.add(item("town", "kit"));

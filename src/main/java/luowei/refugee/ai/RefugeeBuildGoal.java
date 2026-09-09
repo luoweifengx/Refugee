@@ -25,7 +25,7 @@ import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemp
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.blueprint.BlueprintBlocks;
-import luowei.refugee.blueprint.BlueprintRegistry;
+import luowei.refugee.build.BuildHealth;
 import luowei.refugee.build.BuildJob;
 import luowei.refugee.config.RefugeeConfig;
 import luowei.refugee.interact.RefugeeRoles;
@@ -64,7 +64,7 @@ public class RefugeeBuildGoal extends Goal {
 		if (RefugeeCombat.isEating(villager)) {
 			return false;
 		}
-		return data.isBuilding();
+		return data.isBuilderDuty();
 	}
 
 	@Override
@@ -100,15 +100,41 @@ public class RefugeeBuildGoal extends Goal {
 		BuildJob job = resolveJob(level, data);
 		if (job == null) {
 			abortMining(level);
-			if (data.jobId() != null || data.isBuilding()) {
-				data.clearBuild();
-				RefugeeAttachments.markDirty(villager, data);
+			job = StaffService.claimBuildJob(level, villager);
+			if (job == null) {
+				return;
 			}
-			return;
 		}
-		List<StructureTemplate.StructureBlockInfo> blocks = loadBlocks(level, job);
+		List<StructureTemplate.StructureBlockInfo> blocks = BuildHealth.loadBlocks(level, job);
 		if (blocks.isEmpty()) {
 			abortMining(level);
+			StaffService.releaseBuilder(level, villager, job);
+			return;
+		}
+		if (job.isDirty()) {
+			int cursor = job.nextIndex();
+			boolean hasTarget = cursor < blocks.size()
+					&& !BuildHealth.matches(blocks.get(cursor).state(), level.getBlockState(blocks.get(cursor).pos()));
+			if (!hasTarget) {
+				BuildHealth.Scan scan = BuildHealth.scan(level, job, blocks);
+				if (scan == BuildHealth.Scan.SCANNING) {
+					abortMining(level);
+					return;
+				}
+				if (scan == BuildHealth.Scan.HEALTHY) {
+					abortMining(level);
+					StaffService.markJobVerified(level, job);
+					return;
+				}
+				if (scan == BuildHealth.Scan.MISSING) {
+					abortMining(level);
+					StaffService.releaseBuilder(level, villager, job);
+					return;
+				}
+			}
+		} else if (job.nextIndex() >= blocks.size()) {
+			abortMining(level);
+			StaffService.finishWorker(level, villager, job);
 			return;
 		}
 		int index = job.nextIndex();
@@ -127,7 +153,7 @@ public class RefugeeBuildGoal extends Goal {
 			}
 			BlockState target = info.state();
 			BlockState current = level.getBlockState(dest);
-			if (!current.isAir() && current.equals(target)) {
+			if (!current.isAir() && BuildHealth.matches(target, current)) {
 				abortMining(level);
 				index++;
 				job.setNextIndex(index);
@@ -148,7 +174,7 @@ public class RefugeeBuildGoal extends Goal {
 				continue;
 			}
 			current = level.getBlockState(dest);
-			if (!current.isAir() && current.equals(target)) {
+			if (!current.isAir() && BuildHealth.matches(target, current)) {
 				abortMining(level);
 				index++;
 				job.setNextIndex(index);
@@ -176,7 +202,7 @@ public class RefugeeBuildGoal extends Goal {
 					return;
 				}
 				current = level.getBlockState(dest);
-				if (!current.isAir() && current.equals(target)) {
+				if (!current.isAir() && BuildHealth.matches(target, current)) {
 					abortMining(level);
 					index++;
 					job.setNextIndex(index);
@@ -191,7 +217,7 @@ public class RefugeeBuildGoal extends Goal {
 				return;
 			}
 			shortageNotice = null;
-			level.setBlock(dest, target, 3);
+			BuildHealth.suppressDirty(() -> level.setBlock(dest, target, 3));
 			if (info.nbt() != null) {
 				BlockEntity blockEntity = level.getBlockEntity(dest);
 				if (blockEntity != null) {
@@ -326,7 +352,7 @@ public class RefugeeBuildGoal extends Goal {
 				villager,
 				RefugeeRoles.workTool(villager)
 		);
-		level.destroyBlock(dest, false);
+		BuildHealth.suppressDirty(() -> level.destroyBlock(dest, false));
 		WarehouseService.depositLoot(level, villager, subjectId, drops);
 	}
 
@@ -337,21 +363,10 @@ public class RefugeeBuildGoal extends Goal {
 	private BuildJob resolveJob(ServerLevel level, RefugeeVillagerData data) {
 		if (data.jobId() != null) {
 			BuildJob job = OrgLogisticsData.get(level.getServer()).job(data.jobId());
-			if (job != null) {
+			if (job != null && job.needsWork()) {
 				return job;
 			}
 		}
 		return StaffService.migrateLegacy(level, villager, data);
-	}
-
-	private static List<StructureTemplate.StructureBlockInfo> loadBlocks(ServerLevel level, BuildJob job) {
-		StructureTemplate template = BlueprintRegistry.get(job.structureId());
-		if (template == null) {
-			template = level.getServer().getStructureManager().get(job.structureId()).orElse(null);
-		}
-		if (template == null) {
-			return List.of();
-		}
-		return job.placedBlocks(template);
 	}
 }

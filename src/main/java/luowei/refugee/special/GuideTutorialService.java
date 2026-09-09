@@ -25,6 +25,7 @@ import luowei.refugee.talk.RefugeeBubble;
 
 /**
  * 向导开局教程：1 分钟后靠近触发，或提前右键；每人一次；打断续播与沉默一天。
+ * 靠近触发会先抱怨玩家没来找，再续打断句与 intro.0–3。
  */
 public final class GuideTutorialService {
 	public static final int INTRO_LINES = 4;
@@ -35,6 +36,7 @@ public final class GuideTutorialService {
 	public static final int TICK_INTERVAL = 10;
 
 	public static final String INTRO_KEY_PREFIX = "screen.refugee.splash.guide.intro.";
+	public static final String SEEK_KEY = "screen.refugee.splash.guide.intro.seek";
 	public static final String INTERRUPT_KEY_PREFIX = "screen.refugee.splash.guide.interrupt.";
 	public static final String ABANDON_KEY = "screen.refugee.splash.guide.abandon";
 	private static final String[] INTERRUPT_KEYS = {
@@ -99,7 +101,7 @@ public final class GuideTutorialService {
 			RefugeeNetworking.openSpecialSplash(player, villager);
 			return;
 		}
-		openIntro(player, villager, false);
+		openIntro(player, villager, false, false);
 	}
 
 	public static void onIntroAdvance(ServerPlayer player, int entityId) {
@@ -222,10 +224,10 @@ public final class GuideTutorialService {
 		if (guide == null || guide.distanceTo(player) > TRIGGER_DISTANCE) {
 			return;
 		}
-		openIntro(player, guide, false);
+		openIntro(player, guide, false, true);
 	}
 
-	private static void openIntro(ServerPlayer player, Villager villager, boolean abandon) {
+	private static void openIntro(ServerPlayer player, Villager villager, boolean abandon, boolean seek) {
 		PlayerSelectionData data = RefugeeAttachments.get(player);
 		if (data.guideIntroStep() >= 1) {
 			grantStaff(player, data);
@@ -236,7 +238,7 @@ public final class GuideTutorialService {
 		if (!abandon && data.guideInterruptCount() > 0 && data.guideInterruptCount() < INTERRUPT_LIMIT) {
 			interrupt = interruptKey(player);
 		}
-		RefugeeNetworking.openGuideIntro(player, villager, data.guideIntroStep(), interrupt, abandon);
+		RefugeeNetworking.openGuideIntro(player, villager, data.guideIntroStep(), interrupt, abandon, seek && !abandon);
 	}
 
 	private static void abandonIntro(ServerPlayer player, PlayerSelectionData data, Villager guide, boolean reopen) {
@@ -249,7 +251,7 @@ public final class GuideTutorialService {
 		if (guide != null) {
 			walkAway(player, guide);
 			if (reopen) {
-				RefugeeNetworking.openGuideIntro(player, guide, data.guideIntroStep(), "", true);
+				RefugeeNetworking.openGuideIntro(player, guide, data.guideIntroStep(), "", true, false);
 			}
 		}
 	}

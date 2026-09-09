@@ -70,6 +70,22 @@ public final class PbsAdapter {
 		return PlayerBlockStatusLib.queryChunkState(level, chunkPos);
 	}
 
+	public static List<ChunkPos> erodedChunks(ServerLevel level, UUID subjectId) {
+		return PlayerBlockStatusLib.queryErodedChunks(level, subjectId);
+	}
+
+	public static int erodedChunkCount(ServerLevel level, UUID subjectId) {
+		return PlayerBlockStatusLib.queryErodedChunkCount(level, subjectId);
+	}
+
+	public static List<BlockPos> erosionBlocks(ServerLevel level, ChunkPos chunkPos) {
+		return PlayerBlockStatusLib.queryErosionBlocks(level, chunkPos);
+	}
+
+	public static boolean isErosionBlock(ServerLevel level, BlockPos pos) {
+		return PlayerBlockStatusLib.isErosionBlock(level, pos);
+	}
+
 	public static List<ChunkPos> demonChunks(ServerLevel level) {
 		return PlayerBlockStatusLib.queryDemonChunks(level);
 	}

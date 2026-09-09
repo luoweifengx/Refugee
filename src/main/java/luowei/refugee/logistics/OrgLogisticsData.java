@@ -2,6 +2,7 @@ package luowei.refugee.logistics;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -211,6 +212,33 @@ public final class OrgLogisticsData extends SavedData {
 	}
 
 	/**
+	 * 方块点落在未脏任务 AABB 内则标脏。已脏的跳过。
+	 */
+	public Set<UUID> markBuildDirtyAt(ResourceLocation dimension, BlockPos pos) {
+		if (dimension == null || pos == null) {
+			return Set.of();
+		}
+		Set<UUID> subjects = new HashSet<>();
+		for (Map.Entry<UUID, OrgRecord> entry : orgs.entrySet()) {
+			for (BuildJob job : entry.getValue().jobs) {
+				if (job.isDirty() || !dimension.equals(job.dimension())) {
+					continue;
+				}
+				if (!job.bounds().contains(pos)) {
+					continue;
+				}
+				if (job.markDirty()) {
+					subjects.add(entry.getKey());
+				}
+			}
+		}
+		if (!subjects.isEmpty()) {
+			setDirty();
+		}
+		return subjects;
+	}
+
+	/**
 	 * 把 from 名下的仓库/工作区/建筑任务并入 to。
 	 */
 	public void mergeFrom(UUID from, UUID to) {
@@ -314,14 +342,9 @@ public final class OrgLogisticsData extends SavedData {
 					}
 				}
 			}
-			Iterator<BuildJob> jobs = org.jobs.iterator();
-			while (jobs.hasNext()) {
-				BuildJob job = jobs.next();
+			for (BuildJob job : org.jobs) {
 				if (job.removeWorker(villagerId)) {
 					changed = true;
-					if (job.isEmpty()) {
-						jobs.remove();
-					}
 				}
 			}
 		}

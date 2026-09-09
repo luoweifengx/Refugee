@@ -163,7 +163,8 @@ public class RefugeeClient implements ClientModInitializer {
 						payload.screenMode(),
 						payload.introIndex(),
 						payload.interruptKey() == null ? "" : payload.interruptKey(),
-						payload.foodSecret()
+						payload.foodSecret(),
+						payload.seek()
 				));
 			});
 		});
@@ -211,6 +212,10 @@ public class RefugeeClient implements ClientModInitializer {
 			Component hint = ClientBlueprintSelection.hintLabel();
 			graphics.drawCenteredString(font, channel, width / 2, height - 96, 0xFFE8F4FF);
 			graphics.drawCenteredString(font, hint, width / 2, height - 84, 0xFFAAAAAA);
+			return;
+		}
+		if (page == StaffPage.ZONE_ADVANCE) {
+			graphics.drawCenteredString(font, ClientAdvanceSelection.hintLabel(), width / 2, height - 84, 0xFFE8F4FF);
 			return;
 		}
 		if (page == StaffPage.COMBAT_FOLLOW) {

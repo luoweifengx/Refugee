@@ -173,6 +173,10 @@ public final class PlayerSelectionData {
 		return villagerId != null && roster.containsKey(villagerId);
 	}
 
+	public RosterEntry rosterEntry(UUID villagerId) {
+		return villagerId == null ? null : roster.get(villagerId);
+	}
+
 	public Collection<RosterEntry> rosterEntries() {
 		return roster.values();
 	}
@@ -443,14 +447,17 @@ public final class PlayerSelectionData {
 		}
 		if (villagerId.equals(nurseId)) {
 			nurseId = null;
+			nurseGranted = false;
 			changed = true;
 		}
 		if (villagerId.equals(cartographerId)) {
 			cartographerId = null;
+			cartographerGranted = false;
 			changed = true;
 		}
 		if (villagerId.equals(enchanterId)) {
 			enchanterId = null;
+			enchanterGranted = false;
 			changed = true;
 		}
 		return changed;

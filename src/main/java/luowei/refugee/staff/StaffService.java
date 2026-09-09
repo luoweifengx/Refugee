@@ -5,8 +5,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -23,6 +25,8 @@ import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BaseContainerBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.gameevent.GameEvent;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import luowei.refugee.Refugee;
 import luowei.refugee.attachment.PlayerSelectionData;
@@ -30,6 +34,7 @@ import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.blueprint.BlueprintRegistry;
 import luowei.refugee.blueprint.PlayerBlueprints;
+import luowei.refugee.build.BuildHealth;
 import luowei.refugee.build.BuildJob;
 import luowei.refugee.config.RefugeeConfig;
 import luowei.refugee.interact.RefugeeRoles;
@@ -42,6 +47,7 @@ import luowei.refugee.special.RefugeeSpecialRole;
 import luowei.refugee.warehouse.WarehouseService;
 import luowei.refugee.zone.AreaBox;
 import luowei.refugee.zone.WorkZone;
+import luowei.refugee.zone.WorkerDuty;
 
 /**
  * 指挥杖服务端会话、页面树、仓库选箱、工作区分配与建筑任务。
@@ -53,6 +59,7 @@ public final class StaffService {
 	}
 
 	public static void register() {
+		BuildHealth.register();
 	}
 
 	public static StaffSession session(ServerPlayer player) {
@@ -101,6 +108,19 @@ public final class StaffService {
 	public static void handleNav(ServerPlayer player, StaffNavAction action) {
 		if (action == StaffNavAction.RESET || action == StaffNavAction.POP) {
 			resetToRoot(player);
+			return;
+		}
+		if (page(player) != StaffPage.ZONE_ADVANCE) {
+			return;
+		}
+		StaffSession session = session(player);
+		switch (action) {
+			case ADVANCE_NEXT_AXIS -> session.cycleAdvanceAxis(true);
+			case ADVANCE_PREV_AXIS -> session.cycleAdvanceAxis(false);
+			case ADVANCE_POSITIVE -> session.setAdvancePositive(true);
+			case ADVANCE_NEGATIVE -> session.setAdvancePositive(false);
+			default -> {
+			}
 		}
 	}
 
@@ -111,6 +131,8 @@ public final class StaffService {
 			player.displayClientMessage(Component.translatable("message.refugee.staff.mode.food_warehouse"), true);
 		} else if (page == StaffPage.ZONE) {
 			player.displayClientMessage(Component.translatable("message.refugee.staff.mode.zone"), true);
+		} else if (page == StaffPage.ZONE_ADVANCE) {
+			player.displayClientMessage(Component.translatable("message.refugee.staff.mode.advance"), true);
 		} else if (page == StaffPage.IMPORT) {
 			player.displayClientMessage(Component.translatable("message.refugee.staff.mode.import"), true);
 		} else if (page == StaffPage.BUILD_PREVIEW) {
@@ -123,6 +145,9 @@ public final class StaffService {
 	}
 
 	public static void onAirUse(ServerPlayer player) {
+		if (tryCancelBuild(player)) {
+			return;
+		}
 		StaffSession session = session(player);
 		if (session.isRoot()) {
 			session.setPages(StaffPage.PIE);
@@ -147,7 +172,15 @@ public final class StaffService {
 			}
 			case WAREHOUSE_BLOCKS -> enter(player, StaffPage.WAREHOUSE_PIE, StaffPage.WAREHOUSE);
 			case WAREHOUSE_FOOD -> enter(player, StaffPage.WAREHOUSE_PIE, StaffPage.FOOD_WAREHOUSE);
-			case ZONE -> enter(player, StaffPage.ZONE);
+			case ZONE -> {
+				session(player).setPages(StaffPage.ZONE_PIE);
+				sync(player);
+				RefugeeNetworking.openStaffPie(player, StaffPage.ZONE_PIE);
+			}
+			case ZONE_BOX -> enter(player, StaffPage.ZONE_PIE, StaffPage.ZONE);
+			case ZONE_ADVANCE -> enter(player, StaffPage.ZONE_PIE, StaffPage.ZONE_ADVANCE);
+			case ZONE_REPAIR -> assignRepairDuty(player);
+			case ZONE_BUILD -> assignBuildDuty(player);
 			case IMPORT -> enter(player, StaffPage.IMPORT);
 			case SELECT -> {
 				session(player).setPages(StaffPage.BUILD_CATALOG);
@@ -162,7 +195,16 @@ public final class StaffService {
 			case FOLLOW_ENTITY -> enterFollowEntity(player);
 			case PATROL -> enterPatrol(player);
 			case FORMATION -> applyFormation(player);
-			case RALLY -> applyRally(player);
+			case RALLY -> {
+				session(player).setPages(StaffPage.RALLY_PIE);
+				sync(player);
+				RefugeeNetworking.openStaffPie(player, StaffPage.RALLY_PIE);
+			}
+			case RALLY_MELEE -> applyRally(player, RefugeeRoles::matchesRallyMelee);
+			case RALLY_RANGED -> applyRally(player, RefugeeRoles::matchesRallyRanged);
+			case RALLY_WORKER -> applyRally(player, RefugeeRoles::matchesRallyWorker);
+			case RALLY_ALL -> applyRally(player, null);
+			case RALLY_CIVILIAN -> applyRally(player, RefugeeRoles::matchesRallyCivilian);
 		}
 	}
 
@@ -231,11 +273,15 @@ public final class StaffService {
 		if (!(held.getItem() instanceof CommandStaffItem)) {
 			return false;
 		}
+		if (tryCancelBuild(player)) {
+			return true;
+		}
 		StaffSession session = session(player);
 		return switch (session.page()) {
 			case WAREHOUSE -> toggleWarehouse(player, pos);
 			case FOOD_WAREHOUSE -> toggleFoodWarehouse(player, pos);
 			case ZONE -> pickZoneCorner(player, pos);
+			case ZONE_ADVANCE -> pickAdvanceCorner(player, pos);
 			case BUILD_PREVIEW -> true;
 			case IMPORT -> pickImportCorner(player, pos);
 			case COMBAT_FOLLOW -> true;
@@ -300,8 +346,14 @@ public final class StaffService {
 			failAction(player, Component.translatable("message.refugee.staff.build.invalid"));
 			return;
 		}
-		int assigned = assignBuild(
-				player,
+		if (!(player.level() instanceof ServerLevel level)) {
+			return;
+		}
+		UUID subjectId = PbsAdapter.resolveSubject(player);
+		ResourceLocation dimension = level.dimension().location();
+		BuildJob job = new BuildJob(
+				UUID.randomUUID(),
+				dimension,
 				selection.structureId(),
 				origin,
 				offsetX,
@@ -309,11 +361,12 @@ public final class StaffService {
 				offsetZ,
 				rotation == null ? Rotation.NONE : rotation
 		);
-		if (assigned <= 0) {
-			failAction(player, Component.translatable("message.refugee.staff.build.no_workers"));
-			return;
-		}
-		player.displayClientMessage(Component.translatable("message.refugee.staff.build.assigned", assigned), true);
+		OrgLogisticsData.get(player.getServer()).addJob(subjectId, job);
+		selection.setBuildOrigin(null);
+		RefugeeAttachments.markDirty(player, selection);
+		RefugeeNetworking.syncSelection(player);
+		syncSubject(player.getServer(), subjectId);
+		player.displayClientMessage(Component.translatable("message.refugee.staff.build.placed"), true);
 		playSuccess(player);
 		resetToRoot(player);
 	}
@@ -450,29 +503,71 @@ public final class StaffService {
 		return true;
 	}
 
+	private static boolean pickAdvanceCorner(ServerPlayer player, BlockPos pos) {
+		if (!(player.level() instanceof ServerLevel level)) {
+			return false;
+		}
+		StaffSession session = session(player);
+		ResourceLocation dimension = level.dimension().location();
+		if (session.zoneCorner() == null || !dimension.equals(session.zoneDimension())) {
+			session.setZoneCorner(dimension, pos);
+			sync(player);
+			player.displayClientMessage(Component.translatable("message.refugee.staff.zone.corner1"), true);
+			return true;
+		}
+		AreaBox box = AreaBox.of(session.zoneCorner(), pos);
+		session.clearZoneCorner();
+		int assigned = assignAdvance(player, dimension, box, session.advanceAxis(), session.advancePositive());
+		if (assigned <= 0) {
+			failAction(player, Component.translatable("message.refugee.staff.advance.no_workers"));
+			return true;
+		}
+		player.displayClientMessage(Component.translatable("message.refugee.staff.advance.assigned", assigned), true);
+		playSuccess(player);
+		resetToRoot(player);
+		return true;
+	}
+
 	private static int assignZone(ServerPlayer player, ResourceLocation dimension, AreaBox box) {
+		return assignZoneInternal(player, dimension, box, false, Direction.Axis.Y, true);
+	}
+
+	private static int assignAdvance(
+			ServerPlayer player,
+			ResourceLocation dimension,
+			AreaBox box,
+			Direction.Axis axis,
+			boolean positive
+	) {
+		return assignZoneInternal(player, dimension, box, true, axis, positive);
+	}
+
+	private static int assignZoneInternal(
+			ServerPlayer player,
+			ResourceLocation dimension,
+			AreaBox box,
+			boolean advance,
+			Direction.Axis axis,
+			boolean positive
+	) {
 		if (!(player.level() instanceof ServerLevel level)) {
 			return 0;
 		}
 		PlayerSelectionData selection = RefugeeAttachments.get(player);
-		WorkZone zone = new WorkZone(UUID.randomUUID(), dimension, box);
+		WorkZone zone = advance
+				? WorkZone.advance(UUID.randomUUID(), dimension, box, axis, positive)
+				: new WorkZone(UUID.randomUUID(), dimension, box);
 		int assigned = 0;
 		List<UUID> selected = selection.snapshotSelected();
 		for (UUID villagerId : selected) {
-			Entity entity = level.getEntity(villagerId);
-			if (!(entity instanceof Villager villager) || !villager.isAlive()) {
+			Villager villager = commandableBuilder(level, player, villagerId);
+			if (villager == null) {
 				continue;
 			}
-			if (RefugeeSpecialRole.isSpecial(villager) || !RefugeeRoles.isBuilder(villager)) {
-				continue;
-			}
-			if (!SelectionService.canCommand(player, villager)) {
+			if (advance && !RefugeeRoles.isAdvanceMiner(villager)) {
 				continue;
 			}
 			RefugeeVillagerData data = RefugeeAttachments.get(villager);
-			if (data.isBuilding()) {
-				continue;
-			}
 			unbindWorker(villager);
 			data.stopFollowing();
 			selection.removeSelected(villagerId);
@@ -489,67 +584,67 @@ public final class StaffService {
 		return assigned;
 	}
 
-	private static int assignBuild(
-			ServerPlayer player,
-			ResourceLocation structureId,
-			BlockPos origin,
-			int offsetX,
-			int offsetY,
-			int offsetZ,
-			Rotation rotation
-	) {
-		if (!(player.level() instanceof ServerLevel level) || structureId == null || origin == null) {
-			return 0;
+	private static void assignRepairDuty(ServerPlayer player) {
+		int assigned = assignDuty(player, WorkerDuty.REPAIRER);
+		if (assigned <= 0) {
+			failAction(player, Component.translatable("message.refugee.staff.zone.no_workers"));
+			return;
 		}
-		if (BlueprintRegistry.get(structureId) == null && level.getServer().getStructureManager().get(structureId).isEmpty()) {
+		player.displayClientMessage(Component.translatable("message.refugee.staff.repair.assigned", assigned), true);
+		playSuccess(player);
+		resetToRoot(player);
+	}
+
+	private static void assignBuildDuty(ServerPlayer player) {
+		int assigned = assignDuty(player, WorkerDuty.BUILDER);
+		if (assigned <= 0) {
+			failAction(player, Component.translatable("message.refugee.staff.zone.no_workers"));
+			return;
+		}
+		player.displayClientMessage(Component.translatable("message.refugee.staff.build.duty.assigned", assigned), true);
+		playSuccess(player);
+		resetToRoot(player);
+	}
+
+	private static int assignDuty(ServerPlayer player, WorkerDuty duty) {
+		if (!(player.level() instanceof ServerLevel level) || duty == null || duty == WorkerDuty.NONE) {
 			return 0;
 		}
 		PlayerSelectionData selection = RefugeeAttachments.get(player);
-		UUID subjectId = PbsAdapter.resolveSubject(player);
-		ResourceLocation dimension = level.dimension().location();
-		BuildJob job = new BuildJob(
-				UUID.randomUUID(),
-				dimension,
-				structureId,
-				origin,
-				offsetX,
-				offsetY,
-				offsetZ,
-				rotation
-		);
 		int assigned = 0;
-		for (UUID villagerId : selection.snapshotSelected()) {
-			Entity entity = level.getEntity(villagerId);
-			if (!(entity instanceof Villager villager) || !villager.isAlive()) {
-				continue;
-			}
-			if (RefugeeSpecialRole.isSpecial(villager) || !RefugeeRoles.isBuilder(villager)) {
-				continue;
-			}
-			if (!SelectionService.canCommand(player, villager)) {
+		List<UUID> selected = selection.snapshotSelected();
+		for (UUID villagerId : selected) {
+			Villager villager = commandableBuilder(level, player, villagerId);
+			if (villager == null) {
 				continue;
 			}
 			RefugeeVillagerData data = RefugeeAttachments.get(villager);
-			if (data.isBuilding()) {
-				continue;
-			}
 			unbindWorker(villager);
 			data.stopFollowing();
-			data.assignJob(job.id(), structureId, origin);
+			data.setWorkerDuty(duty);
 			selection.removeSelected(villagerId);
-			job.addWorker(villager.getUUID());
 			RefugeeAttachments.markDirty(villager, data);
 			assigned++;
 		}
 		if (assigned > 0) {
-			OrgLogisticsData.get(player.getServer()).addJob(subjectId, job);
-			selection.setBuildOrigin(null);
 			RefugeeAttachments.markDirty(player, selection);
 			SelectionService.collectBannersIfEmpty(player);
-			RefugeeNetworking.syncSelection(player);
-			syncSubject(player.getServer(), subjectId);
 		}
 		return assigned;
+	}
+
+	private static Villager commandableBuilder(ServerLevel level, ServerPlayer player, UUID villagerId) {
+		Entity entity = level.getEntity(villagerId);
+		if (!(entity instanceof Villager villager) || !villager.isAlive()) {
+			return null;
+		}
+		if (RefugeeSpecialRole.isSpecial(villager) || !RefugeeRoles.isBuilder(villager)) {
+			return null;
+		}
+		if (!SelectionService.canCommand(player, villager)) {
+			return null;
+		}
+		return villager;
 	}
 
 	public static void unbindWorker(Villager villager) {
@@ -558,8 +653,16 @@ public final class StaffService {
 		}
 		unbindWorker(villager.getUUID(), villager.level().getServer(), RefugeeAttachments.get(villager).subjectId());
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		boolean changed = false;
 		if (data.isBuilding()) {
 			data.clearBuild();
+			changed = true;
+		}
+		if (data.workerDuty().isAssigned()) {
+			data.clearWorkerDuty();
+			changed = true;
+		}
+		if (changed) {
 			RefugeeAttachments.markDirty(villager, data);
 		}
 	}
@@ -586,34 +689,264 @@ public final class StaffService {
 			return;
 		}
 		job.removeWorker(villager.getUUID());
-		completeJobIfDone(level, job, true);
+		beginVerify(level, job);
 	}
 
-	public static void completeJobIfDone(ServerLevel level, BuildJob job, boolean cursorFinished) {
+	public static void releaseBuilder(ServerLevel level, Villager villager, BuildJob job) {
+		if (villager == null) {
+			return;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		data.clearBuild();
+		RefugeeAttachments.markDirty(villager, data);
+		if (job != null) {
+			job.removeWorker(villager.getUUID());
+		}
+		if (level != null && level.getServer() != null && data.subjectId() != null) {
+			OrgLogisticsData.get(level.getServer()).setDirty();
+			syncSubject(level.getServer(), data.subjectId());
+		}
+	}
+
+	public static void markJobVerified(ServerLevel level, BuildJob job) {
 		if (level == null || level.getServer() == null || job == null) {
 			return;
 		}
 		OrgLogisticsData logistics = OrgLogisticsData.get(level.getServer());
 		UUID subjectId = logistics.subjectOfJob(job.id());
-		if (cursorFinished) {
-			for (UUID remaining : job.snapshotWorkers()) {
-				Entity entity = level.getEntity(remaining);
-				if (entity instanceof Villager other) {
-					RefugeeVillagerData data = RefugeeAttachments.get(other);
-					data.clearBuild();
-					RefugeeAttachments.markDirty(other, data);
-				}
-				job.removeWorker(remaining);
+		for (UUID remaining : job.snapshotWorkers()) {
+			Entity entity = level.getEntity(remaining);
+			if (entity instanceof Villager other) {
+				RefugeeVillagerData data = RefugeeAttachments.get(other);
+				data.clearBuild();
+				RefugeeAttachments.markDirty(other, data);
 			}
+			job.removeWorker(remaining);
 		}
-		if (job.isEmpty() || cursorFinished) {
-			logistics.removeJob(job.id());
-			if (subjectId != null) {
-				syncSubject(level.getServer(), subjectId);
-			}
+		job.markVerified();
+		logistics.setDirty();
+		if (subjectId != null) {
+			syncSubject(level.getServer(), subjectId);
+		}
+	}
+
+	public static void beginVerify(ServerLevel level, BuildJob job) {
+		if (level == null || level.getServer() == null || job == null) {
 			return;
 		}
+		OrgLogisticsData logistics = OrgLogisticsData.get(level.getServer());
+		UUID subjectId = logistics.subjectOfJob(job.id());
+		for (UUID remaining : job.snapshotWorkers()) {
+			Entity entity = level.getEntity(remaining);
+			if (entity instanceof Villager other) {
+				RefugeeVillagerData data = RefugeeAttachments.get(other);
+				data.clearBuild();
+				RefugeeAttachments.markDirty(other, data);
+			}
+			job.removeWorker(remaining);
+		}
+		job.beginVerify();
 		logistics.setDirty();
+		if (subjectId != null) {
+			syncSubject(level.getServer(), subjectId);
+		}
+	}
+
+	public static void cancelJob(ServerLevel level, BuildJob job) {
+		if (level == null || level.getServer() == null || job == null) {
+			return;
+		}
+		OrgLogisticsData logistics = OrgLogisticsData.get(level.getServer());
+		UUID subjectId = logistics.subjectOfJob(job.id());
+		for (UUID remaining : job.snapshotWorkers()) {
+			Entity entity = level.getEntity(remaining);
+			if (entity instanceof Villager other) {
+				RefugeeVillagerData data = RefugeeAttachments.get(other);
+				data.clearBuild();
+				RefugeeAttachments.markDirty(other, data);
+			}
+			job.removeWorker(remaining);
+		}
+		logistics.removeJob(job.id());
+		if (subjectId != null) {
+			syncSubject(level.getServer(), subjectId);
+		}
+	}
+
+	public static void finishAdvance(ServerLevel level, WorkZone zone) {
+		if (level == null || zone == null || level.getServer() == null) {
+			return;
+		}
+		OrgLogisticsData logistics = OrgLogisticsData.get(level.getServer());
+		UUID subjectId = null;
+		BlockPos pos = null;
+		for (UUID workerId : zone.snapshotWorkers()) {
+			if (subjectId == null) {
+				subjectId = logistics.subjectOfWorker(workerId);
+			}
+			Entity entity = level.getEntity(workerId);
+			if (pos == null && entity instanceof Villager villager && villager.isAlive()) {
+				pos = villager.blockPosition();
+			}
+		}
+		if (pos == null) {
+			pos = zone.currentSlice().center();
+		}
+		if (subjectId != null) {
+			Component posText = Component.translatable(
+					"message.refugee.roster.pos",
+					pos.getX(),
+					pos.getY(),
+					pos.getZ()
+			);
+			Component message = Component.translatable("message.refugee.staff.advance.stopped", posText);
+			for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
+				if (subjectId.equals(player.getUUID()) || subjectId.equals(PbsAdapter.resolveSubject(player))) {
+					player.sendSystemMessage(message);
+				}
+			}
+		}
+		for (UUID workerId : zone.snapshotWorkers()) {
+			Entity entity = level.getEntity(workerId);
+			if (entity instanceof Villager villager) {
+				unbindWorker(villager);
+			} else {
+				unbindWorker(workerId, level.getServer(), null);
+			}
+		}
+	}
+
+	public static BuildJob claimBuildJob(ServerLevel level, Villager villager) {
+		if (level == null || villager == null) {
+			return null;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (data.jobId() != null) {
+			BuildJob existing = OrgLogisticsData.get(level.getServer()).job(data.jobId());
+			if (existing != null && existing.needsWork()) {
+				return existing;
+			}
+			data.clearBuild();
+			RefugeeAttachments.markDirty(villager, data);
+			if (existing != null) {
+				existing.removeWorker(villager.getUUID());
+			}
+		}
+		UUID subjectId = data.subjectId();
+		if (subjectId == null) {
+			return null;
+		}
+		ResourceLocation dimension = level.dimension().location();
+		List<BuildJob> jobs = new ArrayList<>();
+		for (BuildJob job : OrgLogisticsData.get(level.getServer()).jobs(subjectId)) {
+			if (dimension.equals(job.dimension()) && isUsableJob(level, job) && job.needsWork()) {
+				jobs.add(job);
+			}
+		}
+		BuildJob job;
+		if (jobs.isEmpty()) {
+			job = BuildHealth.pollStandingRepair(level, subjectId);
+			if (job == null || !isUsableJob(level, job)) {
+				return null;
+			}
+		} else {
+			job = jobs.get(villager.getRandom().nextInt(jobs.size()));
+		}
+		job.addWorker(villager.getUUID());
+		data.assignJob(job.id(), job.structureId(), job.origin());
+		RefugeeAttachments.markDirty(villager, data);
+		OrgLogisticsData.get(level.getServer()).setDirty();
+		syncSubject(level.getServer(), subjectId);
+		return job;
+	}
+
+	public static void leaveBuilderDuty(Villager villager) {
+		if (villager == null) {
+			return;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (!data.isBuilderDuty()) {
+			return;
+		}
+		if (villager.level().getServer() != null) {
+			unbindWorker(villager.getUUID(), villager.level().getServer(), data.subjectId());
+		}
+		data.clearBuild();
+		data.clearWorkerDuty();
+		RefugeeAttachments.markDirty(villager, data);
+	}
+
+	public static void leaveRepairerDuty(Villager villager) {
+		if (villager == null) {
+			return;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (!data.isRepairerDuty()) {
+			return;
+		}
+		data.clearWorkerDuty();
+		RefugeeAttachments.markDirty(villager, data);
+	}
+
+	public static boolean tryCancelBuild(ServerPlayer player) {
+		if (player == null || !player.isShiftKeyDown() || !(player.level() instanceof ServerLevel level)) {
+			return false;
+		}
+		ItemStack held = player.getMainHandItem();
+		if (!(held.getItem() instanceof CommandStaffItem)) {
+			held = player.getOffhandItem();
+		}
+		if (!(held.getItem() instanceof CommandStaffItem)) {
+			return false;
+		}
+		if (page(player) == StaffPage.COMBAT_PATROL) {
+			return false;
+		}
+		BuildJob hit = raycastBuild(player, level);
+		if (hit == null) {
+			return false;
+		}
+		UUID subjectId = OrgLogisticsData.get(level.getServer()).subjectOfJob(hit.id());
+		cancelJob(level, hit);
+		player.displayClientMessage(Component.translatable("message.refugee.staff.build.cancelled"), true);
+		playSuccess(player);
+		if (subjectId != null) {
+			syncSubject(level.getServer(), subjectId);
+		}
+		return true;
+	}
+
+	private static BuildJob raycastBuild(ServerPlayer player, ServerLevel level) {
+		UUID subjectId = PbsAdapter.resolveSubject(player);
+		Vec3 start = player.getEyePosition();
+		double range = Math.max(32.0, player.blockInteractionRange() * 4.0);
+		Vec3 end = start.add(player.getLookAngle().scale(range));
+		BuildJob best = null;
+		double bestDist = Double.MAX_VALUE;
+		for (BuildJob job : OrgLogisticsData.get(level.getServer()).jobs(subjectId)) {
+			if (!level.dimension().location().equals(job.dimension())) {
+				continue;
+			}
+			AABB box = job.bounds().aabb();
+			var clip = box.clip(start, end);
+			if (clip.isEmpty()) {
+				continue;
+			}
+			double dist = clip.get().distanceToSqr(start);
+			if (dist < bestDist) {
+				bestDist = dist;
+				best = job;
+			}
+		}
+		return best;
+	}
+
+	private static boolean isUsableJob(ServerLevel level, BuildJob job) {
+		if (job == null || job.structureId() == null) {
+			return false;
+		}
+		return BlueprintRegistry.get(job.structureId()) != null
+				|| level.getServer().getStructureManager().get(job.structureId()).isPresent();
 	}
 
 	public static void onVillagerGone(UUID villagerId, MinecraftServer server) {
@@ -679,12 +1012,12 @@ public final class StaffService {
 		List<AreaBox> zones = new ArrayList<>();
 		for (WorkZone zone : data.zones(subjectId)) {
 			if (dimension.equals(zone.dimension())) {
-				zones.add(zone.box());
+				zones.add(zone.isAdvance() ? zone.currentSlice() : zone.box());
 			}
 		}
 		List<AreaBox> builds = new ArrayList<>();
 		for (BuildJob job : data.jobs(subjectId)) {
-			if (dimension.equals(job.dimension())) {
+			if (dimension.equals(job.dimension()) && job.showsOverlay()) {
 				builds.add(job.bounds());
 			}
 		}
@@ -770,8 +1103,8 @@ public final class StaffService {
 		resetToRoot(player);
 	}
 
-	private static void applyRally(ServerPlayer player) {
-		int count = SelectionService.selectAround(player, RefugeeConfig.hornBellRadius);
+	private static void applyRally(ServerPlayer player, Predicate<Villager> filter) {
+		int count = SelectionService.selectAround(player, RefugeeConfig.hornBellRadius, filter);
 		if (count <= 0) {
 			failAction(player, Component.translatable("message.refugee.staff.rally.none"));
 			return;

@@ -47,6 +47,9 @@ public final class ClientStaffState {
 		pendingCorner = nextCorner == null ? null : nextCorner.orElse(null);
 		importBox = nextImport == null ? null : nextImport.orElse(null);
 		patrolPoints = nextPatrol == null ? List.of() : List.copyOf(nextPatrol);
+		if (page == StaffPage.ZONE_ADVANCE && previous != StaffPage.ZONE_ADVANCE) {
+			ClientAdvanceSelection.reset();
+		}
 		if (page != StaffPage.BUILD_PREVIEW || previous != StaffPage.BUILD_PREVIEW) {
 			ClientBlueprintSelection.clearPreview();
 		}
@@ -57,6 +60,9 @@ public final class ClientStaffState {
 		mode = page.worldMode();
 		if (page != StaffPage.BUILD_PREVIEW) {
 			ClientBlueprintSelection.clearPreview();
+		}
+		if (page != StaffPage.ZONE_ADVANCE) {
+			ClientAdvanceSelection.reset();
 		}
 		if (page != StaffPage.COMBAT_PATROL) {
 			patrolPoints = List.of();
@@ -110,5 +116,6 @@ public final class ClientStaffState {
 		importBox = null;
 		patrolPoints = List.of();
 		ClientBlueprintSelection.clearPreview();
+		ClientAdvanceSelection.reset();
 	}
 }

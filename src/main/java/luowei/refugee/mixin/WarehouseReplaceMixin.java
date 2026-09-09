@@ -12,10 +12,11 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 
+import luowei.refugee.build.BuildHealth;
 import luowei.refugee.warehouse.WarehouseService;
 
 /**
- * 仓库格方块被换成另一种方块时从名单剔除。
+ * 仓库格被换成另一种方块时从名单剔除；建筑 AABB 内方块种类变化则给任务打脏。
  * 挖掘、爆炸、活塞、指令等最终都走 {@link LevelChunk#setBlockState}；区块卸载不会。
  */
 @Mixin(LevelChunk.class)
@@ -37,5 +38,6 @@ public abstract class WarehouseReplaceMixin {
 			return;
 		}
 		WarehouseService.onBlockReplaced(serverLevel, pos, cir.getReturnValue(), newState);
+		BuildHealth.onBlockChanged(serverLevel, pos, cir.getReturnValue(), newState);
 	}
 }

@@ -133,7 +133,8 @@ public final class RefugeeNetworking {
 				SpecialSplashPayload.MODE_NORMAL,
 				0,
 				"",
-				foodSecret
+				foodSecret,
+				false
 		));
 	}
 
@@ -142,7 +143,8 @@ public final class RefugeeNetworking {
 			Villager villager,
 			int introIndex,
 			String interruptKey,
-			boolean abandon
+			boolean abandon,
+			boolean seek
 	) {
 		if (player == null || villager == null) {
 			return;
@@ -156,7 +158,8 @@ public final class RefugeeNetworking {
 				abandon ? SpecialSplashPayload.MODE_ABANDON : SpecialSplashPayload.MODE_INTRO,
 				introIndex,
 				interruptKey == null ? "" : interruptKey,
-				GuideTutorialService.foodSecretVisible()
+				GuideTutorialService.foodSecretVisible(),
+				seek && !abandon
 		));
 	}
 

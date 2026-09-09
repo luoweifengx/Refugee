@@ -35,6 +35,19 @@ public class StaffPieScreen extends Screen {
 			new Slice(StaffPieAction.WAREHOUSE_BLOCKS, new ItemStack(Items.CHEST), 0xCC8B3A3A, "screen.refugee.staff.pie.warehouse_blocks"),
 			new Slice(StaffPieAction.WAREHOUSE_FOOD, new ItemStack(Items.BREAD), 0xCCE08A2A, "screen.refugee.staff.pie.warehouse_food")
 	};
+	private static final Slice[] ZONE_SLICES = {
+			new Slice(StaffPieAction.ZONE_BOX, new ItemStack(Items.STONE_PICKAXE), 0xCC3D8B4A, "screen.refugee.staff.pie.zone_box"),
+			new Slice(StaffPieAction.ZONE_ADVANCE, new ItemStack(Items.IRON_SHOVEL), 0xCC2E8B8B, "screen.refugee.staff.pie.zone_advance"),
+			new Slice(StaffPieAction.ZONE_REPAIR, new ItemStack(Items.BRICKS), 0xCC8B5A3A, "screen.refugee.staff.pie.zone_repair"),
+			new Slice(StaffPieAction.ZONE_BUILD, new ItemStack(Items.CRAFTING_TABLE), 0xCCB07A2E, "screen.refugee.staff.pie.zone_build")
+	};
+	private static final Slice[] RALLY_SLICES = {
+			new Slice(StaffPieAction.RALLY_MELEE, new ItemStack(Items.IRON_SWORD), 0xCC8B3A3A, "screen.refugee.staff.pie.rally_melee"),
+			new Slice(StaffPieAction.RALLY_RANGED, new ItemStack(Items.BOW), 0xCC3D8B4A, "screen.refugee.staff.pie.rally_ranged"),
+			new Slice(StaffPieAction.RALLY_WORKER, new ItemStack(Items.STONE_PICKAXE), 0xCCB07A2E, "screen.refugee.staff.pie.rally_worker"),
+			new Slice(StaffPieAction.RALLY_CIVILIAN, new ItemStack(Items.FEATHER), 0xCC8FA3B0, "screen.refugee.staff.pie.rally_civilian"),
+			new Slice(StaffPieAction.RALLY_ALL, new ItemStack(Items.GOAT_HORN), 0xCCC4A35A, "screen.refugee.staff.pie.rally_all")
+	};
 
 	private final StaffPage page;
 
@@ -54,6 +67,12 @@ public class StaffPieScreen extends Screen {
 		if (page == StaffPage.WAREHOUSE_PIE) {
 			return Component.translatable("screen.refugee.staff.pie.warehouse");
 		}
+		if (page == StaffPage.ZONE_PIE) {
+			return Component.translatable("screen.refugee.staff.pie.zone");
+		}
+		if (page == StaffPage.RALLY_PIE) {
+			return Component.translatable("screen.refugee.staff.pie.rally");
+		}
 		return Component.translatable("screen.refugee.staff.pie.title");
 	}
 
@@ -63,6 +82,12 @@ public class StaffPieScreen extends Screen {
 		}
 		if (page == StaffPage.WAREHOUSE_PIE) {
 			return WAREHOUSE_SLICES;
+		}
+		if (page == StaffPage.ZONE_PIE) {
+			return ZONE_SLICES;
+		}
+		if (page == StaffPage.RALLY_PIE) {
+			return RALLY_SLICES;
 		}
 		return ROOT_SLICES;
 	}

@@ -602,14 +602,14 @@ public final class RefugeeCombat {
 	}
 
 	static void logPanic(Villager villager, String message) {
-		float max = villager.getMaxHealth();
-		float ratio = max <= 0.0f ? 0.0f : villager.getHealth() / max;
-		Refugee.LOGGER.info(
-				"[panic] {} hp={}% mood={} :: {}",
-				villager.getUUID(),
-				(int) (ratio * 100.0f),
-				mood(villager),
-				message
-		);
+		// float max = villager.getMaxHealth();
+		// float ratio = max <= 0.0f ? 0.0f : villager.getHealth() / max;
+		// Refugee.LOGGER.info(
+		// 		"[panic] {} hp={}% mood={} :: {}",
+		// 		villager.getUUID(),
+		// 		(int) (ratio * 100.0f),
+		// 		mood(villager),
+		// 		message
+		// );
 	}
 }

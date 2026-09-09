@@ -45,6 +45,10 @@ public final class StaffClientNav {
 		return ClientStaffState.page() == StaffPage.BUILD_PREVIEW;
 	}
 
+	public static boolean isAdvance() {
+		return ClientStaffState.page() == StaffPage.ZONE_ADVANCE;
+	}
+
 	public static boolean isStaffScreen(Screen screen) {
 		return screen instanceof StaffPieScreen
 				|| screen instanceof BlueprintSelectScreen
@@ -52,7 +56,7 @@ public final class StaffClientNav {
 	}
 
 	public static boolean shouldInterceptWorldInput() {
-		return pageActive() && (holdingStaff() || isPreview());
+		return pageActive() && (holdingStaff() || isPreview() || isAdvance());
 	}
 
 	public static boolean isInventoryKey(Minecraft client, int keyCode, int scanCode) {
@@ -66,6 +70,7 @@ public final class StaffClientNav {
 		ClientPlayNetworking.send(new StaffNavPayload(StaffNavAction.RESET));
 		ClientStaffState.setPage(StaffPage.ROOT);
 		ClientBlueprintSelection.clearPreview();
+		ClientAdvanceSelection.reset();
 		closeStaffScreens();
 	}
 
@@ -85,14 +90,32 @@ public final class StaffClientNav {
 			}
 			return true;
 		}
+		if (isAdvance() && keyCode == GLFW.GLFW_KEY_TAB) {
+			if (Screen.hasShiftDown()) {
+				ClientAdvanceSelection.previousAxis();
+				ClientPlayNetworking.send(new StaffNavPayload(StaffNavAction.ADVANCE_PREV_AXIS));
+			} else {
+				ClientAdvanceSelection.nextAxis();
+				ClientPlayNetworking.send(new StaffNavPayload(StaffNavAction.ADVANCE_NEXT_AXIS));
+			}
+			return true;
+		}
 		return false;
 	}
 
 	public static boolean handleWorldScroll(double vertical) {
-		if (!isPreview() || !holdingStaff()) {
+		if (vertical == 0.0) {
 			return false;
 		}
-		if (vertical == 0.0) {
+		if (isAdvance() && holdingStaff()) {
+			boolean positive = vertical > 0.0;
+			ClientAdvanceSelection.setPositive(positive);
+			ClientPlayNetworking.send(new StaffNavPayload(
+					positive ? StaffNavAction.ADVANCE_POSITIVE : StaffNavAction.ADVANCE_NEGATIVE
+			));
+			return true;
+		}
+		if (!isPreview() || !holdingStaff()) {
 			return false;
 		}
 		ClientBlueprintSelection.adjust(vertical > 0.0 ? 1 : -1);
@@ -125,6 +148,10 @@ public final class StaffClientNav {
 		if (!isPreview()) {
 			return false;
 		}
+		Minecraft client = Minecraft.getInstance();
+		if (client.player != null && client.player.isShiftKeyDown()) {
+			return true;
+		}
 		if (ClientBlueprintSelection.originLocked()) {
 			return confirmPreviewPlace();
 		}
@@ -136,7 +163,6 @@ public final class StaffClientNav {
 			return false;
 		}
 		ClientBlueprintSelection.lockOrigin(origin);
-		Minecraft client = Minecraft.getInstance();
 		if (client.player != null) {
 			client.player.displayClientMessage(
 					Component.translatable("message.refugee.staff.preview.pinned"),
@@ -149,6 +175,10 @@ public final class StaffClientNav {
 	public static boolean handlePreviewAirUse() {
 		if (!isPreview() || !ClientBlueprintSelection.originLocked()) {
 			return false;
+		}
+		Minecraft client = Minecraft.getInstance();
+		if (client.player != null && client.player.isShiftKeyDown()) {
+			return true;
 		}
 		return confirmPreviewPlace();
 	}

@@ -35,7 +35,7 @@ import luowei.refugee.compat.FoodCompat;
 public final class GuideDialogueConfig {
 	public static final String DIRECTORY_NAME = "refugee";
 	public static final String FILE_NAME = "guide.json";
-	public static final int SCHEMA_VERSION = 3;
+	public static final int SCHEMA_VERSION = 4;
 
 	public static final String MOD_PBS = "player-block-status";
 	public static final String MOD_TRAVEL = "travel-business-team";
@@ -298,12 +298,12 @@ public final class GuideDialogueConfig {
 				"Immigration and territory",
 				List.of(
 						"在 PBS 领地上，白天每隔一段时间会按占领区块抽取难民入境；人数随占地档位波动，困难和普通比简单来得更多。",
-						"护士会在你的第一批入境难民到来时加入；绘图师会在占领区块超过 20 时加入。",
+						"护士随入境加入；绘图师在占领超过 20 区块后随入境加入。向导开局发放，死后也随入境回来。",
 						"空手右键绘图师可查看领地区块图。非和平难度下，玩家死亡会献祭一名普通居民；特殊居民会尽量留到最后。"
 				),
 				List.of(
 						"On PBS territory, refugees roll to immigrate during daytime; arrival size scales with owned chunks, and Hard/Normal bring more than Easy.",
-						"A nurse joins with your first immigration; a cartographer joins after you own more than 20 chunks.",
+						"A nurse joins with immigration; a cartographer joins with a later immigration after you own more than 20 chunks. The guide arrives at start and again with immigration if lost.",
 						"Empty-hand the cartographer to open a territory map. Except on Peaceful, a generic resident is sacrificed on player death; special residents are kept until last."
 				)
 		));
@@ -314,8 +314,8 @@ public final class GuideDialogueConfig {
 				"",
 				"附魔师",
 				"Enchanter",
-				List.of("未装 Food 时，附魔师会在你首次获得青金石时加入。"),
-				List.of("Without Food, an enchanter joins when you first obtain lapis lazuli.")
+				List.of("未装 Food 时，首次获得青金石后，附魔师会随下一次入境加入。"),
+				List.of("Without Food, after you first obtain lapis, an enchanter joins with the next immigration.")
 		));
 		entriesJson.add(entry(
 				"immigration_food",
@@ -324,8 +324,8 @@ public final class GuideDialogueConfig {
 				"",
 				"法师塔",
 				"Mage tower",
-				List.of("地脉仪式完成后，会在出生点 10–20 区块外的地表升起法师塔，附魔师出现在塔内。"),
-				List.of("After the leyline ritual, a mage tower rises 10–20 chunks from world spawn, and the enchanter appears inside.")
+				List.of("地脉仪式完成后，会在出生点 10–20 区块外的地表升起法师塔；之后附魔师会随入境加入。"),
+				List.of("After the leyline ritual, a mage tower rises 10–20 chunks from world spawn; the enchanter then joins with immigration.")
 		));
 		entriesJson.add(entry(
 				"flavor_self",
@@ -363,10 +363,12 @@ public final class GuideDialogueConfig {
 				"Territory and portals",
 				List.of(
 						"方块多了，有些地盘就是你的了，但是不见得都是好事",
+						"拿到铁和钻石，伴随着世界对你的认可，但是世界对你是不友善的",
 						"地狱门会带来很多变化，与很多的危险，一定要做好准备"
 				),
 				List.of(
 						"More blocks, and some of that ground is yours. That isn't always a blessing.",
+						"Iron and diamonds come with the world's recognition, but the world is not kind to you.",
 						"A nether portal brings a lot of change, and a lot of danger. Be ready."
 				)
 		));

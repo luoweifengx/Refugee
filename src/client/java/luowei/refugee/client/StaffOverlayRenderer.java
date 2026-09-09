@@ -98,9 +98,22 @@ public final class StaffOverlayRenderer {
 				);
 			}
 		}
-		if (holding || ClientStaffState.mode() == StaffMode.ZONE) {
+		if (holding || ClientStaffState.mode() == StaffMode.ZONE || ClientStaffState.mode() == StaffMode.ADVANCE) {
 			for (AreaBox zone : ClientStaffState.zones()) {
 				drawBox(poseStack, lines, zone.aabb(), 0.2f, 0.9f, 0.25f);
+			}
+			if (ClientStaffState.page() == StaffPage.ZONE || ClientStaffState.page() == StaffPage.ZONE_ADVANCE) {
+				BlockPos first = ClientStaffState.pendingCorner();
+				if (first != null) {
+					BlockPos second = first;
+					if (client.hitResult instanceof BlockHitResult blockHit && client.hitResult.getType() == HitResult.Type.BLOCK) {
+						second = blockHit.getBlockPos();
+					}
+					float r = ClientStaffState.page() == StaffPage.ZONE_ADVANCE ? 0.2f : 0.2f;
+					float g = ClientStaffState.page() == StaffPage.ZONE_ADVANCE ? 0.85f : 0.9f;
+					float b = ClientStaffState.page() == StaffPage.ZONE_ADVANCE ? 0.85f : 0.25f;
+					drawBox(poseStack, lines, AreaBox.of(first, second).aabb(), r, g, b);
+				}
 			}
 		}
 		if (holding || ClientStaffState.page() == StaffPage.BUILD_PREVIEW || ClientStaffState.page() == StaffPage.BUILD_CATALOG) {

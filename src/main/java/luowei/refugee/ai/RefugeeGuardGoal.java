@@ -59,7 +59,7 @@ public class RefugeeGuardGoal extends Goal {
 	}
 
 	private boolean hasAssignedWork(RefugeeVillagerData data) {
-		if (data.isBuilding()) {
+		if (data.isBuilding() || data.isBuilderDuty() || data.isRepairerDuty()) {
 			return true;
 		}
 		if (villager.level().getServer() == null) {

@@ -20,7 +20,8 @@ public record SpecialSplashPayload(
 		byte screenMode,
 		int introIndex,
 		String interruptKey,
-		boolean foodSecret
+		boolean foodSecret,
+		boolean seek
 ) implements CustomPacketPayload {
 	public static final byte MODE_NORMAL = 0;
 	public static final byte MODE_INTRO = 1;
@@ -32,11 +33,11 @@ public record SpecialSplashPayload(
 			StreamCodec.ofMember(SpecialSplashPayload::write, SpecialSplashPayload::new);
 
 	public SpecialSplashPayload(int entityId, String roleId, List<String> talkLines) {
-		this(entityId, roleId, talkLines, null, MODE_NORMAL, 0, "", false);
+		this(entityId, roleId, talkLines, null, MODE_NORMAL, 0, "", false, false);
 	}
 
 	public SpecialSplashPayload(int entityId, String roleId, List<String> talkLines, String initialTalkKey) {
-		this(entityId, roleId, talkLines, initialTalkKey, MODE_NORMAL, 0, "", false);
+		this(entityId, roleId, talkLines, initialTalkKey, MODE_NORMAL, 0, "", false, false);
 	}
 
 	public SpecialSplashPayload(FriendlyByteBuf buf) {
@@ -48,6 +49,7 @@ public record SpecialSplashPayload(
 				buf.readByte(),
 				buf.readVarInt(),
 				readOptionalUtf(buf),
+				buf.readBoolean(),
 				buf.readBoolean()
 		);
 	}
@@ -65,6 +67,7 @@ public record SpecialSplashPayload(
 		buf.writeVarInt(introIndex);
 		buf.writeUtf(interruptKey == null ? "" : interruptKey);
 		buf.writeBoolean(foodSecret);
+		buf.writeBoolean(seek);
 	}
 
 	private static String readOptionalUtf(FriendlyByteBuf buf) {

@@ -18,6 +18,7 @@ import net.minecraft.world.item.ItemStack;
 
 import luowei.refugee.ai.RefugeeCombat;
 import luowei.refugee.special.RefugeeSpecialRole;
+import luowei.refugee.zone.WorkerDuty;
 
 /**
  * 挂在村民实体上的难民数据：所属玩家/组织、跟随、守卫中心、建造进度。
@@ -53,9 +54,11 @@ public final class RefugeeVillagerData {
 
 	public static final Codec<RefugeeVillagerData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
 			BASE_CODEC.forGetter(data -> data),
-			Codec.LONG.optionalFieldOf("last_depth_curse_tick", 0L).forGetter(data -> data.lastDepthCurseTick)
-	).apply(instance, (data, lastDepthCurseTick) -> {
+			Codec.LONG.optionalFieldOf("last_depth_curse_tick", 0L).forGetter(data -> data.lastDepthCurseTick),
+			Codec.STRING.optionalFieldOf("worker_duty", "").forGetter(data -> data.workerDuty().id())
+	).apply(instance, (data, lastDepthCurseTick, workerDuty) -> {
 		data.lastDepthCurseTick = lastDepthCurseTick;
+		data.workerDuty = WorkerDuty.fromId(workerDuty);
 		return data;
 	}));
 
@@ -71,6 +74,7 @@ public final class RefugeeVillagerData {
 	private ResourceLocation structureId;
 	private int buildIndex;
 	private UUID jobId;
+	private WorkerDuty workerDuty = WorkerDuty.NONE;
 	private String role = "";
 	private int enchantDay = Integer.MIN_VALUE;
 	private final List<ItemStack> enchantBooks = new ArrayList<>();
@@ -319,6 +323,26 @@ public final class RefugeeVillagerData {
 		this.containerPos = null;
 		this.buildOrigin = null;
 		this.buildIndex = 0;
+	}
+
+	public WorkerDuty workerDuty() {
+		return workerDuty == null ? WorkerDuty.NONE : workerDuty;
+	}
+
+	public boolean isBuilderDuty() {
+		return workerDuty() == WorkerDuty.BUILDER;
+	}
+
+	public boolean isRepairerDuty() {
+		return workerDuty() == WorkerDuty.REPAIRER;
+	}
+
+	public void setWorkerDuty(WorkerDuty duty) {
+		this.workerDuty = duty == null ? WorkerDuty.NONE : duty;
+	}
+
+	public void clearWorkerDuty() {
+		this.workerDuty = WorkerDuty.NONE;
 	}
 
 	public int buildIndex() {

@@ -2,6 +2,7 @@ package luowei.refugee.interact;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -80,6 +81,10 @@ public final class SelectionService {
 	}
 
 	public static int selectAround(ServerPlayer player, double radius) {
+		return selectAround(player, radius, null);
+	}
+
+	public static int selectAround(ServerPlayer player, double radius, Predicate<Villager> filter) {
 		if (!(player.level() instanceof ServerLevel level)) {
 			return 0;
 		}
@@ -91,6 +96,9 @@ public final class SelectionService {
 		boolean denied = false;
 		for (Villager villager : villagers) {
 			if (villager.distanceTo(player) > radius || selection.isSelected(villager.getUUID())) {
+				continue;
+			}
+			if (filter != null && !filter.test(villager)) {
 				continue;
 			}
 			if (!canCommand(player, villager)) {
@@ -120,7 +128,7 @@ public final class SelectionService {
 			PlayerSelectionData selection
 	) {
 		removeFromOtherSelections(player, villager.getUUID());
-		if (data.isBuilding()) {
+		if (data.isBuilding() || data.isBuilderDuty() || data.isRepairerDuty()) {
 			StaffService.unbindWorker(villager);
 		}
 		data.startFollowing(player.getUUID());

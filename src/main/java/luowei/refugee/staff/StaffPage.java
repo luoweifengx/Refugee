@@ -9,7 +9,10 @@ package luowei.refugee.staff;
  *     WAREHOUSE → WAREHOUSE_PIE
  *       WAREHOUSE（物块）
  *       FOOD_WAREHOUSE
- *     ZONE
+ *     ZONE → ZONE_PIE
+ *       ZONE（范围框定）
+ *       ZONE_ADVANCE
+ *       （修复 / 建筑：即时派工）
  *     IMPORT
  *       IMPORT_NAME
  *     SELECT → BUILD_CATALOG
@@ -17,7 +20,8 @@ package luowei.refugee.staff;
  *     COMBAT_PIE（三扇区）
  *       COMBAT_FOLLOW
  *       COMBAT_PATROL
- *     RALLY（即时：号角半径集结）
+ *     RALLY → RALLY_PIE
+ *       近战 / 远程 / 工人 / 散人 / 全部（即时：号角半径集结）
  * </pre>
  *
  * {@link #BUILD_HUB} 已弃用，保留以免网络 ordinal 错位。新页只追加。
@@ -38,7 +42,10 @@ public enum StaffPage {
 	COMBAT_FOLLOW,
 	COMBAT_PATROL,
 	WAREHOUSE_PIE,
-	FOOD_WAREHOUSE;
+	FOOD_WAREHOUSE,
+	ZONE_PIE,
+	ZONE_ADVANCE,
+	RALLY_PIE;
 
 	public static StaffPage byOrdinal(int ordinal) {
 		StaffPage[] values = values();
@@ -53,6 +60,7 @@ public enum StaffPage {
 			case WAREHOUSE -> StaffMode.WAREHOUSE;
 			case FOOD_WAREHOUSE -> StaffMode.FOOD_WAREHOUSE;
 			case ZONE -> StaffMode.ZONE;
+			case ZONE_ADVANCE -> StaffMode.ADVANCE;
 			case BUILD_PREVIEW -> StaffMode.BUILD;
 			case IMPORT, IMPORT_NAME -> StaffMode.IMPORT;
 			case COMBAT_FOLLOW -> StaffMode.FOLLOW_ENTITY;
@@ -66,7 +74,7 @@ public enum StaffPage {
 	}
 
 	public boolean isPie() {
-		return this == PIE || this == COMBAT_PIE || this == WAREHOUSE_PIE;
+		return this == PIE || this == COMBAT_PIE || this == WAREHOUSE_PIE || this == ZONE_PIE || this == RALLY_PIE;
 	}
 
 	public boolean isWorld() {

@@ -19,7 +19,7 @@ import net.minecraft.world.level.Level;
 import luowei.refugee.interact.RefugeeRoles;
 
 /**
- * 可堆叠制式套装：右键拆除为全套盔甲与配剑；潜行交给居民后装备。
+ * 可堆叠制式套装：右键拆除为全套盔甲与武器；潜行交给居民后装备。
  */
 public class ArmorKitItem extends Item {
 	public enum Kind {
@@ -60,7 +60,12 @@ public class ArmorKitItem extends Item {
 			villager.setItemSlot(slots[i], pieces[i]);
 		}
 		giveBack(player, RefugeeRoles.logicalMainHand(villager));
-		RefugeeRoles.setLogicalMainHand(villager, kit.sword());
+		RefugeeRoles.setLogicalMainHand(villager, kit.weapon());
+		ItemStack shield = kit.shield();
+		if (!shield.isEmpty()) {
+			giveBack(player, villager.getOffhandItem());
+			villager.setItemSlot(EquipmentSlot.OFFHAND, shield);
+		}
 		held.shrink(1);
 		return true;
 	}
@@ -96,16 +101,24 @@ public class ArmorKitItem extends Item {
 
 	private ItemStack[] contents() {
 		ItemStack[] armor = pieces();
-		return new ItemStack[] { armor[0], armor[1], armor[2], armor[3], sword() };
+		ItemStack shield = shield();
+		if (shield.isEmpty()) {
+			return new ItemStack[] { armor[0], armor[1], armor[2], armor[3], weapon() };
+		}
+		return new ItemStack[] { armor[0], armor[1], armor[2], armor[3], weapon(), shield };
 	}
 
-	private ItemStack sword() {
+	private ItemStack weapon() {
 		return switch (kind) {
-			case LEATHER -> new ItemStack(Items.WOODEN_SWORD);
-			case CHAIN -> new ItemStack(Items.STONE_SWORD);
+			case LEATHER -> new ItemStack(Items.STONE_SWORD);
+			case CHAIN -> new ItemStack(Items.BOW);
 			case IRON -> new ItemStack(Items.IRON_SWORD);
 			case DIAMOND -> new ItemStack(Items.DIAMOND_SWORD);
 		};
+	}
+
+	private ItemStack shield() {
+		return kind == Kind.IRON ? new ItemStack(Items.SHIELD) : ItemStack.EMPTY;
 	}
 
 	private ItemStack[] pieces() {
