@@ -1,8 +1,8 @@
 package luowei.refugee.staff;
 
 /**
- * 指挥杖饼图扇区。根页展示顺序见客户端 ROOT_SLICES；战斗指挥子页为跟随/巡逻/列队。
- * 集结子页为近战/远程/工人/散人/全部。只追加，以免网络 ordinal 错位。
+ * 指挥杖饼图扇区。根页展示顺序见客户端 ROOT_SLICES；仓库/工作/建筑/战斗/集结/卫队。
+ * 只追加，以免网络 ordinal 错位。
  */
 public enum StaffPieAction {
 	WAREHOUSE,
@@ -24,7 +24,20 @@ public enum StaffPieAction {
 	RALLY_RANGED,
 	RALLY_WORKER,
 	RALLY_ALL,
-	RALLY_CIVILIAN;
+	RALLY_CIVILIAN,
+	EQUIP_GEAR,
+	WAREHOUSE_SMELT,
+	ZONE_SMELT,
+	GUARD,
+	GUARD_ADD,
+	GUARD_RALLY_NEAR,
+	GUARD_RALLY_ALL,
+	GUARD_REMOVE,
+	BUILD,
+	WAREHOUSE_FARM,
+	WAREHOUSE_GEAR,
+	WAREHOUSE_SMELT_RESULT,
+	RALLY_SPECIAL;
 
 	public static StaffPieAction byOrdinal(int ordinal) {
 		StaffPieAction[] values = values();

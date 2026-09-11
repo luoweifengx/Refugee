@@ -38,12 +38,13 @@ import luowei.refugee.ai.RefugeeBuffState;
 import luowei.refugee.warehouse.MaterialCategory;
 
 /**
- * {@code config/refugee.json}：入境（白天按间隔抽签，档位人数再乘难度）、号角/钟、守卫、安顿、干活距离、仓库合并与村民 buff。缺文件时写出默认值。
+ * {@code config/refugee.json}：入境（每天 daytime 4000 必触发一波，档位人数再乘难度）、号角/钟、守卫、安顿、干活距离、仓库合并与村民 buff。缺文件时写出默认值。
  */
 public final class RefugeeConfig {
 	public static final String FILE_NAME = "refugee.json";
-	public static final int IMMIGRATION_SCHEMA = 3;
+	public static final int IMMIGRATION_SCHEMA = 4;
 	public static final int DEFAULT_IMMIGRATION_INTERVAL_TICKS = 2000;
+	public static final int DEFAULT_IMMIGRATION_EVENT_DAY_TIME = 4000;
 
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
@@ -58,15 +59,16 @@ public final class RefugeeConfig {
 			ResourceLocation.parse("minecraft:overworld")
 	);
 	private static final List<ImmigrationTier> DEFAULT_IMMIGRATION_TIERS = List.of(
-			new ImmigrationTier(10, 0.30, 4, 8),
-			new ImmigrationTier(25, 0.36, 7, 13),
-			new ImmigrationTier(45, 0.42, 11, 19),
-			new ImmigrationTier(80, 0.48, 14, 24),
-			new ImmigrationTier(160, 0.54, 17, 30),
-			new ImmigrationTier(Integer.MAX_VALUE, 0.60, 20, 35)
+			new ImmigrationTier(10, 1.00, 4, 8),
+			new ImmigrationTier(25, 1.00, 7, 13),
+			new ImmigrationTier(45, 1.00, 11, 19),
+			new ImmigrationTier(80, 1.00, 14, 24),
+			new ImmigrationTier(160, 1.00, 17, 30),
+			new ImmigrationTier(Integer.MAX_VALUE, 1.00, 20, 35)
 	);
 
 	public static int immigrationIntervalTicks = DEFAULT_IMMIGRATION_INTERVAL_TICKS;
+	public static int immigrationEventDayTime = DEFAULT_IMMIGRATION_EVENT_DAY_TIME;
 	public static List<ResourceLocation> immigrationDimensionWhitelist = DEFAULT_IMMIGRATION_DIMENSIONS;
 	public static List<ImmigrationTier> immigrationTiers = DEFAULT_IMMIGRATION_TIERS;
 	public static double hornBellRadius = 24.0;
@@ -79,6 +81,10 @@ public final class RefugeeConfig {
 	public static int guardCombatScanIntervalTicks = 20;
 	public static int settleChunkRadius = 1;
 	public static int buildPlaceIntervalTicks = 20;
+	/** 锄头犁地、种地、催熟之间的间隔（tick），避免瞬间把地锄完。 */
+	public static int hoeActionIntervalTicks = 20;
+	/** 农民对未成熟作物假骨粉催熟的成功率（不消耗骨粉）。 */
+	public static double hoeBonemealChance = 0.05;
 	public static double followSpeed = 0.55;
 	public static double guardWalkSpeed = 0.5;
 	public static double combatRangedDistance = 8.0;
@@ -94,9 +100,11 @@ public final class RefugeeConfig {
 	public static int rangedAttackIntervalTicks = 40;
 	public static int meleeAttackIntervalTicks = 10;
 	public static double builderWalkSpeed = 0.45;
-	public static int importMaxAxis = 32;
-	public static int importMaxVolume = 4096;
-	/** true：挖/放须走到 4 格内，且须在工作区附近；false：找到目标就动手，不因离区而停。 */
+	public static final int DEFAULT_IMPORT_MAX_AXIS = 48;
+	public static final int DEFAULT_IMPORT_MAX_VOLUME = 48 * 48 * 48;
+	public static int importMaxAxis = DEFAULT_IMPORT_MAX_AXIS;
+	public static int importMaxVolume = DEFAULT_IMPORT_MAX_VOLUME;
+	/** true：挖/放/熔炼须走到 4 格内，且须在工作区附近；false：找到目标就动手，不因离区而停。 */
 	public static boolean workReachLimit = false;
 	/** true：木头大类可互换取料并按类整理。 */
 	public static boolean warehouseMergeLogs = true;
@@ -202,9 +210,16 @@ public final class RefugeeConfig {
 					DEFAULT_IMMIGRATION_INTERVAL_TICKS,
 					1
 			);
+			immigrationEventDayTime = readIntAtLeast(
+					json,
+					"immigrationEventDayTime",
+					DEFAULT_IMMIGRATION_EVENT_DAY_TIME,
+					0
+			);
 			immigrationTiers = readImmigrationTiers(json);
 		} else {
 			immigrationIntervalTicks = DEFAULT_IMMIGRATION_INTERVAL_TICKS;
+			immigrationEventDayTime = DEFAULT_IMMIGRATION_EVENT_DAY_TIME;
 			immigrationTiers = DEFAULT_IMMIGRATION_TIERS;
 		}
 		hornBellRadius = readDoubleAtLeast(json, "hornBellRadius", hornBellRadius, 1.0);
@@ -214,6 +229,8 @@ public final class RefugeeConfig {
 		guardCombatScanIntervalTicks = readIntAtLeast(json, "guardCombatScanIntervalTicks", guardCombatScanIntervalTicks, 1);
 		settleChunkRadius = readIntAtLeast(json, "settleChunkRadius", settleChunkRadius, 0);
 		buildPlaceIntervalTicks = readIntAtLeast(json, "buildPlaceIntervalTicks", buildPlaceIntervalTicks, 1);
+		hoeActionIntervalTicks = readIntAtLeast(json, "hoeActionIntervalTicks", hoeActionIntervalTicks, 0);
+		hoeBonemealChance = readChance(json, "hoeBonemealChance", hoeBonemealChance);
 		followSpeed = readDoubleAtLeast(json, "followSpeed", followSpeed, 0.05);
 		guardWalkSpeed = readDoubleAtLeast(json, "guardWalkSpeed", guardWalkSpeed, 0.05);
 		combatRangedDistance = readDoubleAtLeast(json, "combatRangedDistance", combatRangedDistance, 1.0);
@@ -228,8 +245,14 @@ public final class RefugeeConfig {
 		rangedAttackIntervalTicks = readIntAtLeast(json, "rangedAttackIntervalTicks", rangedAttackIntervalTicks, 1);
 		meleeAttackIntervalTicks = readIntAtLeast(json, "meleeAttackIntervalTicks", meleeAttackIntervalTicks, 1);
 		builderWalkSpeed = readDoubleAtLeast(json, "builderWalkSpeed", builderWalkSpeed, 0.05);
-		importMaxAxis = readIntAtLeast(json, "importMaxAxis", importMaxAxis, 1);
-		importMaxVolume = readIntAtLeast(json, "importMaxVolume", importMaxVolume, 1);
+		int axis = readIntAtLeast(json, "importMaxAxis", DEFAULT_IMPORT_MAX_AXIS, 1);
+		int volume = readIntAtLeast(json, "importMaxVolume", DEFAULT_IMPORT_MAX_VOLUME, 1);
+		if (axis == 32 && volume == 4096) {
+			axis = DEFAULT_IMPORT_MAX_AXIS;
+			volume = DEFAULT_IMPORT_MAX_VOLUME;
+		}
+		importMaxAxis = axis;
+		importMaxVolume = volume;
 		workReachLimit = readBoolean(json, "workReachLimit", workReachLimit);
 		boolean legacyMerge = readBoolean(json, "warehouseMergeCategories", true);
 		warehouseMergeLogs = readBoolean(json, "warehouseMergeLogs", legacyMerge);
@@ -244,9 +267,10 @@ public final class RefugeeConfig {
 	private static void write(Path path) throws IOException {
 		Files.createDirectories(path.getParent());
 		JsonObject json = new JsonObject();
-		json.addProperty("_comment", "Refugee immigration (daytime-only rolls every interval; chance and count range by owned chunks; arrivals then scale by vanilla difficulty / hardcore). Restart after editing.");
+		json.addProperty("_comment", "Refugee immigration (once per Minecraft day at immigrationEventDayTime; chance and count range by owned chunks; arrivals then scale by vanilla difficulty / hardcore). Restart after editing.");
 		json.addProperty("immigrationSchema", IMMIGRATION_SCHEMA);
 		json.addProperty("immigrationIntervalTicks", immigrationIntervalTicks);
+		json.addProperty("immigrationEventDayTime", immigrationEventDayTime);
 		json.add("immigrationDimensionWhitelist", writeDimensionWhitelist(immigrationDimensionWhitelist));
 		json.add("immigrationTiers", writeImmigrationTiers(immigrationTiers));
 		json.addProperty("hornBellRadius", hornBellRadius);
@@ -256,6 +280,8 @@ public final class RefugeeConfig {
 		json.addProperty("guardCombatScanIntervalTicks", guardCombatScanIntervalTicks);
 		json.addProperty("settleChunkRadius", settleChunkRadius);
 		json.addProperty("buildPlaceIntervalTicks", buildPlaceIntervalTicks);
+		json.addProperty("hoeActionIntervalTicks", hoeActionIntervalTicks);
+		json.addProperty("hoeBonemealChance", hoeBonemealChance);
 		json.addProperty("followSpeed", followSpeed);
 		json.addProperty("guardWalkSpeed", guardWalkSpeed);
 		json.addProperty("combatRangedDistance", combatRangedDistance);

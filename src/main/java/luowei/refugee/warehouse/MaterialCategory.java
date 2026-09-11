@@ -29,6 +29,13 @@ public enum MaterialCategory {
 		return this == LOG || this == PLANKS || this == STONE || this == SOIL || this == SEED || this == MISC;
 	}
 
+	/**
+	 * 矿石、粗矿、煤炭、锭等珍贵矿物：挖掘入熔炼仓，与圆石等物块分开。
+	 */
+	public static boolean isSmeltCargo(ItemStack stack) {
+		return of(stack) == PRECIOUS;
+	}
+
 	public static MaterialCategory of(ItemStack stack) {
 		if (stack == null || stack.isEmpty()) {
 			return NONE;

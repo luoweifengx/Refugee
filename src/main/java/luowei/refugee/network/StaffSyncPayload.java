@@ -15,18 +15,22 @@ import luowei.refugee.staff.StaffPage;
 import luowei.refugee.zone.AreaBox;
 
 /**
- * 服务端 → 客户端：指挥杖页面、仓库箱、工作区、建筑任务描边、导入框选预览、巡逻点。
+ * 服务端 → 客户端：指挥杖页面、各类仓库箱、熔炼处、工作区、建筑任务描边、导入框选预览、巡逻点。
  */
 public record StaffSyncPayload(
 		StaffMode mode,
 		StaffPage page,
 		List<BlockPos> chests,
 		List<BlockPos> foodChests,
+		List<BlockPos> furnaces,
 		List<AreaBox> zones,
 		List<AreaBox> builds,
 		Optional<BlockPos> pendingCorner,
 		Optional<AreaBox> importBox,
-		List<BlockPos> patrolPoints
+		List<BlockPos> patrolPoints,
+		List<BlockPos> farmChests,
+		List<BlockPos> gearChests,
+		List<BlockPos> resultChests
 ) implements CustomPacketPayload {
 	public static final CustomPacketPayload.Type<StaffSyncPayload> TYPE =
 			new CustomPacketPayload.Type<>(Refugee.id("staff_sync"));
@@ -39,10 +43,14 @@ public record StaffSyncPayload(
 				StaffPage.byOrdinal(buf.readVarInt()),
 				readPosList(buf),
 				readPosList(buf),
+				readPosList(buf),
 				readBoxes(buf),
 				readBoxes(buf),
 				buf.readBoolean() ? Optional.of(buf.readBlockPos()) : Optional.empty(),
 				buf.readBoolean() ? Optional.of(new AreaBox(buf.readBlockPos(), buf.readBlockPos())) : Optional.empty(),
+				readPosList(buf),
+				readPosList(buf),
+				readPosList(buf),
 				readPosList(buf)
 		);
 	}
@@ -52,6 +60,7 @@ public record StaffSyncPayload(
 		buf.writeVarInt(page == null ? 0 : page.ordinal());
 		writePosList(buf, chests);
 		writePosList(buf, foodChests);
+		writePosList(buf, furnaces);
 		writeBoxes(buf, zones);
 		writeBoxes(buf, builds);
 		buf.writeBoolean(pendingCorner != null && pendingCorner.isPresent());
@@ -64,6 +73,9 @@ public record StaffSyncPayload(
 			buf.writeBlockPos(importBox.get().max());
 		}
 		writePosList(buf, patrolPoints);
+		writePosList(buf, farmChests);
+		writePosList(buf, gearChests);
+		writePosList(buf, resultChests);
 	}
 
 	private static void writePosList(FriendlyByteBuf buf, List<BlockPos> list) {

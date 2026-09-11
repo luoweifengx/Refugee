@@ -25,6 +25,7 @@ import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.interact.SelectionService;
 import luowei.refugee.logistics.OrgLogisticsData;
+import luowei.refugee.network.RefugeeNetworking;
 import luowei.refugee.special.RefugeeSpecialRole;
 import luowei.refugee.staff.StaffService;
 import luowei.refugee.warehouse.WarehouseLedger;
@@ -99,6 +100,7 @@ public final class OrgMergeService {
 		OrgLogisticsData.get(server).mergeFrom(fromSubject, orgId);
 		reindexWarehouses(server, orgId);
 		StaffService.syncSubject(server, orgId);
+		RefugeeNetworking.syncCatalogToAll(server);
 		dedupeSpecialsAndRoster(server, orgId, trigger);
 	}
 

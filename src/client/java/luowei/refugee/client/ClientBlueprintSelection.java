@@ -52,6 +52,10 @@ public final class ClientBlueprintSelection {
 		lockedOrigin = origin == null ? null : origin.immutable();
 	}
 
+	public static void unlockOrigin() {
+		lockedOrigin = null;
+	}
+
 	public static int offsetX() {
 		return offsetX;
 	}

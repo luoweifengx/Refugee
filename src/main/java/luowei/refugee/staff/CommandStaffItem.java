@@ -44,6 +44,11 @@ public class CommandStaffItem extends Item {
 	}
 
 	@Override
+	public ItemStack getRecipeRemainder(ItemStack stack) {
+		return stack.copyWithCount(1);
+	}
+
+	@Override
 	public void appendHoverText(
 			ItemStack stack,
 			Item.TooltipContext context,

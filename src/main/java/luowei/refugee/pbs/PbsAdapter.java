@@ -2,6 +2,7 @@ package luowei.refugee.pbs;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -90,6 +91,43 @@ public final class PbsAdapter {
 		return PlayerBlockStatusLib.queryDemonChunks(level);
 	}
 
+	public static boolean hasDemonChunks(ServerLevel level) {
+		List<ChunkPos> chunks = demonChunks(level);
+		return chunks != null && !chunks.isEmpty();
+	}
+
+	/**
+	 * 占领+边界的平均中心区块；无所属格时 empty。
+	 */
+	public static Optional<ChunkPos> territoryCenter(ServerLevel level, UUID subjectId) {
+		if (level == null || subjectId == null) {
+			return Optional.empty();
+		}
+		return PlayerBlockStatusLib.queryTerritoryCentroid(level, subjectId)
+				.map(TerritoryQueries.TerritoryCentroid::center);
+	}
+
+	/**
+	 * 组织在线成员数；未入组则该玩家在线为 1。
+	 */
+	public static int onlinePlayerCount(MinecraftServer server, UUID subjectId) {
+		if (server == null || subjectId == null) {
+			return 0;
+		}
+		Set<UUID> members = new HashSet<>(organizationMembers(server, subjectId));
+		organizationOwner(server, subjectId).ifPresent(members::add);
+		if (members.isEmpty()) {
+			return server.getPlayerList().getPlayer(subjectId) != null ? 1 : 0;
+		}
+		int count = 0;
+		for (UUID memberId : members) {
+			if (server.getPlayerList().getPlayer(memberId) != null) {
+				count++;
+			}
+		}
+		return count;
+	}
+
 	public static Map<ChunkState, List<ChunkPos>> chunksInRadius(
 			ServerLevel level,
 			ChunkPos center,
@@ -139,6 +177,27 @@ public final class PbsAdapter {
 			return Optional.empty();
 		}
 		return PlayerBlockStatusLib.queryPlayerOrganization(server, playerId);
+	}
+
+	/**
+	 * 蓝图共享范围：本人 + 所在组织的主人与成员。
+	 */
+	public static Set<UUID> shareGroup(MinecraftServer server, UUID playerId) {
+		Set<UUID> ids = new LinkedHashSet<>();
+		if (playerId != null) {
+			ids.add(playerId);
+		}
+		if (server == null || playerId == null) {
+			return ids;
+		}
+		UUID orgId = organizationOf(server, playerId).orElse(null);
+		if (orgId == null) {
+			return ids;
+		}
+		ids.add(orgId);
+		ids.addAll(organizationMembers(server, orgId));
+		organizationOwner(server, orgId).ifPresent(ids::add);
+		return ids;
 	}
 
 	public static Optional<UUID> organizationOwner(MinecraftServer server, UUID orgId) {

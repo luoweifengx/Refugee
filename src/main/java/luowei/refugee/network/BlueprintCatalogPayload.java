@@ -45,6 +45,7 @@ public record BlueprintCatalogPayload(
 		buf.writeCollection(entries, (out, entry) -> {
 			out.writeResourceLocation(entry.id());
 			out.writeUtf(entry.displayName());
+			out.writeBoolean(entry.imported());
 		});
 		buf.writeVarInt(templates.size());
 		for (Map.Entry<ResourceLocation, CompoundTag> entry : templates.entrySet()) {
@@ -63,7 +64,7 @@ public record BlueprintCatalogPayload(
 	private static List<BlueprintCatalogEntry> readEntries(FriendlyByteBuf buf) {
 		return new ArrayList<>(buf.readCollection(
 				ArrayList::new,
-				in -> new BlueprintCatalogEntry(in.readResourceLocation(), in.readUtf())
+				in -> new BlueprintCatalogEntry(in.readResourceLocation(), in.readUtf(), in.readBoolean())
 		));
 	}
 

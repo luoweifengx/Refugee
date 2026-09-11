@@ -37,7 +37,8 @@ public final class PlayerSelectionData {
 			SpecialBindings.CODEC.optionalFieldOf("special_bindings", SpecialBindings.EMPTY)
 					.forGetter(data -> SpecialBindings.from(data)),
 			GuideIntroState.CODEC.optionalFieldOf("guide_intro", GuideIntroState.EMPTY)
-					.forGetter(data -> GuideIntroState.from(data))
+					.forGetter(data -> GuideIntroState.from(data)),
+			RosterEntry.CODEC.listOf().optionalFieldOf("guard", List.of()).forGetter(data -> List.copyOf(data.guardMembers.values()))
 	).apply(instance, PlayerSelectionData::fromCodec));
 
 	private BlockPos containerPos;
@@ -45,6 +46,7 @@ public final class PlayerSelectionData {
 	private ResourceLocation structureId;
 	private final Set<UUID> selectedVillagers = new LinkedHashSet<>();
 	private final Map<UUID, RosterEntry> roster = new LinkedHashMap<>();
+	private final Map<UUID, RosterEntry> guardMembers = new LinkedHashMap<>();
 	private final Set<UUID> pendingKills = new LinkedHashSet<>();
 	private boolean starterGranted;
 	private boolean defeated;
@@ -77,7 +79,8 @@ public final class PlayerSelectionData {
 			boolean starterGranted,
 			boolean defeated,
 			SpecialBindings specialBindings,
-			GuideIntroState guideIntro
+			GuideIntroState guideIntro,
+			List<RosterEntry> guard
 	) {
 		PlayerSelectionData data = new PlayerSelectionData();
 		data.containerPos = container.orElse(null);
@@ -97,6 +100,13 @@ public final class PlayerSelectionData {
 		}
 		if (guideIntro != null) {
 			guideIntro.applyTo(data);
+		}
+		if (guard != null) {
+			for (RosterEntry entry : guard) {
+				if (entry != null && entry.villagerId() != null) {
+					data.guardMembers.put(entry.villagerId(), entry);
+				}
+			}
 		}
 		return data;
 	}
@@ -212,6 +222,62 @@ public final class PlayerSelectionData {
 
 	public boolean removeRoster(UUID villagerId) {
 		return villagerId != null && roster.remove(villagerId) != null;
+	}
+
+	public boolean hasGuard(UUID villagerId) {
+		return villagerId != null && guardMembers.containsKey(villagerId);
+	}
+
+	public RosterEntry guardEntry(UUID villagerId) {
+		return villagerId == null ? null : guardMembers.get(villagerId);
+	}
+
+	public Collection<RosterEntry> guardEntries() {
+		return guardMembers.values();
+	}
+
+	public List<UUID> snapshotGuard() {
+		return new ArrayList<>(guardMembers.keySet());
+	}
+
+	public boolean addGuard(UUID villagerId, ResourceLocation dimension, BlockPos pos) {
+		if (villagerId == null) {
+			return false;
+		}
+		RosterEntry existing = guardMembers.get(villagerId);
+		if (existing != null) {
+			existing.setLocation(dimension, pos);
+			return false;
+		}
+		guardMembers.put(villagerId, new RosterEntry(villagerId, dimension, pos));
+		return true;
+	}
+
+	public boolean addGuard(Entity entity) {
+		if (entity == null) {
+			return false;
+		}
+		Level level = entity.level();
+		return addGuard(
+				entity.getUUID(),
+				level == null ? null : level.dimension().location(),
+				entity.blockPosition()
+		);
+	}
+
+	public boolean removeGuard(UUID villagerId) {
+		return villagerId != null && guardMembers.remove(villagerId) != null;
+	}
+
+	public void updateGuardLocation(UUID villagerId, ResourceLocation dimension, BlockPos pos) {
+		RosterEntry entry = guardMembers.get(villagerId);
+		if (entry != null) {
+			entry.setLocation(dimension, pos);
+		}
+	}
+
+	public int guardSize() {
+		return guardMembers.size();
 	}
 
 	/**

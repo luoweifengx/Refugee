@@ -26,7 +26,7 @@ import luowei.refugee.staff.StaffPage;
 import luowei.refugee.zone.AreaBox;
 
 /**
- * 手持指挥杖或处于对应模式时，绘制物块仓红框、食物仓橙框与工作区绿框。
+ * 手持指挥杖或处于对应模式时，绘制各类仓库框与工作区绿框。
  */
 public final class StaffOverlayRenderer {
 	private StaffOverlayRenderer() {
@@ -62,40 +62,32 @@ public final class StaffOverlayRenderer {
 		poseStack.translate(-camera.x, -camera.y, -camera.z);
 		if (holding || ClientStaffState.mode() == StaffMode.WAREHOUSE) {
 			for (BlockPos pos : ClientStaffState.chests()) {
-				AABB box = AABB.encapsulatingFullBlocks(pos, pos).inflate(0.002);
-				ShapeRenderer.renderLineBox(
-						poseStack,
-						lines,
-						box.minX,
-						box.minY,
-						box.minZ,
-						box.maxX,
-						box.maxY,
-						box.maxZ,
-						1.0f,
-						0.15f,
-						0.15f,
-						1.0f
-				);
+				drawBlock(poseStack, lines, pos, 1.0f, 0.15f, 0.15f);
 			}
 		}
 		if (holding || ClientStaffState.mode() == StaffMode.FOOD_WAREHOUSE) {
 			for (BlockPos pos : ClientStaffState.foodChests()) {
-				AABB box = AABB.encapsulatingFullBlocks(pos, pos).inflate(0.002);
-				ShapeRenderer.renderLineBox(
-						poseStack,
-						lines,
-						box.minX,
-						box.minY,
-						box.minZ,
-						box.maxX,
-						box.maxY,
-						box.maxZ,
-						1.0f,
-						0.55f,
-						0.12f,
-						1.0f
-				);
+				drawBlock(poseStack, lines, pos, 1.0f, 0.55f, 0.12f);
+			}
+		}
+		if (holding || ClientStaffState.mode() == StaffMode.FARM_WAREHOUSE) {
+			for (BlockPos pos : ClientStaffState.farmChests()) {
+				drawBlock(poseStack, lines, pos, 0.45f, 0.85f, 0.2f);
+			}
+		}
+		if (holding || ClientStaffState.mode() == StaffMode.GEAR_WAREHOUSE) {
+			for (BlockPos pos : ClientStaffState.gearChests()) {
+				drawBlock(poseStack, lines, pos, 0.35f, 0.5f, 0.9f);
+			}
+		}
+		if (holding || ClientStaffState.mode() == StaffMode.SMELT_RESULT) {
+			for (BlockPos pos : ClientStaffState.resultChests()) {
+				drawBlock(poseStack, lines, pos, 0.95f, 0.78f, 0.2f);
+			}
+		}
+		if (holding || ClientStaffState.mode() == StaffMode.SMELTER) {
+			for (BlockPos pos : ClientStaffState.furnaces()) {
+				drawBlock(poseStack, lines, pos, 0.72f, 0.38f, 0.92f);
 			}
 		}
 		if (holding || ClientStaffState.mode() == StaffMode.ZONE || ClientStaffState.mode() == StaffMode.ADVANCE) {

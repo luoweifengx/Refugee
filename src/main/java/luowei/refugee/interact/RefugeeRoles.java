@@ -14,7 +14,6 @@ import net.minecraft.world.item.ShieldItem;
 
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
-import luowei.refugee.logistics.OrgLogisticsData;
 import luowei.refugee.special.RefugeeSpecialRole;
 
 /**
@@ -181,24 +180,31 @@ public final class RefugeeRoles {
 		return isRangedWeapon(logicalMainHand(villager)) || isRangedWeapon(villager.getOffhandItem());
 	}
 
-	/** 持有工具即工人；即使同时持有武器也不进近战/远程集结。 */
+	/** 持有工具即工人；即使同时持有武器也不进近战/远程集结。特殊 NPC 除外。 */
 	public static boolean matchesRallyWorker(Villager villager) {
-		return isBuilder(villager);
+		return !RefugeeSpecialRole.isSpecial(villager) && isBuilder(villager);
 	}
 
 	public static boolean matchesRallyMelee(Villager villager) {
-		return !isBuilder(villager) && holdsMeleeWeapon(villager);
+		return !RefugeeSpecialRole.isSpecial(villager) && !isBuilder(villager) && holdsMeleeWeapon(villager);
 	}
 
 	public static boolean matchesRallyRanged(Villager villager) {
-		return !isBuilder(villager) && holdsRangedWeapon(villager);
+		return !RefugeeSpecialRole.isSpecial(villager) && !isBuilder(villager) && holdsRangedWeapon(villager);
 	}
 
-	/** 散人：主副手皆空。盔甲与食物槽不算手持。 */
+	/** 散人：主副手皆空。盔甲与食物槽不算手持。特殊 NPC 走单独集结。 */
 	public static boolean matchesRallyCivilian(Villager villager) {
+		if (RefugeeSpecialRole.isSpecial(villager)) {
+			return false;
+		}
 		ItemStack main = logicalMainHand(villager);
 		ItemStack off = villager.getOffhandItem();
 		return (main == null || main.isEmpty()) && (off == null || off.isEmpty());
+	}
+
+	public static boolean matchesRallySpecial(Villager villager) {
+		return RefugeeSpecialRole.isSpecial(villager);
 	}
 
 	public static ItemStack workTool(Villager villager) {
@@ -227,26 +233,27 @@ public final class RefugeeRoles {
 		return isShield(logicalMainHand(villager)) || isShield(villager.getOffhandItem());
 	}
 
+	/**
+	 * 闲置散人跑原版 Brain；工人 / 守卫 / 特殊 NPC 以及散人在跟随、巡逻、逃逸时停 Brain。
+	 */
 	public static boolean overridesBrain(Villager villager) {
-		if (villager.isBaby()) {
+		if (villager == null || villager.isBaby()) {
 			return false;
 		}
 		if (RefugeeSpecialRole.isSpecial(villager)) {
 			return true;
 		}
-		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		if (data.isFollowing() || data.isFollowingEntity() || data.isPatrolling()
-				|| data.isBuilding() || data.isBuilderDuty() || data.isRepairerDuty()
-				|| data.combatMood().isBusy()) {
+		if (!matchesRallyCivilian(villager)) {
 			return true;
 		}
-		if (villager.level().getServer() != null) {
-			OrgLogisticsData logistics = OrgLogisticsData.get(villager.level().getServer());
-			if (logistics.zoneOfWorker(villager.getUUID()) != null || logistics.jobOfWorker(villager.getUUID()) != null) {
-				return true;
-			}
-		}
-		return isGuard(villager) || isBuilder(villager);
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		return data.isFollowing() || data.isFollowingEntity() || data.isPatrolling()
+				|| data.combatMood().isBusy();
+	}
+
+	/** 散人 / 工人 / 特殊 NPC：被打才逃一次。守卫走战斗状态机。 */
+	public static boolean fleesWhenHit(Villager villager) {
+		return villager != null && !villager.isBaby() && !isGuard(villager);
 	}
 
 	public static EquipmentSlot armorSlot(Villager villager, ItemStack stack) {

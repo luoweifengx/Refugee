@@ -38,28 +38,24 @@ public class RefugeeGuardGoal extends Goal {
 		if (villager.isBaby()) {
 			return false;
 		}
+		if (!RefugeeRoles.isGuard(villager)) {
+			return RefugeeCombat.mood(villager) == RefugeeCombat.Mood.FLEE;
+		}
 		if (RefugeeCombat.isBusy(villager)) {
 			return true;
-		}
-		// 守卫、工人、以及 Brain 已接管的空手居民（巡逻/跟随等）见敌则接管；空手走工人的逃跑。
-		if (RefugeeRoles.overridesBrain(villager) && RefugeeCombat.hasHostilesInGuardRadius(villager)) {
-			return true;
-		}
-		if (!RefugeeRoles.isGuard(villager)) {
-			return false;
 		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		if (!data.isFollowing() && !data.isFollowingEntity() && RefugeeRoles.isBuilder(villager) && hasAssignedWork(data)) {
 			return false;
 		}
 		if (data.isPatrolling() && !data.isFollowing() && !data.isFollowingEntity()) {
-			return false;
+			return RefugeeCombat.hasHostilesInGuardRadius(villager);
 		}
 		return true;
 	}
 
 	private boolean hasAssignedWork(RefugeeVillagerData data) {
-		if (data.isBuilding() || data.isBuilderDuty() || data.isRepairerDuty()) {
+		if (data.isBuilding() || data.workerDuty().isAssigned()) {
 			return true;
 		}
 		if (villager.level().getServer() == null) {
@@ -102,6 +98,14 @@ public class RefugeeGuardGoal extends Goal {
 		data.tickCombatCooldowns();
 		RefugeeCombat.Mood mood = data.combatMood();
 		if (mood.isPanic()) {
+			if (!RefugeeRoles.isGuard(villager)) {
+				if (mood == RefugeeCombat.Mood.FLEE) {
+					RefugeeCombat.tickHitAndFlee(villager);
+				} else {
+					RefugeeCombat.setMood(villager, RefugeeCombat.Mood.IDLE);
+				}
+				return;
+			}
 			tickPanic(mood);
 			return;
 		}

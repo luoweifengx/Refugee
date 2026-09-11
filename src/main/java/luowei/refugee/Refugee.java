@@ -2,15 +2,19 @@ package luowei.refugee;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
+import net.fabricmc.loader.api.FabricLoader;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.npc.Villager;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.core.config.Configurator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import luowei.refugee.attachment.RefugeeAttachments;
+import luowei.refugee.block.ModBlocks;
 import luowei.refugee.blueprint.BlueprintRegistry;
 import luowei.refugee.command.RefugeeCommands;
 import luowei.refugee.config.RefugeeConfig;
@@ -34,9 +38,13 @@ public class Refugee implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
+		if (FabricLoader.getInstance().isDevelopmentEnvironment()) {
+			Configurator.setLevel(MOD_ID, Level.DEBUG);
+		}
 		RefugeeConfig.load();
 		RefugeeStructures.register();
 		RefugeeAttachments.register();
+		ModBlocks.register();
 		ModItems.register();
 		VillagerKitMenus.register();
 		BlueprintRegistry.register();
@@ -44,12 +52,14 @@ public class Refugee implements ModInitializer {
 		RefugeeInteractions.register();
 		RosterService.register();
 		luowei.refugee.staff.StaffService.register();
+		luowei.refugee.staff.GuardService.register();
 		luowei.refugee.warehouse.WarehouseService.register();
 		LandmarkSpawnService.register();
 		SpecialRefugeeService.register();
 		luowei.refugee.special.GuideTutorialService.register();
 		luowei.refugee.pbs.OrgMergeService.register();
 		RefugeeImmigration.register();
+		luowei.refugee.crusader.CrusaderService.register();
 		RefugeeCommands.register();
 		ServerLivingEntityEvents.AFTER_DAMAGE.register((entity, source, base, taken, blocked) -> {
 			if (entity instanceof Villager villager) {

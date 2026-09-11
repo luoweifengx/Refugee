@@ -18,13 +18,16 @@ import luowei.refugee.blueprint.BlueprintCatalogEntry;
 import luowei.refugee.network.BlueprintSelectPayload;
 
 /**
- * 蓝图目录选择：基础可造建筑与当前玩家导入的结构。
+ * 蓝图目录选择：基础可造建筑与组织共享的导入结构。
  */
 public class BlueprintSelectScreen extends Screen {
 	private final InteractionHand hand;
 	private final ResourceLocation preselect;
 	private List<BlueprintCatalogEntry> entries;
 	private BlueprintList list;
+
+	private Button deleteButton;
+	private Button confirmButton;
 
 	public BlueprintSelectScreen(List<BlueprintCatalogEntry> entries, InteractionHand hand) {
 		this(entries, hand, null);
@@ -42,6 +45,7 @@ public class BlueprintSelectScreen extends Screen {
 		if (list != null) {
 			list.refresh();
 		}
+		refreshButtons();
 	}
 
 	@Override
@@ -51,11 +55,34 @@ public class BlueprintSelectScreen extends Screen {
 		list = new BlueprintList(minecraft, width, listHeight, listTop, 24);
 		addRenderableWidget(list);
 		addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL, button -> StaffClientNav.resetToRoot())
-				.bounds(width / 2 - 155, height - 28, 150, 20)
+				.bounds(width / 2 - 155, height - 28, 100, 20)
 				.build());
-		addRenderableWidget(Button.builder(Component.translatable("screen.refugee.blueprint.confirm"), button -> confirm())
-				.bounds(width / 2 + 5, height - 28, 150, 20)
-				.build());
+		deleteButton = addRenderableWidget(Button.builder(
+				Component.translatable("screen.refugee.blueprint.delete"),
+				button -> deleteSelected()
+		).bounds(width / 2 - 50, height - 28, 100, 20).build());
+		confirmButton = addRenderableWidget(Button.builder(
+				Component.translatable("screen.refugee.blueprint.confirm"),
+				button -> confirm()
+		).bounds(width / 2 + 55, height - 28, 100, 20).build());
+		refreshButtons();
+	}
+
+	@Override
+	public void tick() {
+		super.tick();
+		refreshButtons();
+	}
+
+	private void refreshButtons() {
+		BlueprintEntry selected = list == null ? null : list.getSelected();
+		boolean hasSelection = selected != null;
+		if (confirmButton != null) {
+			confirmButton.active = hasSelection;
+		}
+		if (deleteButton != null) {
+			deleteButton.active = hasSelection && selected.entry.imported();
+		}
 	}
 
 	private void confirm() {
@@ -68,6 +95,17 @@ public class BlueprintSelectScreen extends Screen {
 		}
 		RefugeeClient.selectBlueprint(new BlueprintSelectPayload(selected.entry.id(), hand));
 		onClose();
+	}
+
+	private void deleteSelected() {
+		if (list == null) {
+			return;
+		}
+		BlueprintEntry selected = list.getSelected();
+		if (selected == null || !selected.entry.imported()) {
+			return;
+		}
+		RefugeeClient.deleteBlueprint(selected.entry.id());
 	}
 
 	@Override

@@ -38,6 +38,7 @@
 	},
 	"suggests": {
 		"food-health-hunger": "*",
-		"travel-business-team": "*"
+		"travel-business-team": "*",
+		"fortress-besieged": "*"
 	}
 }

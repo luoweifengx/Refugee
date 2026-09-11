@@ -38,7 +38,7 @@ public final class EquipmentService {
 			}
 			return given;
 		}
-		if (data.isBuilding() || data.isBuilderDuty() || data.isRepairerDuty()) {
+		if (data.isBuilding() || data.workerDuty().isAssigned()) {
 			luowei.refugee.staff.StaffService.unbindWorker(villager);
 			player.displayClientMessage(Component.translatable("message.refugee.staff.build.stopped"), true);
 			return true;
@@ -80,7 +80,7 @@ public final class EquipmentService {
 		return given;
 	}
 
-	private static void settleIdleGuard(Villager villager) {
+	public static void settleIdleGuard(Villager villager) {
 		if (!RefugeeRoles.isGuard(villager)) {
 			return;
 		}

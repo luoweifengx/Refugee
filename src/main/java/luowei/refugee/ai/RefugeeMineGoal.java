@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -20,6 +21,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.AttachedStemBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.BonemealableBlock;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.NetherWartBlock;
 import net.minecraft.world.level.block.SoundType;
@@ -43,7 +45,7 @@ import luowei.refugee.zone.AreaBox;
 import luowei.refugee.zone.WorkZone;
 
 /**
- * 镐采石、斧伐木、铲挖泥沙、锄维护耕地并种地。掉落先入村民背包再漏斗入仓。
+ * 镐采石、斧伐木、铲挖泥沙、锄按收获→播种→犁地→催熟维护农田。掉落先入村民背包再漏斗入仓。
  * 镐/斧/铲按玩家破坏公式按 tick 累加进度，并用 {@code destroyBlockProgress} 向客户端同步裂纹。
  */
 public class RefugeeMineGoal extends Goal {
@@ -58,6 +60,8 @@ public class RefugeeMineGoal extends Goal {
 	private float mineProgress;
 	/** 上次发给客户端的裂纹阶段 0–9；-1 表示未在播裂纹。 */
 	private int lastCrack = -1;
+	/** 锄头动作冷却，犁地/种地/催熟后等待，避免瞬间扫完工作区。 */
+	private int hoeCooldown;
 
 	public RefugeeMineGoal(Villager villager) {
 		this.villager = villager;
@@ -70,7 +74,7 @@ public class RefugeeMineGoal extends Goal {
 			return false;
 		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		if (data.isBuilding() || data.isBuilderDuty() || data.isRepairerDuty()
+		if (data.isBuilding() || data.workerDuty().isAssigned()
 				|| data.isFollowing() || data.isFollowingEntity() || data.isPatrolling() || zone() == null) {
 			return false;
 		}
@@ -95,6 +99,7 @@ public class RefugeeMineGoal extends Goal {
 		}
 		target = null;
 		scanCursor = 0;
+		hoeCooldown = 0;
 		villager.getNavigation().stop();
 	}
 
@@ -123,9 +128,19 @@ public class RefugeeMineGoal extends Goal {
 			WorkMove.goTo(villager, level, findZoneApproach(level, box));
 			return;
 		}
+		if (RefugeeRoles.isHoe(RefugeeRoles.workTool(villager)) && hoeCooldown > 0) {
+			hoeCooldown--;
+			return;
+		}
 		if (target == null || !box.contains(target) || !canMine(villager, level, target)) {
 			abortMining(level);
 			target = findTarget(level, box);
+		} else if (RefugeeRoles.isHoe(RefugeeRoles.workTool(villager))) {
+			BlockPos preferred = findTarget(level, box);
+			if (preferred != null && hoeJobRank(level, preferred) < hoeJobRank(level, target)) {
+				abortMining(level);
+				target = preferred;
+			}
 		}
 		if (target == null) {
 			return;
@@ -242,11 +257,25 @@ public class RefugeeMineGoal extends Goal {
 	}
 
 	private BlockPos findTarget(ServerLevel level, AreaBox box) {
-		BlockPos near = scanNear(level, box, villager.blockPosition(), NEAR_SCAN);
+		if (RefugeeRoles.isHoe(RefugeeRoles.workTool(villager))) {
+			for (int job = 0; job <= 3; job++) {
+				int rank = job;
+				BlockPos found = scanNear(level, box, villager.blockPosition(), NEAR_SCAN, pos -> hoeMatches(level, pos, rank));
+				if (found != null) {
+					return found;
+				}
+				found = scanBox(level, box, pos -> hoeMatches(level, pos, rank), false);
+				if (found != null) {
+					return found;
+				}
+			}
+			return null;
+		}
+		BlockPos near = scanNear(level, box, villager.blockPosition(), NEAR_SCAN, pos -> canMine(villager, level, pos));
 		if (near != null) {
 			return near;
 		}
-		return scanBox(level, box);
+		return scanBox(level, box, pos -> canMine(villager, level, pos), true);
 	}
 
 	/** 脚在盒内，或站在顶层上方一格且水平落在区内，算出勤。 */
@@ -310,7 +339,7 @@ public class RefugeeMineGoal extends Goal {
 		return null;
 	}
 
-	private BlockPos scanNear(ServerLevel level, AreaBox box, BlockPos origin, int radius) {
+	private BlockPos scanNear(ServerLevel level, AreaBox box, BlockPos origin, int radius, Predicate<BlockPos> match) {
 		BlockPos best = null;
 		double bestDist = Double.MAX_VALUE;
 		BlockPos min = new BlockPos(
@@ -324,7 +353,7 @@ public class RefugeeMineGoal extends Goal {
 				Math.min(box.max().getZ(), origin.getZ() + radius)
 		);
 		for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
-			if (!canMine(villager, level, pos)) {
+			if (!match.test(pos)) {
 				continue;
 			}
 			double dist = villager.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
@@ -336,20 +365,21 @@ public class RefugeeMineGoal extends Goal {
 		return best;
 	}
 
-	private BlockPos scanBox(ServerLevel level, AreaBox box) {
+	private BlockPos scanBox(ServerLevel level, AreaBox box, Predicate<BlockPos> match, boolean paced) {
 		int scanned = 0;
 		BlockPos best = null;
 		double bestDist = Double.MAX_VALUE;
+		int start = paced ? scanCursor : 0;
 		for (BlockPos pos : BlockPos.betweenClosed(box.min(), box.max())) {
 			scanned++;
-			if (scanned < scanCursor) {
+			if (scanned < start) {
 				continue;
 			}
-			if (scanned - scanCursor > 4096) {
+			if (paced && scanned - start > 4096) {
 				scanCursor = scanned;
 				break;
 			}
-			if (!canMine(villager, level, pos)) {
+			if (!match.test(pos)) {
 				continue;
 			}
 			double dist = villager.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
@@ -358,7 +388,7 @@ public class RefugeeMineGoal extends Goal {
 				best = pos.immutable();
 			}
 		}
-		if (best == null && scanCursor > 0 && scanned >= volumeHint(box)) {
+		if (paced && best == null && scanCursor > 0 && scanned >= volumeHint(box)) {
 			scanCursor = 0;
 		}
 		if (best != null) {
@@ -393,34 +423,93 @@ public class RefugeeMineGoal extends Goal {
 			return MaterialCategory.ofBlock(state) == MaterialCategory.SOIL;
 		}
 		if (RefugeeRoles.isHoe(tool)) {
-			return isTillable(state) || isHarvestable(state) || isPlantableSpot(villager, level, pos);
+			return isTillable(state)
+					|| isHarvestable(state)
+					|| isPlantableSpot(villager, level, pos)
+					|| isGrowable(level, pos, state);
 		}
 		return false;
 	}
 
-	/** 锄：犁地、收获并补种、对空耕地种仓库种子。 */
+	/** 锄：先收获并补种，再对空耕地播种，再犁地，最后对未成熟作物假骨粉催熟。 */
 	private boolean tryHoeInstant(ServerLevel level, BlockPos pos, BlockState state, ItemStack tool) {
 		if (!RefugeeRoles.isHoe(tool)) {
+			return false;
+		}
+		if (isHarvestable(state)) {
+			boolean fruit = isPumpkinOrMelon(state);
+			BlockState soil = level.getBlockState(pos.below());
+			breakAndDepositFarm(level, pos, state);
+			if (!fruit) {
+				tryPlant(level, pos, soil);
+			}
+			startHoeCooldown();
+			return true;
+		}
+		if (isPlantable(level, pos)) {
+			if (tryPlant(level, pos.above(), state)) {
+				startHoeCooldown();
+				return true;
+			}
 			return false;
 		}
 		if (isTillable(state)) {
 			level.setBlock(pos, Blocks.FARMLAND.defaultBlockState(), 3);
 			level.levelEvent(2001, pos, Block.getId(state));
+			startHoeCooldown();
 			return true;
 		}
-		if (isHarvestable(state)) {
-			boolean fruit = isPumpkinOrMelon(state);
-			BlockState soil = level.getBlockState(pos.below());
-			breakAndDeposit(level, pos, state);
-			if (!fruit) {
-				tryPlant(level, pos, soil);
-			}
+		if (tryBonemeal(level, pos, state)) {
+			startHoeCooldown();
 			return true;
-		}
-		if (isPlantable(level, pos)) {
-			return tryPlant(level, pos.above(), state);
 		}
 		return false;
+	}
+
+	/** 0 收获、1 播种、2 犁地、3 催熟；数字越小越优先。 */
+	private int hoeJobRank(ServerLevel level, BlockPos pos) {
+		BlockState state = level.getBlockState(pos);
+		if (isHarvestable(state)) {
+			return 0;
+		}
+		if (isPlantableSpot(villager, level, pos)) {
+			return 1;
+		}
+		if (isTillable(state)) {
+			return 2;
+		}
+		if (isGrowable(level, pos, state)) {
+			return 3;
+		}
+		return 4;
+	}
+
+	private boolean hoeMatches(ServerLevel level, BlockPos pos, int job) {
+		if (!canMine(villager, level, pos)) {
+			return false;
+		}
+		return hoeJobRank(level, pos) == job;
+	}
+
+	private void startHoeCooldown() {
+		hoeCooldown = RefugeeConfig.hoeActionIntervalTicks;
+	}
+
+	/** 假骨粉：挥锄播粒子，按配置概率催熟，不消耗物品。 */
+	private boolean tryBonemeal(ServerLevel level, BlockPos pos, BlockState state) {
+		if (RefugeeConfig.hoeBonemealChance <= 0.0 || !(state.getBlock() instanceof BonemealableBlock growable)) {
+			return false;
+		}
+		if (!growable.isValidBonemealTarget(level, pos, state) || isHarvestable(state)) {
+			return false;
+		}
+		villager.swing(RefugeeRoles.workHand(villager));
+		level.levelEvent(1505, pos, 15);
+		if (level.random.nextFloat() < RefugeeConfig.hoeBonemealChance
+				&& growable.isBonemealSuccess(level, level.random, pos, state)) {
+			growable.performBonemeal(level, level.random, pos, state);
+		}
+		return true;
 	}
 
 	private boolean tryPlant(ServerLevel level, BlockPos cropPos, BlockState soil) {
@@ -431,13 +520,13 @@ public class RefugeeMineGoal extends Goal {
 		if (subjectId == null) {
 			return false;
 		}
-		ItemStack seed = WarehouseService.takeOne(level, subjectId, MaterialCategory.SEED);
+		ItemStack seed = WarehouseService.takeOneSeed(level, subjectId);
 		if (seed.isEmpty()) {
 			return false;
 		}
 		BlockState crop = cropStateForSeed(seed.getItem());
 		if (crop == null || !canPlantOn(soil, seed.getItem())) {
-			WarehouseService.deposit(level, subjectId, seed);
+			WarehouseService.depositFarm(level, subjectId, seed);
 			return false;
 		}
 		level.setBlock(cropPos, crop, 3);
@@ -534,12 +623,29 @@ public class RefugeeMineGoal extends Goal {
 		WarehouseService.depositLoot(level, villager, subjectId, drops);
 	}
 
+	private void breakAndDepositFarm(ServerLevel level, BlockPos pos, BlockState state) {
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		UUID subjectId = data.subjectId();
+		BlockEntity blockEntity = level.getBlockEntity(pos);
+		List<ItemStack> drops = Block.getDrops(state, level, pos, blockEntity, villager, RefugeeRoles.workTool(villager));
+		level.destroyBlock(pos, false);
+		WarehouseService.depositFarmLoot(level, villager, subjectId, drops);
+	}
+
 	private static boolean isPlantableSpot(Villager villager, ServerLevel level, BlockPos pos) {
 		if (!isPlantable(level, pos)) {
 			return false;
 		}
 		UUID subjectId = RefugeeAttachments.get(villager).subjectId();
-		return subjectId != null && WarehouseService.count(level.getServer(), subjectId, MaterialCategory.SEED) > 0;
+		return subjectId != null && WarehouseService.countFarmSeeds(level, subjectId) > 0;
+	}
+
+	private static boolean isGrowable(ServerLevel level, BlockPos pos, BlockState state) {
+		if (RefugeeConfig.hoeBonemealChance <= 0.0 || isHarvestable(state)) {
+			return false;
+		}
+		return state.getBlock() instanceof BonemealableBlock growable
+				&& growable.isValidBonemealTarget(level, pos, state);
 	}
 
 	private static boolean isTillable(BlockState state) {

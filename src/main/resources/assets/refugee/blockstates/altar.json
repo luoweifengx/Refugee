@@ -1,0 +1,14 @@
+{
+	"multipart": [
+		{
+			"apply": {
+				"model": "minecraft:block/sculk_shrieker"
+			}
+		},
+		{
+			"apply": {
+				"model": "minecraft:block/sculk_shrieker_can_summon"
+			}
+		}
+	]
+}

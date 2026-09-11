@@ -36,6 +36,7 @@ import luowei.refugee.warehouse.WarehouseService;
  */
 public final class RefugeeCombat {
 	private static final ResourceLocation SHIELD_SLOW_ID = Refugee.id("shield_block");
+	private static final int FLEE_ONCE_TICKS = 100;
 
 	public enum Mood {
 		IDLE,
@@ -93,6 +94,10 @@ public final class RefugeeCombat {
 		if (RefugeeDepthCurse.isLeylineDamage(source)) {
 			return;
 		}
+		if (RefugeeRoles.fleesWhenHit(villager)) {
+			tryFleeOnce(villager, source);
+			return;
+		}
 		float max = villager.getMaxHealth();
 		if (max <= 0.0f) {
 			return;
@@ -104,6 +109,55 @@ public final class RefugeeCombat {
 		}
 		if (ratio < RefugeeConfig.panicHealthRatio) {
 			enterPanic(villager);
+		}
+	}
+
+	/** 散人/工人被生物打中才逃；同一次遭遇只跑一段。 */
+	public static void tryFleeOnce(Villager villager, DamageSource source) {
+		if (mood(villager) == Mood.FLEE) {
+			return;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (data.fledThisEncounter()) {
+			return;
+		}
+		if (!(source.getEntity() instanceof LivingEntity attacker) || !attacker.isAlive()) {
+			return;
+		}
+		Monster nearby = nearestHostile(villager, villager.position(), RefugeeConfig.panicClearRadius);
+		LivingEntity threat = nearby != null ? nearby : attacker;
+		data.setFledThisEncounter(true);
+		data.setFleeOnceTicks(FLEE_ONCE_TICKS);
+		setMood(villager, Mood.FLEE);
+		flee(villager, threat);
+	}
+
+	public static void tickHitAndFlee(Villager villager) {
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		data.tickFleeOnce();
+		int remaining = data.fleeOnceTicks();
+		boolean timedOut = remaining <= 0;
+		boolean arrived = villager.getNavigation().isDone() && remaining <= FLEE_ONCE_TICKS - 10;
+		if (timedOut || arrived) {
+			villager.getNavigation().stop();
+			data.setFleeOnceTicks(0);
+			setMood(villager, Mood.IDLE);
+		}
+	}
+
+	/** 附近没有敌对后，允许下次被打再逃一次。 */
+	public static void tickEncounterReset(Villager villager) {
+		if (!RefugeeRoles.fleesWhenHit(villager)) {
+			return;
+		}
+		Mood current = mood(villager);
+		if (current.isBusy() && current != Mood.FLEE) {
+			setMood(villager, Mood.IDLE);
+			current = Mood.IDLE;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (data.fledThisEncounter() && current != Mood.FLEE && !hasHostilesInGuardRadius(villager)) {
+			data.setFledThisEncounter(false);
 		}
 	}
 
@@ -146,8 +200,7 @@ public final class RefugeeCombat {
 	}
 
 	/**
-	 * 仍低于恢复线：先看附近有无敌人，再看食物。工人只 FLEE/RECOVER；
-	 * LAST_STAND 仅守卫且近处有敌、又没食物。
+	 * 守卫残血：近处有敌且没食物则 LAST_STAND，否则 FLEE；没敌则 RECOVER。
 	 */
 	public static Mood panicMoodWhenHurt(Villager villager, Monster nearby) {
 		boolean hasFood = RefugeeRoles.hasFood(villager);

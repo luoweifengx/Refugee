@@ -141,7 +141,7 @@ public final class RefugeeBubble {
 				return RefugeeBubbleIcon.FULL;
 			}
 		}
-		if (RefugeeRoles.isBuilder(villager) && (data.isBuilding() || data.isBuilderDuty() || data.isRepairerDuty())) {
+		if (RefugeeRoles.isBuilder(villager) && (data.isBuilding() || data.workerDuty().isAssigned())) {
 			return RefugeeBubbleIcon.PICKAXE;
 		}
 		if (data.isLoving(gameTime)) {

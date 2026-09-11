@@ -10,9 +10,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import com.google.gson.Gson;
@@ -40,6 +42,7 @@ import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemp
 
 import luowei.refugee.Refugee;
 import luowei.refugee.config.RefugeeConfig;
+import luowei.refugee.pbs.PbsAdapter;
 import luowei.refugee.zone.AreaBox;
 
 /**
@@ -103,9 +106,33 @@ public final class PlayerBlueprints {
 		return playerId.equals(OWNERS.get(id));
 	}
 
+	public static boolean visibleTo(MinecraftServer server, UUID playerId, ResourceLocation id) {
+		if (id == null) {
+			return false;
+		}
+		UUID owner = OWNERS.get(id);
+		if (owner == null) {
+			return false;
+		}
+		return PbsAdapter.shareGroup(server, playerId).contains(owner);
+	}
+
 	public static List<BlueprintCatalogEntry> catalog(UUID playerId) {
 		PlayerCatalog catalog = playerId == null ? null : BY_PLAYER.get(playerId);
 		return catalog == null ? List.of() : List.copyOf(catalog.entries);
+	}
+
+	public static List<BlueprintCatalogEntry> catalog(MinecraftServer server, UUID playerId) {
+		Set<ResourceLocation> seen = new LinkedHashSet<>();
+		List<BlueprintCatalogEntry> entries = new ArrayList<>();
+		for (UUID memberId : PbsAdapter.shareGroup(server, playerId)) {
+			for (BlueprintCatalogEntry entry : catalog(memberId)) {
+				if (seen.add(entry.id())) {
+					entries.add(entry);
+				}
+			}
+		}
+		return entries;
 	}
 
 	public static Map<ResourceLocation, CompoundTag> templateNbts(UUID playerId) {
@@ -116,7 +143,15 @@ public final class PlayerBlueprints {
 		return Map.copyOf(catalog.nbts);
 	}
 
-	public static boolean nameTaken(UUID playerId, String displayName) {
+	public static Map<ResourceLocation, CompoundTag> templateNbts(MinecraftServer server, UUID playerId) {
+		Map<ResourceLocation, CompoundTag> nbts = new LinkedHashMap<>();
+		for (UUID memberId : PbsAdapter.shareGroup(server, playerId)) {
+			nbts.putAll(templateNbts(memberId));
+		}
+		return nbts;
+	}
+
+	public static boolean nameTaken(MinecraftServer server, UUID playerId, String displayName) {
 		String needle = normalizeName(displayName);
 		if (needle.isEmpty()) {
 			return false;
@@ -126,16 +161,16 @@ public final class PlayerBlueprints {
 				return true;
 			}
 		}
-		PlayerCatalog catalog = playerId == null ? null : BY_PLAYER.get(playerId);
-		if (catalog == null) {
-			return false;
-		}
-		for (BlueprintCatalogEntry entry : catalog.entries) {
+		for (BlueprintCatalogEntry entry : catalog(server, playerId)) {
 			if (needle.equalsIgnoreCase(entry.displayName())) {
 				return true;
 			}
 		}
 		return false;
+	}
+
+	public static boolean nameTaken(UUID playerId, String displayName) {
+		return nameTaken(null, playerId, displayName);
 	}
 
 	public record ImportResult(ImportStatus status, ResourceLocation id) {
@@ -152,7 +187,7 @@ public final class PlayerBlueprints {
 		if (name.isEmpty()) {
 			return ImportResult.of(ImportStatus.EMPTY_NAME);
 		}
-		if (nameTaken(player.getUUID(), name)) {
+		if (nameTaken(player.getServer(), player.getUUID(), name)) {
 			return ImportResult.of(ImportStatus.DUPLICATE_NAME);
 		}
 		ImportStatus size = checkSize(box);
@@ -217,6 +252,54 @@ public final class PlayerBlueprints {
 			return ImportStatus.TOO_LARGE_VOLUME;
 		}
 		return ImportStatus.OK;
+	}
+
+	public static boolean delete(MinecraftServer server, UUID actorId, ResourceLocation id) {
+		if (server == null || actorId == null || id == null) {
+			return false;
+		}
+		if (!visibleTo(server, actorId, id)) {
+			return false;
+		}
+		UUID owner = OWNERS.get(id);
+		if (owner == null) {
+			return false;
+		}
+		String stem = stemOf(id);
+		if (stem == null || stem.isEmpty()) {
+			return false;
+		}
+		Path dir = playerDir(server, owner);
+		Path file = dir.resolve(stem + ".nbt");
+		try {
+			Files.deleteIfExists(file);
+			removeCatalogName(dir, stem);
+		} catch (Exception exception) {
+			Refugee.LOGGER.warn("Failed to delete blueprint {} for {}", id, owner, exception);
+			return false;
+		}
+		TEMPLATES.remove(id);
+		NBTS.remove(id);
+		OWNERS.remove(id);
+		PlayerCatalog catalog = BY_PLAYER.get(owner);
+		if (catalog != null) {
+			catalog.entries.removeIf(entry -> id.equals(entry.id()));
+			catalog.templates.remove(id);
+			catalog.nbts.remove(id);
+			if (catalog.entries.isEmpty()) {
+				BY_PLAYER.remove(owner);
+			}
+		}
+		return true;
+	}
+
+	private static String stemOf(ResourceLocation id) {
+		if (id == null) {
+			return null;
+		}
+		String path = id.getPath();
+		int slash = path.lastIndexOf('/');
+		return slash < 0 ? path : path.substring(slash + 1);
 	}
 
 	public static boolean areaLoaded(ServerLevel level, AreaBox box) {
@@ -300,7 +383,7 @@ public final class PlayerBlueprints {
 			catalog.nbts.put(id, nbt.copy());
 			catalog.templates.put(id, template);
 			catalog.entries.removeIf(entry -> entry.id().equals(id));
-			catalog.entries.add(new BlueprintCatalogEntry(id, displayName));
+			catalog.entries.add(new BlueprintCatalogEntry(id, displayName, true));
 			return true;
 		} catch (Exception exception) {
 			Refugee.LOGGER.warn("Failed to load player blueprint {}", file, exception);
@@ -376,6 +459,26 @@ public final class PlayerBlueprints {
 		if (!json.has("names")) {
 			json.add("names", names);
 		}
+		try (Writer writer = Files.newBufferedWriter(catalog, StandardCharsets.UTF_8)) {
+			GSON.toJson(json, writer);
+			writer.write(System.lineSeparator());
+		}
+	}
+
+	private static void removeCatalogName(Path dir, String stem) throws IOException {
+		Path catalog = dir.resolve(CATALOG_FILE);
+		if (!Files.isRegularFile(catalog) || stem == null || stem.isEmpty()) {
+			return;
+		}
+		JsonObject json;
+		try (Reader reader = Files.newBufferedReader(catalog, StandardCharsets.UTF_8)) {
+			JsonElement parsed = JsonParser.parseReader(reader);
+			json = parsed != null && parsed.isJsonObject() ? parsed.getAsJsonObject() : new JsonObject();
+		}
+		JsonObject names = json.has("names") && json.get("names").isJsonObject()
+				? json.getAsJsonObject("names")
+				: json;
+		names.remove(stem);
 		try (Writer writer = Files.newBufferedWriter(catalog, StandardCharsets.UTF_8)) {
 			GSON.toJson(json, writer);
 			writer.write(System.lineSeparator());

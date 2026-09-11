@@ -31,6 +31,7 @@ import net.minecraft.world.level.block.entity.BaseContainerBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
+import luowei.refugee.block.AltarBlockEntity;
 import luowei.refugee.config.RefugeeConfig;
 import luowei.refugee.logistics.OrgLogisticsData;
 import luowei.refugee.logistics.OrgLogisticsData.ContainerRef;
@@ -62,9 +63,7 @@ public final class WarehouseService {
 		}
 		ResourceLocation dimension = level.dimension().location();
 		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
-		if (data.hasFoodWarehouse(subjectId, dimension, pos)) {
-			removeFood(level, subjectId, pos);
-		}
+		unmark(level, subjectId, pos);
 		if (!data.addWarehouse(subjectId, dimension, pos)) {
 			return false;
 		}
@@ -98,9 +97,7 @@ public final class WarehouseService {
 		}
 		ResourceLocation dimension = level.dimension().location();
 		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
-		if (data.hasWarehouse(subjectId, dimension, pos)) {
-			remove(level, subjectId, pos);
-		}
+		unmark(level, subjectId, pos);
 		if (!data.addFoodWarehouse(subjectId, dimension, pos)) {
 			return false;
 		}
@@ -127,14 +124,177 @@ public final class WarehouseService {
 		return true;
 	}
 
+	public static boolean addSmelter(ServerLevel level, UUID subjectId, BlockPos pos) {
+		if (level == null || subjectId == null || pos == null) {
+			return false;
+		}
+		ResourceLocation dimension = level.dimension().location();
+		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
+		unmark(level, subjectId, pos);
+		if (!data.addSmelter(subjectId, dimension, pos)) {
+			return false;
+		}
+		ContainerRef ref = new ContainerRef(dimension, pos.immutable());
+		retainChunk(level, ref);
+		return true;
+	}
+
+	public static boolean addFarm(ServerLevel level, UUID subjectId, BlockPos pos) {
+		return addPlainChest(level, subjectId, pos, OrgLogisticsData::addFarmWarehouse);
+	}
+
+	public static boolean removeFarm(ServerLevel level, UUID subjectId, BlockPos pos) {
+		return removePlainChest(level, subjectId, pos, OrgLogisticsData::removeFarmWarehouse);
+	}
+
+	public static boolean addGear(ServerLevel level, UUID subjectId, BlockPos pos) {
+		return addPlainChest(level, subjectId, pos, OrgLogisticsData::addGearWarehouse);
+	}
+
+	public static boolean removeGear(ServerLevel level, UUID subjectId, BlockPos pos) {
+		return removePlainChest(level, subjectId, pos, OrgLogisticsData::removeGearWarehouse);
+	}
+
+	public static boolean addSmeltResult(ServerLevel level, UUID subjectId, BlockPos pos) {
+		return addPlainChest(level, subjectId, pos, OrgLogisticsData::addSmeltResult);
+	}
+
+	public static boolean removeSmeltResult(ServerLevel level, UUID subjectId, BlockPos pos) {
+		return removePlainChest(level, subjectId, pos, OrgLogisticsData::removeSmeltResult);
+	}
+
+	private static boolean addPlainChest(
+			ServerLevel level,
+			UUID subjectId,
+			BlockPos pos,
+			MarkAdder adder
+	) {
+		if (level == null || subjectId == null || pos == null) {
+			return false;
+		}
+		ResourceLocation dimension = level.dimension().location();
+		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
+		unmark(level, subjectId, pos);
+		if (!adder.add(data, subjectId, dimension, pos)) {
+			return false;
+		}
+		retainChunk(level, new ContainerRef(dimension, pos.immutable()));
+		return true;
+	}
+
+	private static boolean removePlainChest(
+			ServerLevel level,
+			UUID subjectId,
+			BlockPos pos,
+			MarkRemover remover
+	) {
+		if (level == null || subjectId == null || pos == null) {
+			return false;
+		}
+		ResourceLocation dimension = level.dimension().location();
+		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
+		if (!remover.remove(data, subjectId, dimension, pos)) {
+			return false;
+		}
+		ContainerRef ref = new ContainerRef(dimension, pos.immutable());
+		releaseChunk(level, ref);
+		if (!isTracked(level, pos)) {
+			OPEN_COUNTS.remove(ref);
+		}
+		return true;
+	}
+
+	private static void unmark(ServerLevel level, UUID subjectId, BlockPos pos) {
+		ResourceLocation dimension = level.dimension().location();
+		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
+		if (data.hasWarehouse(subjectId, dimension, pos)) {
+			remove(level, subjectId, pos);
+		}
+		if (data.hasFoodWarehouse(subjectId, dimension, pos)) {
+			removeFood(level, subjectId, pos);
+		}
+		if (data.hasFarmWarehouse(subjectId, dimension, pos)) {
+			removeFarm(level, subjectId, pos);
+		}
+		if (data.hasGearWarehouse(subjectId, dimension, pos)) {
+			removeGear(level, subjectId, pos);
+		}
+		if (data.hasSmeltResult(subjectId, dimension, pos)) {
+			removeSmeltResult(level, subjectId, pos);
+		}
+		if (data.hasSmelter(subjectId, dimension, pos)) {
+			removeSmelter(level, subjectId, pos);
+		}
+	}
+
+	@FunctionalInterface
+	private interface MarkAdder {
+		boolean add(OrgLogisticsData data, UUID subjectId, ResourceLocation dimension, BlockPos pos);
+	}
+
+	@FunctionalInterface
+	private interface MarkRemover {
+		boolean remove(OrgLogisticsData data, UUID subjectId, ResourceLocation dimension, BlockPos pos);
+	}
+
+	public static boolean removeSmelter(ServerLevel level, UUID subjectId, BlockPos pos) {
+		if (level == null || subjectId == null || pos == null) {
+			return false;
+		}
+		ResourceLocation dimension = level.dimension().location();
+		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
+		if (!data.removeSmelter(subjectId, dimension, pos)) {
+			return false;
+		}
+		ContainerRef ref = new ContainerRef(dimension, pos.immutable());
+		releaseChunk(level, ref);
+		if (!isTracked(level, pos)) {
+			OPEN_COUNTS.remove(ref);
+		}
+		return true;
+	}
+
 	public static ItemStack deposit(ServerLevel level, UUID subjectId, ItemStack stack) {
+		if (level == null || subjectId == null) {
+			return stack == null ? ItemStack.EMPTY : stack;
+		}
+		return depositInto(level, subjectId, stack, OrgLogisticsData.get(level.getServer()).warehouses(subjectId));
+	}
+
+	public static ItemStack depositFarm(ServerLevel level, UUID subjectId, ItemStack stack) {
+		if (level == null || subjectId == null) {
+			return stack == null ? ItemStack.EMPTY : stack;
+		}
+		return depositInto(level, subjectId, stack, OrgLogisticsData.get(level.getServer()).farmWarehouses(subjectId));
+	}
+
+	public static ItemStack depositGear(ServerLevel level, UUID subjectId, ItemStack stack) {
+		if (level == null || subjectId == null) {
+			return stack == null ? ItemStack.EMPTY : stack;
+		}
+		return depositInto(level, subjectId, stack, OrgLogisticsData.get(level.getServer()).gearWarehouses(subjectId));
+	}
+
+	public static ItemStack depositSmeltResult(ServerLevel level, UUID subjectId, ItemStack stack) {
+		if (level == null || subjectId == null) {
+			return stack == null ? ItemStack.EMPTY : stack;
+		}
+		return depositInto(level, subjectId, stack, OrgLogisticsData.get(level.getServer()).smeltResults(subjectId));
+	}
+
+	private static ItemStack depositInto(
+			ServerLevel level,
+			UUID subjectId,
+			ItemStack stack,
+			List<ContainerRef> refs
+	) {
 		if (level == null || subjectId == null || stack == null || stack.isEmpty()) {
 			return stack == null ? ItemStack.EMPTY : stack;
 		}
 		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
 		ItemStack[] remaining = { stack.copy() };
 		runSilent(() -> {
-			for (ContainerRef ref : data.warehouses(subjectId)) {
+			for (ContainerRef ref : refs) {
 				if (remaining[0].isEmpty()) {
 					break;
 				}
@@ -158,9 +318,23 @@ public final class WarehouseService {
 	}
 
 	/**
-	 * 掉落物直接按仓库列表顺序漏斗式入箱，不经过村民背包；仍放不下则掉在村民脚下。
+	 * 掉落物直接按仓库列表顺序漏斗式入箱，不经过村民背包；矿石进熔炼仓，其余进物块仓；仍放不下则掉在村民脚下。
 	 */
 	public static void depositLoot(ServerLevel level, Villager villager, UUID subjectId, List<ItemStack> drops) {
+		depositLootInto(level, villager, subjectId, drops, false);
+	}
+
+	public static void depositFarmLoot(ServerLevel level, Villager villager, UUID subjectId, List<ItemStack> drops) {
+		depositLootInto(level, villager, subjectId, drops, true);
+	}
+
+	private static void depositLootInto(
+			ServerLevel level,
+			Villager villager,
+			UUID subjectId,
+			List<ItemStack> drops,
+			boolean farm
+	) {
 		if (level == null || drops == null || drops.isEmpty()) {
 			return;
 		}
@@ -170,7 +344,13 @@ public final class WarehouseService {
 			}
 			ItemStack remaining = drop.copy();
 			if (subjectId != null) {
-				remaining = deposit(level, subjectId, remaining);
+				if (farm) {
+					remaining = depositFarm(level, subjectId, remaining);
+				} else if (MaterialCategory.isSmeltCargo(remaining)) {
+					remaining = depositSmeltResult(level, subjectId, remaining);
+				} else {
+					remaining = deposit(level, subjectId, remaining);
+				}
 			}
 			if (!remaining.isEmpty() && villager != null) {
 				villager.spawnAtLocation(level, remaining);
@@ -196,6 +376,112 @@ public final class WarehouseService {
 	}
 
 	/**
+	 * 物块仓单趟扫槽：按加入名单、槽 0..N。开箱中的容器跳过。visitor 返回 false 则结束。
+	 */
+	public static void forEachBlockSlot(ServerLevel level, UUID subjectId, BlockSlotVisitor visitor) {
+		if (level == null || subjectId == null || visitor == null || level.getServer() == null) {
+			return;
+		}
+		forEachSlot(level, subjectId, visitor, OrgLogisticsData.get(level.getServer()).warehouses(subjectId));
+	}
+
+	public static void forEachGearSlot(ServerLevel level, UUID subjectId, BlockSlotVisitor visitor) {
+		if (level == null || subjectId == null || visitor == null || level.getServer() == null) {
+			return;
+		}
+		forEachSlot(level, subjectId, visitor, OrgLogisticsData.get(level.getServer()).gearWarehouses(subjectId));
+	}
+
+	public static void forEachSmeltResultSlot(ServerLevel level, UUID subjectId, BlockSlotVisitor visitor) {
+		if (level == null || subjectId == null || visitor == null || level.getServer() == null) {
+			return;
+		}
+		forEachSlot(level, subjectId, visitor, OrgLogisticsData.get(level.getServer()).smeltResults(subjectId));
+	}
+
+	private static void forEachSlot(
+			ServerLevel level,
+			UUID subjectId,
+			BlockSlotVisitor visitor,
+			List<ContainerRef> refs
+	) {
+		if (level == null || subjectId == null || visitor == null || level.getServer() == null) {
+			return;
+		}
+		for (ContainerRef ref : refs) {
+			if (isOccupied(ref)) {
+				continue;
+			}
+			Container container = containerAt(level.getServer(), ref);
+			if (container == null) {
+				continue;
+			}
+			for (int slot = 0; slot < container.getContainerSize(); slot++) {
+				if (!visitor.visit(ref, slot, container.getItem(slot))) {
+					return;
+				}
+			}
+		}
+	}
+
+	/**
+	 * 从指定槽取出一件真实堆（含组件）。开箱中的容器不取。
+	 */
+	public static ItemStack takeAt(ServerLevel level, UUID subjectId, ContainerRef ref, int slot) {
+		if (level == null || subjectId == null || ref == null || slot < 0 || isOccupied(ref)) {
+			return ItemStack.EMPTY;
+		}
+		Container container = containerAt(level.getServer(), ref);
+		if (container == null || slot >= container.getContainerSize()) {
+			return ItemStack.EMPTY;
+		}
+		ItemStack stack = container.getItem(slot);
+		if (stack.isEmpty()) {
+			return ItemStack.EMPTY;
+		}
+		ItemStack taken = stack.copyWithCount(1);
+		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
+		runSilent(() -> {
+			stack.shrink(1);
+			container.setChanged();
+		});
+		WarehouseLedger.instance().updateSlot(subjectId, ref, slot, container.getItem(slot));
+		data.setDirty();
+		return taken;
+	}
+
+	/**
+	 * 从指定槽取出整堆。开箱中的容器不取。
+	 */
+	public static ItemStack takeStackAt(ServerLevel level, UUID subjectId, ContainerRef ref, int slot) {
+		if (level == null || subjectId == null || ref == null || slot < 0 || isOccupied(ref)) {
+			return ItemStack.EMPTY;
+		}
+		Container container = containerAt(level.getServer(), ref);
+		if (container == null || slot >= container.getContainerSize()) {
+			return ItemStack.EMPTY;
+		}
+		ItemStack stack = container.getItem(slot);
+		if (stack.isEmpty()) {
+			return ItemStack.EMPTY;
+		}
+		ItemStack taken = stack.copy();
+		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
+		runSilent(() -> {
+			container.setItem(slot, ItemStack.EMPTY);
+			container.setChanged();
+		});
+		WarehouseLedger.instance().updateSlot(subjectId, ref, slot, ItemStack.EMPTY);
+		data.setDirty();
+		return taken;
+	}
+
+	@FunctionalInterface
+	public interface BlockSlotVisitor {
+		boolean visit(ContainerRef ref, int slot, ItemStack stack);
+	}
+
+	/**
 	 * 从食物仓取出一件可食且非种子类的物品。初级农作物留在物块仓。
 	 */
 	public static ItemStack takeOneFood(ServerLevel level, UUID subjectId) {
@@ -218,6 +504,57 @@ public final class WarehouseService {
 			}
 		}
 		return ItemStack.EMPTY;
+	}
+
+	public static ItemStack takeOneSeed(ServerLevel level, UUID subjectId) {
+		if (level == null || subjectId == null) {
+			return ItemStack.EMPTY;
+		}
+		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
+		for (ContainerRef ref : data.farmWarehouses(subjectId)) {
+			if (isOccupied(ref)) {
+				continue;
+			}
+			Container container = containerAt(level.getServer(), ref);
+			if (container == null) {
+				continue;
+			}
+			for (int slot = 0; slot < container.getContainerSize(); slot++) {
+				ItemStack stack = container.getItem(slot);
+				if (stack.isEmpty() || MaterialCategory.of(stack) != MaterialCategory.SEED) {
+					continue;
+				}
+				ItemStack taken = takeAt(level, subjectId, ref, slot);
+				if (!taken.isEmpty()) {
+					return taken;
+				}
+			}
+		}
+		return ItemStack.EMPTY;
+	}
+
+	public static int countFarmSeeds(ServerLevel level, UUID subjectId) {
+		if (level == null || subjectId == null) {
+			return 0;
+		}
+		int total = 0;
+		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
+		for (ContainerRef ref : data.farmWarehouses(subjectId)) {
+			if (isOccupied(ref)) {
+				continue;
+			}
+			Container container = containerAt(level.getServer(), ref);
+			if (container == null) {
+				continue;
+			}
+			for (int slot = 0; slot < container.getContainerSize(); slot++) {
+				ItemStack stack = container.getItem(slot);
+				if (!stack.isEmpty() && MaterialCategory.of(stack) == MaterialCategory.SEED) {
+					total += stack.getCount();
+				}
+			}
+		}
+		return total;
 	}
 
 	public static boolean tryConsume(ServerLevel level, UUID subjectId, Item item) {
@@ -362,7 +699,7 @@ public final class WarehouseService {
 		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
 		List<UUID> owners = new ArrayList<>();
 		for (UUID subjectId : data.subjectIds()) {
-			if (data.hasWarehouse(subjectId, dimension, pos) || data.hasFoodWarehouse(subjectId, dimension, pos)) {
+			if (data.hasAnyMark(subjectId, dimension, pos)) {
 				owners.add(subjectId);
 			}
 		}
@@ -371,12 +708,7 @@ public final class WarehouseService {
 			return;
 		}
 		for (UUID subjectId : owners) {
-			if (data.hasWarehouse(subjectId, dimension, pos)) {
-				remove(level, subjectId, pos);
-			}
-			if (data.hasFoodWarehouse(subjectId, dimension, pos)) {
-				removeFood(level, subjectId, pos);
-			}
+			unmark(level, subjectId, pos);
 			StaffService.syncSubject(level.getServer(), subjectId);
 		}
 	}
@@ -653,6 +985,12 @@ public final class WarehouseService {
 					retainChunk(level, ref);
 				}
 			}
+			for (ContainerRef ref : data.smelters(subjectId)) {
+				ServerLevel level = levelOf(server, ref.dimension());
+				if (level != null) {
+					retainChunk(level, ref);
+				}
+			}
 		}
 	}
 
@@ -671,6 +1009,11 @@ public final class WarehouseService {
 				}
 			}
 			for (ContainerRef ref : data.foodWarehouses(subjectId)) {
+				if (dimension.equals(ref.dimension())) {
+					retainChunk(level, ref);
+				}
+			}
+			for (ContainerRef ref : data.smelters(subjectId)) {
 				if (dimension.equals(ref.dimension())) {
 					retainChunk(level, ref);
 				}
@@ -706,6 +1049,11 @@ public final class WarehouseService {
 				}
 			}
 			for (ContainerRef ref : data.foodWarehouses(subjectId)) {
+				if (dimension.equals(ref.dimension()) && new ChunkPos(ref.pos()).equals(chunk)) {
+					n++;
+				}
+			}
+			for (ContainerRef ref : data.smelters(subjectId)) {
 				if (dimension.equals(ref.dimension()) && new ChunkPos(ref.pos()).equals(chunk)) {
 					n++;
 				}
@@ -746,7 +1094,8 @@ public final class WarehouseService {
 		if (!(state.getBlock() instanceof EntityBlock entityBlock)) {
 			return false;
 		}
-		return entityBlock.newBlockEntity(pos, state) instanceof BaseContainerBlockEntity;
+		BlockEntity probe = entityBlock.newBlockEntity(pos, state);
+		return probe instanceof BaseContainerBlockEntity && !(probe instanceof AltarBlockEntity);
 	}
 
 	private static boolean isTracked(ServerLevel level, BlockPos pos) {
@@ -759,8 +1108,7 @@ public final class WarehouseService {
 		}
 		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
 		for (UUID subjectId : data.subjectIds()) {
-			if (data.hasWarehouse(subjectId, ref.dimension(), ref.pos())
-					|| data.hasFoodWarehouse(subjectId, ref.dimension(), ref.pos())) {
+			if (data.hasAnyMark(subjectId, ref.dimension(), ref.pos())) {
 				return true;
 			}
 		}

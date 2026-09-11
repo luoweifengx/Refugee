@@ -1,5 +1,6 @@
 package luowei.refugee.settle;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -19,19 +20,28 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import luowei.refugee.Refugee;
 
 /**
- * 从原点做三维切比雪夫 BFS：一圈一圈含高度向外找可站立落脚点。
+ * 从原点做六连通三维 BFS 找可站立落脚点。
+ * 同距离先扩水平（北南东西），再上下；实心与流体不穿过。
  * 可站只看脚下实心、脚与头两格可穿过（雪层等非完整方块算可穿过）。
  */
 public final class StandableFinder {
 	public static final int SEARCH_RADIUS = 16;
 	private static final int MAX_RADIUS = SEARCH_RADIUS * 2;
 	private static final int MAX_VISITED = 32768;
+	private static final Direction[] BFS_DIRS = {
+			Direction.NORTH,
+			Direction.SOUTH,
+			Direction.EAST,
+			Direction.WEST,
+			Direction.UP,
+			Direction.DOWN
+	};
 
 	private StandableFinder() {
 	}
 
 	/**
-	 * 从原点 BFS 找 {@code needed} 个可站立格。半径 16 不够时继续扩到 32。
+	 * 从原点 BFS 找 {@code needed} 个可站立格。曼哈顿距离最多 32。
 	 */
 	public static List<BlockPos> findStandable(
 			ServerLevel level,
@@ -71,59 +81,40 @@ public final class StandableFinder {
 			return null;
 		}
 		long started = debugNanos();
-		int maxR = Math.max(1, (int) Math.ceil(Math.sqrt(maxDistSq)));
-		BlockPos best = null;
-		double bestFrom = Double.MAX_VALUE;
-		int minY = level.getMinY() + 1;
-		int maxY = level.getMinY() + level.getHeight() - 2;
-		int checked = 0;
-		int standable = 0;
-		for (int r = 0; r <= maxR; r++) {
-			for (int dy = -r; dy <= r; dy++) {
-				for (int dx = -r; dx <= r; dx++) {
-					for (int dz = -r; dz <= r; dz++) {
-						if (chebyshev(dx, dy, dz) != r) {
-							continue;
-						}
-						int x = target.getX() + dx;
-						int y = target.getY() + dy;
-						int z = target.getZ() + dz;
-						if (y < minY || y > maxY || !level.hasChunk(x >> 4, z >> 4)) {
-							continue;
-						}
-						checked++;
-						BlockPos feet = new BlockPos(x, y, z);
-						if (feet.equals(target) || !isStandable(level, feet) || villagerOccupies(level, feet)) {
-							continue;
-						}
-						standable++;
-						double toTarget = distSqCenter(feet, target);
-						if (toTarget > maxDistSq) {
-							continue;
-						}
-						double toFrom = from == null ? toTarget : distSqCenter(feet, from);
-						if (toFrom < bestFrom) {
-							bestFrom = toFrom;
-							best = feet;
-						}
-					}
-				}
+		int maxDist = Math.min(MAX_RADIUS, Math.max(1, (int) Math.ceil(Math.sqrt(maxDistSq * 3.0))));
+		BlockPos[] best = {null};
+		double[] bestFrom = {Double.MAX_VALUE};
+		int[] standable = {0};
+		int checked = walkBfs(level, target, null, maxDist, (feet, dist) -> {
+			if (feet.equals(target) || !isStandable(level, feet) || villagerOccupies(level, feet)) {
+				return true;
 			}
-		}
+			double toTarget = distSqCenter(feet, target);
+			if (toTarget > maxDistSq) {
+				return true;
+			}
+			standable[0]++;
+			double toFrom = from == null ? toTarget : distSqCenter(feet, from);
+			if (toFrom < bestFrom[0]) {
+				bestFrom[0] = toFrom;
+				best[0] = feet;
+			}
+			return true;
+		});
 		long elapsed = elapsedNanos(started);
 		if (Refugee.LOGGER.isDebugEnabled() && elapsed >= 1_000_000L) {
 			Refugee.LOGGER.debug(
-					"[refugee standable] findStandNear target={} from={} maxR={} checked={} standable={} best={} {}ns",
+					"[refugee standable] findStandNear target={} from={} maxDist={} checked={} standable={} best={} {}ns",
 					target.toShortString(),
 					from == null ? "none" : from.toShortString(),
-					maxR,
+					maxDist,
 					checked,
-					standable,
-					best == null ? "none" : best.toShortString(),
+					standable[0],
+					best[0] == null ? "none" : best[0].toShortString(),
 					elapsed
 			);
 		}
-		return best;
+		return best[0];
 	}
 
 	/**
@@ -172,52 +163,78 @@ public final class StandableFinder {
 				}
 			}
 		}
-		int minY = level.getMinY() + 1;
-		int maxY = level.getMinY() + level.getHeight() - 2;
-		int visited = 0;
-		int radius = 0;
+		int[] maxDist = {0};
 		long started = debugNanos();
-		for (int r = 0; r <= MAX_RADIUS && result.size() < needed && visited < MAX_VISITED; r++) {
-			radius = r;
-			for (int dy = -r; dy <= r && result.size() < needed && visited < MAX_VISITED; dy++) {
-				int y = origin.getY() + dy;
-				if (y < minY || y > maxY) {
-					continue;
-				}
-				for (int dx = -r; dx <= r && result.size() < needed && visited < MAX_VISITED; dx++) {
-					for (int dz = -r; dz <= r && result.size() < needed && visited < MAX_VISITED; dz++) {
-						if (chebyshev(dx, dy, dz) != r) {
-							continue;
-						}
-						int x = origin.getX() + dx;
-						int z = origin.getZ() + dz;
-						if (!inBounds(x, z, chunkBound) || !level.hasChunk(x >> 4, z >> 4)) {
-							continue;
-						}
-						visited++;
-						BlockPos feet = new BlockPos(x, y, z);
-						if (usedFeet.contains(feet.asLong()) || !isStandable(level, feet) || villagerOccupies(level, feet)) {
-							continue;
-						}
-						usedFeet.add(feet.asLong());
-						result.add(feet);
-					}
-				}
+		int visited = walkBfs(level, origin, chunkBound, MAX_RADIUS, (feet, dist) -> {
+			maxDist[0] = dist;
+			if (usedFeet.contains(feet.asLong()) || !isStandable(level, feet) || villagerOccupies(level, feet)) {
+				return result.size() < needed;
 			}
-		}
+			usedFeet.add(feet.asLong());
+			result.add(feet);
+			return result.size() < needed;
+		});
 		if (Refugee.LOGGER.isDebugEnabled()) {
 			Refugee.LOGGER.debug(
-					"[refugee standable] search origin={} needed={} found={} visited={} radius={} chunkBound={} {}ns",
+					"[refugee standable] search origin={} needed={} found={} visited={} dist={} chunkBound={} {}ns",
 					origin.toShortString(),
 					needed,
 					result.size(),
 					visited,
-					radius,
+					maxDist[0],
 					chunkBound == null ? "none" : chunkBound.x + "," + chunkBound.z,
 					elapsedNanos(started)
 			);
 		}
 		return result;
+	}
+
+	/**
+	 * 六连通 BFS。原点即使不可穿过也会作为起点扩出；之后只进入脚、头都可穿过的格。
+	 *
+	 * @return 出队格数；{@code visitor} 返回 false 时提前结束
+	 */
+	private static int walkBfs(
+			ServerLevel level,
+			BlockPos origin,
+			ChunkPos chunkBound,
+			int maxDist,
+			BfsVisitor visitor
+	) {
+		int minY = level.getMinY() + 1;
+		int maxY = level.getMinY() + level.getHeight() - 2;
+		ArrayDeque<Step> queue = new ArrayDeque<>();
+		Set<Long> seen = new HashSet<>();
+		queue.add(new Step(origin.getX(), origin.getY(), origin.getZ(), 0));
+		seen.add(origin.asLong());
+		int checked = 0;
+		while (!queue.isEmpty() && seen.size() <= MAX_VISITED) {
+			Step step = queue.poll();
+			checked++;
+			BlockPos feet = new BlockPos(step.x, step.y, step.z);
+			if (!visitor.visit(feet, step.dist)) {
+				return checked;
+			}
+			if (step.dist >= maxDist) {
+				continue;
+			}
+			for (Direction dir : BFS_DIRS) {
+				int x = step.x + dir.getStepX();
+				int y = step.y + dir.getStepY();
+				int z = step.z + dir.getStepZ();
+				if (y < minY || y > maxY || !inBounds(x, z, chunkBound) || !level.hasChunk(x >> 4, z >> 4)) {
+					continue;
+				}
+				if (!seen.add(BlockPos.asLong(x, y, z))) {
+					continue;
+				}
+				BlockPos next = new BlockPos(x, y, z);
+				if (canTraverse(level, next)) {
+					queue.add(new Step(x, y, z, step.dist + 1));
+				}
+			}
+		}
+		return checked;
 	}
 
 	private static long debugNanos() {
@@ -226,10 +243,6 @@ public final class StandableFinder {
 
 	private static long elapsedNanos(long started) {
 		return started == 0L ? 0L : System.nanoTime() - started;
-	}
-
-	private static int chebyshev(int dx, int dy, int dz) {
-		return Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz)));
 	}
 
 	private static double distSqCenter(BlockPos a, BlockPos b) {
@@ -254,11 +267,15 @@ public final class StandableFinder {
 			return false;
 		}
 		BlockPos below = feet.below();
-		BlockPos head = feet.above();
 		BlockState floor = level.getBlockState(below);
 		if (!isFloor(floor, level, below)) {
 			return false;
 		}
+		return canTraverse(level, feet);
+	}
+
+	private static boolean canTraverse(ServerLevel level, BlockPos feet) {
+		BlockPos head = feet.above();
 		return isOpen(level.getBlockState(feet), level, feet)
 				&& isOpen(level.getBlockState(head), level, head);
 	}
@@ -282,5 +299,13 @@ public final class StandableFinder {
 			}
 		}
 		return false;
+	}
+
+	@FunctionalInterface
+	private interface BfsVisitor {
+		boolean visit(BlockPos feet, int dist);
+	}
+
+	private record Step(int x, int y, int z, int dist) {
 	}
 }

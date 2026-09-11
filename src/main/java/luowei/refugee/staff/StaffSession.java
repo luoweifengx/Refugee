@@ -39,10 +39,14 @@ public final class StaffSession {
 			case NONE -> resetToRoot();
 			case WAREHOUSE -> setPages(StaffPage.WAREHOUSE_PIE, StaffPage.WAREHOUSE);
 			case FOOD_WAREHOUSE -> setPages(StaffPage.WAREHOUSE_PIE, StaffPage.FOOD_WAREHOUSE);
+			case FARM_WAREHOUSE -> setPages(StaffPage.WAREHOUSE_PIE, StaffPage.FARM_WAREHOUSE);
+			case GEAR_WAREHOUSE -> setPages(StaffPage.WAREHOUSE_PIE, StaffPage.GEAR_WAREHOUSE);
+			case SMELT_RESULT -> setPages(StaffPage.WAREHOUSE_PIE, StaffPage.SMELT_RESULT);
+			case SMELTER -> setPages(StaffPage.WAREHOUSE_PIE, StaffPage.SMELTER);
 			case ZONE -> setPages(StaffPage.ZONE_PIE, StaffPage.ZONE);
 			case ADVANCE -> setPages(StaffPage.ZONE_PIE, StaffPage.ZONE_ADVANCE);
-			case BUILD -> setPages(StaffPage.BUILD_CATALOG, StaffPage.BUILD_PREVIEW);
-			case IMPORT -> setPages(StaffPage.IMPORT);
+			case BUILD -> setPages(StaffPage.BUILD_PIE, StaffPage.BUILD_CATALOG, StaffPage.BUILD_PREVIEW);
+			case IMPORT -> setPages(StaffPage.BUILD_PIE, StaffPage.IMPORT);
 			case FOLLOW_ENTITY -> setPages(StaffPage.COMBAT_PIE, StaffPage.COMBAT_FOLLOW);
 			case PATROL -> setPages(StaffPage.COMBAT_PIE, StaffPage.COMBAT_PATROL);
 		}

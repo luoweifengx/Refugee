@@ -55,6 +55,7 @@ public final class RefugeeNetworking {
 		PayloadTypeRegistry.playS2C().register(StaffSyncPayload.TYPE, StaffSyncPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playS2C().register(OpenImportNamePayload.TYPE, OpenImportNamePayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(BlueprintSelectPayload.TYPE, BlueprintSelectPayload.STREAM_CODEC);
+		PayloadTypeRegistry.playC2S().register(BlueprintDeletePayload.TYPE, BlueprintDeletePayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(TerritoryMapRequestPayload.TYPE, TerritoryMapRequestPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(SpecialSplashActionPayload.TYPE, SpecialSplashActionPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(StaffPiePayload.TYPE, StaffPiePayload.STREAM_CODEC);
@@ -64,6 +65,10 @@ public final class RefugeeNetworking {
 		ServerPlayNetworking.registerGlobalReceiver(BlueprintSelectPayload.TYPE, (payload, context) -> {
 			ServerPlayer player = context.player();
 			context.server().execute(() -> applySelection(player, payload.id()));
+		});
+		ServerPlayNetworking.registerGlobalReceiver(BlueprintDeletePayload.TYPE, (payload, context) -> {
+			ServerPlayer player = context.player();
+			context.server().execute(() -> StaffService.deleteBlueprint(player, payload.id()));
 		});
 		ServerPlayNetworking.registerGlobalReceiver(TerritoryMapRequestPayload.TYPE, (payload, context) -> {
 			ServerPlayer player = context.player();
@@ -267,16 +272,6 @@ public final class RefugeeNetworking {
 		));
 	}
 
-	public static void applyImported(ServerPlayer player, ResourceLocation id) {
-		if (id == null) {
-			return;
-		}
-		if (!holdingStaff(player) || !BlueprintRegistry.visibleTo(player.getUUID(), id)) {
-			return;
-		}
-		StaffService.enterPreview(player, id);
-	}
-
 	public static void openStaffPie(ServerPlayer player) {
 		openStaffPie(player, StaffPage.PIE);
 	}
@@ -294,11 +289,15 @@ public final class RefugeeNetworking {
 			StaffPage page,
 			List<BlockPos> chests,
 			List<BlockPos> foodChests,
+			List<BlockPos> furnaces,
 			List<AreaBox> zones,
 			List<AreaBox> builds,
 			BlockPos pendingCorner,
 			AreaBox importBox,
-			List<BlockPos> patrolPoints
+			List<BlockPos> patrolPoints,
+			List<BlockPos> farmChests,
+			List<BlockPos> gearChests,
+			List<BlockPos> resultChests
 	) {
 		if (player == null) {
 			return;
@@ -308,11 +307,15 @@ public final class RefugeeNetworking {
 				page == null ? StaffPage.ROOT : page,
 				chests == null ? List.of() : chests,
 				foodChests == null ? List.of() : foodChests,
+				furnaces == null ? List.of() : furnaces,
 				zones == null ? List.of() : zones,
 				builds == null ? List.of() : builds,
 				Optional.ofNullable(pendingCorner),
 				Optional.ofNullable(importBox),
-				patrolPoints == null ? List.of() : patrolPoints
+				patrolPoints == null ? List.of() : patrolPoints,
+				farmChests == null ? List.of() : farmChests,
+				gearChests == null ? List.of() : gearChests,
+				resultChests == null ? List.of() : resultChests
 		));
 	}
 
@@ -335,8 +338,8 @@ public final class RefugeeNetworking {
 		}
 		UUID playerId = player.getUUID();
 		ServerPlayNetworking.send(player, new BlueprintCatalogPayload(
-				BlueprintRegistry.catalog(playerId),
-				BlueprintRegistry.templateNbts(playerId),
+				BlueprintRegistry.catalog(player.getServer(), playerId),
+				BlueprintRegistry.templateNbts(player.getServer(), playerId),
 				open,
 				hand,
 				Optional.ofNullable(selected)
@@ -361,7 +364,7 @@ public final class RefugeeNetworking {
 		if (!holdingStaff(player)) {
 			return;
 		}
-		if (!BlueprintRegistry.visibleTo(player.getUUID(), id)) {
+		if (!BlueprintRegistry.visibleTo(player, id)) {
 			player.displayClientMessage(Component.translatable("message.refugee.staff.build.invalid"), true);
 			return;
 		}

@@ -12,7 +12,11 @@ public enum StaffMode {
 	FOLLOW_ENTITY,
 	PATROL,
 	FOOD_WAREHOUSE,
-	ADVANCE;
+	ADVANCE,
+	SMELTER,
+	FARM_WAREHOUSE,
+	GEAR_WAREHOUSE,
+	SMELT_RESULT;
 
 	public static StaffMode byOrdinal(int ordinal) {
 		StaffMode[] values = values();

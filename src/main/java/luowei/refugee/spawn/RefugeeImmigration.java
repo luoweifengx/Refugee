@@ -29,8 +29,8 @@ import luowei.refugee.settle.StandableFinder;
 import luowei.refugee.special.SpecialRefugeeService;
 
 /**
- * 每 {@link RefugeeConfig#immigrationIntervalTicks} 游戏刻、且仅在白天（dayTime 0–12000）按占领区块抽一次。
- * 中了后在档位人数区间抽取，再乘难度并向上取整。指令 force 跳过抽签与白天限制，仍仅在白名单维度生效。
+ * 每天在 {@link RefugeeConfig#immigrationEventDayTime}（默认 daytime 4000）对每个领土主体触发一波入境。
+ * 档位人数区间抽取后再乘难度并向上取整。指令 force 跳过抽签与白天限制，仍仅在白名单维度生效。
  */
 public final class RefugeeImmigration {
 	private static final String LOG_PREFIX = "[refugee immigration]";
@@ -44,34 +44,25 @@ public final class RefugeeImmigration {
 	}
 
 	private static void onServerTick(MinecraftServer server) {
-		int interval = RefugeeConfig.immigrationIntervalTicks;
-		if (interval <= 0) {
+		ServerLevel clock = server.overworld();
+		if (clock == null) {
 			return;
 		}
-		boolean intervalTick = false;
-		ServerLevel slotLevel = null;
-		for (ServerLevel level : server.getAllLevels()) {
-			if (!RefugeeConfig.isImmigrationDimension(level)) {
-				continue;
-			}
-			if (level.getGameTime() % interval != 0) {
-				continue;
-			}
-			intervalTick = true;
-			if (isDaytime(level)) {
-				slotLevel = level;
-				break;
-			}
-		}
-		if (slotLevel == null) {
-			if (intervalTick) {
-				ServerLevel probe = server.overworld();
-				log("interval skipped=night serverTick=" + server.getTickCount()
-						+ " intervalTicks=" + interval
-						+ (probe == null ? "" : " " + timeCtx(probe)));
-			}
+		int eventTime = RefugeeConfig.immigrationEventDayTime;
+		if (eventTime < 0) {
 			return;
 		}
+		long dayTime = clock.getDayTime();
+		long day = Math.floorDiv(dayTime, 24000L);
+		long timeOfDay = Math.floorMod(dayTime, 24000L);
+		if (timeOfDay < eventTime) {
+			return;
+		}
+		ImmigrationEventData data = ImmigrationEventData.get(server);
+		if (data.lastFiredDay() >= day) {
+			return;
+		}
+		data.markFired(day);
 		List<UUID> subjects = PbsAdapter.pollEntities(server);
 		int subjectCount = 0;
 		for (UUID subjectId : subjects) {
@@ -79,9 +70,9 @@ public final class RefugeeImmigration {
 				subjectCount++;
 			}
 		}
-		log("interval serverTick=" + server.getTickCount()
-				+ " intervalTicks=" + interval
-				+ " " + timeCtx(slotLevel)
+		log("event serverTick=" + server.getTickCount()
+				+ " eventDayTime=" + eventTime
+				+ " " + timeCtx(clock)
 				+ " subjects=" + subjectCount
 				+ (subjectCount == 0 ? " skipped=no_subjects" : ""));
 		for (UUID subjectId : subjects) {
@@ -247,7 +238,7 @@ public final class RefugeeImmigration {
 		BlockPos firstFeet = null;
 		int spawned = 0;
 		for (BlockPos feet : spots) {
-			Villager villager = spawnOne(level, subjectId, feet);
+			Villager villager = spawnOwned(level, subjectId, feet);
 			if (villager == null) {
 				if (spawned == 0) {
 					logSkip(level, subjectId, force, "create_failed",
@@ -267,7 +258,7 @@ public final class RefugeeImmigration {
 		return new ImmigrationResult(ImmigrationResult.Status.SUCCESS, first, firstFeet, chunk, specialNpc, spawned);
 	}
 
-	private static Villager spawnOne(ServerLevel level, UUID subjectId, BlockPos feet) {
+	public static Villager spawnOwned(ServerLevel level, UUID subjectId, BlockPos feet) {
 		Villager villager = EntityType.VILLAGER.create(level, EntitySpawnReason.MOB_SUMMONED);
 		if (villager == null) {
 			return null;

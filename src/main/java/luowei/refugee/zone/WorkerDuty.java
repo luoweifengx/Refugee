@@ -1,12 +1,13 @@
 package luowei.refugee.zone;
 
 /**
- * 工人持久工种：修复/建筑是状态；框定/推进走 {@link WorkZone} 认领。
+ * 工人持久工种：修复/建筑/熔炼是状态；框定/推进走 {@link WorkZone} 认领。
  */
 public enum WorkerDuty {
 	NONE,
 	BUILDER,
-	REPAIRER;
+	REPAIRER,
+	SMELTER;
 
 	public static WorkerDuty fromId(String id) {
 		if (id == null || id.isBlank()) {
@@ -15,6 +16,7 @@ public enum WorkerDuty {
 		return switch (id) {
 			case "builder" -> BUILDER;
 			case "repairer" -> REPAIRER;
+			case "smelter" -> SMELTER;
 			default -> NONE;
 		};
 	}
@@ -23,6 +25,7 @@ public enum WorkerDuty {
 		return switch (this) {
 			case BUILDER -> "builder";
 			case REPAIRER -> "repairer";
+			case SMELTER -> "smelter";
 			case NONE -> "";
 		};
 	}
@@ -33,6 +36,10 @@ public enum WorkerDuty {
 
 	public boolean isRepairer() {
 		return this == REPAIRER;
+	}
+
+	public boolean isSmelter() {
+		return this == SMELTER;
 	}
 
 	public boolean isAssigned() {

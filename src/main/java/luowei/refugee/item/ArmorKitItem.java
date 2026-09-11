@@ -1,5 +1,7 @@
 package luowei.refugee.item;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
 
 import net.minecraft.ChatFormatting;
@@ -45,9 +47,24 @@ public class ArmorKitItem extends Item {
 	}
 
 	public static boolean give(Player player, Villager villager, ItemStack held) {
-		if (!(held.getItem() instanceof ArmorKitItem kit) || player == null || villager == null) {
+		if (!isKit(held) || player == null || villager == null) {
 			return false;
 		}
+		for (ItemStack previous : equip(villager, held)) {
+			giveBack(player, previous);
+		}
+		held.shrink(1);
+		return true;
+	}
+
+	/**
+	 * 穿上套装并返回被替换的旧物。不消耗套装堆。
+	 */
+	public static List<ItemStack> equip(Villager villager, ItemStack kitStack) {
+		if (!(kitStack.getItem() instanceof ArmorKitItem kit) || villager == null) {
+			return List.of();
+		}
+		List<ItemStack> old = new ArrayList<>();
 		ItemStack[] pieces = kit.pieces();
 		EquipmentSlot[] slots = {
 				EquipmentSlot.HEAD,
@@ -56,18 +73,17 @@ public class ArmorKitItem extends Item {
 				EquipmentSlot.FEET
 		};
 		for (int i = 0; i < slots.length; i++) {
-			giveBack(player, villager.getItemBySlot(slots[i]));
+			takeOff(old, villager.getItemBySlot(slots[i]));
 			villager.setItemSlot(slots[i], pieces[i]);
 		}
-		giveBack(player, RefugeeRoles.logicalMainHand(villager));
+		takeOff(old, RefugeeRoles.logicalMainHand(villager));
 		RefugeeRoles.setLogicalMainHand(villager, kit.weapon());
-		ItemStack shield = kit.shield();
-		if (!shield.isEmpty()) {
-			giveBack(player, villager.getOffhandItem());
-			villager.setItemSlot(EquipmentSlot.OFFHAND, shield);
+		ItemStack offhand = kit.offhand();
+		if (!offhand.isEmpty()) {
+			takeOff(old, villager.getOffhandItem());
+			villager.setItemSlot(EquipmentSlot.OFFHAND, offhand);
 		}
-		held.shrink(1);
-		return true;
+		return old;
 	}
 
 	@Override
@@ -101,11 +117,11 @@ public class ArmorKitItem extends Item {
 
 	private ItemStack[] contents() {
 		ItemStack[] armor = pieces();
-		ItemStack shield = shield();
-		if (shield.isEmpty()) {
+		ItemStack offhand = offhand();
+		if (offhand.isEmpty()) {
 			return new ItemStack[] { armor[0], armor[1], armor[2], armor[3], weapon() };
 		}
-		return new ItemStack[] { armor[0], armor[1], armor[2], armor[3], weapon(), shield };
+		return new ItemStack[] { armor[0], armor[1], armor[2], armor[3], weapon(), offhand };
 	}
 
 	private ItemStack weapon() {
@@ -117,8 +133,12 @@ public class ArmorKitItem extends Item {
 		};
 	}
 
-	private ItemStack shield() {
-		return kind == Kind.IRON ? new ItemStack(Items.SHIELD) : ItemStack.EMPTY;
+	private ItemStack offhand() {
+		return switch (kind) {
+			case CHAIN -> new ItemStack(Items.STONE_SWORD);
+			case IRON, DIAMOND -> new ItemStack(Items.SHIELD);
+			default -> ItemStack.EMPTY;
+		};
 	}
 
 	private ItemStack[] pieces() {
@@ -148,6 +168,12 @@ public class ArmorKitItem extends Item {
 					new ItemStack(Items.DIAMOND_BOOTS)
 			};
 		};
+	}
+
+	private static void takeOff(List<ItemStack> old, ItemStack previous) {
+		if (previous != null && !previous.isEmpty()) {
+			old.add(previous.copy());
+		}
 	}
 
 	private static void giveBack(Player player, ItemStack previous) {

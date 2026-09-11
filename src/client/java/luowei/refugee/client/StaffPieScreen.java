@@ -21,32 +21,49 @@ public class StaffPieScreen extends Screen {
 	private static final Slice[] ROOT_SLICES = {
 			new Slice(StaffPieAction.WAREHOUSE, new ItemStack(Items.CHEST), 0xCC3A6EA5, "screen.refugee.staff.pie.warehouse"),
 			new Slice(StaffPieAction.ZONE, new ItemStack(Items.STONE_PICKAXE), 0xCC3D8B4A, "screen.refugee.staff.pie.zone"),
-			new Slice(StaffPieAction.SELECT, new ItemStack(Items.PAPER), 0xCCB07A2E, "screen.refugee.staff.pie.select"),
-			new Slice(StaffPieAction.IMPORT, new ItemStack(Items.WRITABLE_BOOK), 0xCC8B5A9E, "screen.refugee.staff.pie.import"),
+			new Slice(StaffPieAction.BUILD, new ItemStack(Items.CRAFTING_TABLE), 0xCCB07A2E, "screen.refugee.staff.pie.build"),
 			new Slice(StaffPieAction.COMBAT, new ItemStack(Items.IRON_SWORD), 0xCC8B3A3A, "screen.refugee.staff.pie.combat"),
-			new Slice(StaffPieAction.RALLY, new ItemStack(Items.GOAT_HORN), 0xCCC4A35A, "screen.refugee.staff.pie.rally")
+			new Slice(StaffPieAction.RALLY, new ItemStack(Items.GOAT_HORN), 0xCCC4A35A, "screen.refugee.staff.pie.rally"),
+			new Slice(StaffPieAction.GUARD, new ItemStack(Items.IRON_HELMET), 0xCC5A6E8B, "screen.refugee.staff.pie.guard")
 	};
 	private static final Slice[] COMBAT_SLICES = {
 			new Slice(StaffPieAction.FOLLOW_ENTITY, new ItemStack(Items.LEAD), 0xCC3A6EA5, "screen.refugee.staff.pie.follow"),
 			new Slice(StaffPieAction.PATROL, new ItemStack(Items.COMPASS), 0xCCB07A2E, "screen.refugee.staff.pie.patrol"),
-			new Slice(StaffPieAction.FORMATION, new ItemStack(Items.SHIELD), 0xCC6E6E6E, "screen.refugee.staff.pie.formation")
+			new Slice(StaffPieAction.FORMATION, new ItemStack(Items.SHIELD), 0xCC6E6E6E, "screen.refugee.staff.pie.formation"),
+			new Slice(StaffPieAction.EQUIP_GEAR, new ItemStack(Items.IRON_CHESTPLATE), 0xCC8B5A3A, "screen.refugee.staff.pie.equip")
 	};
 	private static final Slice[] WAREHOUSE_SLICES = {
 			new Slice(StaffPieAction.WAREHOUSE_BLOCKS, new ItemStack(Items.CHEST), 0xCC8B3A3A, "screen.refugee.staff.pie.warehouse_blocks"),
-			new Slice(StaffPieAction.WAREHOUSE_FOOD, new ItemStack(Items.BREAD), 0xCCE08A2A, "screen.refugee.staff.pie.warehouse_food")
+			new Slice(StaffPieAction.WAREHOUSE_FARM, new ItemStack(Items.WHEAT), 0xCC3D8B4A, "screen.refugee.staff.pie.warehouse_farm"),
+			new Slice(StaffPieAction.WAREHOUSE_GEAR, new ItemStack(Items.IRON_CHESTPLATE), 0xCC3A6EA5, "screen.refugee.staff.pie.warehouse_gear"),
+			new Slice(StaffPieAction.WAREHOUSE_FOOD, new ItemStack(Items.BREAD), 0xCCE08A2A, "screen.refugee.staff.pie.warehouse_food"),
+			new Slice(StaffPieAction.WAREHOUSE_SMELT, new ItemStack(Items.FURNACE), 0xCC8B5A9E, "screen.refugee.staff.pie.warehouse_smelt"),
+			new Slice(StaffPieAction.WAREHOUSE_SMELT_RESULT, new ItemStack(Items.IRON_INGOT), 0xCCC4A35A, "screen.refugee.staff.pie.warehouse_smelt_result")
+	};
+	private static final Slice[] BUILD_SLICES = {
+			new Slice(StaffPieAction.SELECT, new ItemStack(Items.PAPER), 0xCCB07A2E, "screen.refugee.staff.pie.select"),
+			new Slice(StaffPieAction.IMPORT, new ItemStack(Items.WRITABLE_BOOK), 0xCC8B5A9E, "screen.refugee.staff.pie.import")
 	};
 	private static final Slice[] ZONE_SLICES = {
 			new Slice(StaffPieAction.ZONE_BOX, new ItemStack(Items.STONE_PICKAXE), 0xCC3D8B4A, "screen.refugee.staff.pie.zone_box"),
 			new Slice(StaffPieAction.ZONE_ADVANCE, new ItemStack(Items.IRON_SHOVEL), 0xCC2E8B8B, "screen.refugee.staff.pie.zone_advance"),
 			new Slice(StaffPieAction.ZONE_REPAIR, new ItemStack(Items.BRICKS), 0xCC8B5A3A, "screen.refugee.staff.pie.zone_repair"),
-			new Slice(StaffPieAction.ZONE_BUILD, new ItemStack(Items.CRAFTING_TABLE), 0xCCB07A2E, "screen.refugee.staff.pie.zone_build")
+			new Slice(StaffPieAction.ZONE_BUILD, new ItemStack(Items.CRAFTING_TABLE), 0xCCB07A2E, "screen.refugee.staff.pie.zone_build"),
+			new Slice(StaffPieAction.ZONE_SMELT, new ItemStack(Items.BLAST_FURNACE), 0xCCB85A2A, "screen.refugee.staff.pie.zone_smelt")
 	};
 	private static final Slice[] RALLY_SLICES = {
 			new Slice(StaffPieAction.RALLY_MELEE, new ItemStack(Items.IRON_SWORD), 0xCC8B3A3A, "screen.refugee.staff.pie.rally_melee"),
 			new Slice(StaffPieAction.RALLY_RANGED, new ItemStack(Items.BOW), 0xCC3D8B4A, "screen.refugee.staff.pie.rally_ranged"),
 			new Slice(StaffPieAction.RALLY_WORKER, new ItemStack(Items.STONE_PICKAXE), 0xCCB07A2E, "screen.refugee.staff.pie.rally_worker"),
 			new Slice(StaffPieAction.RALLY_CIVILIAN, new ItemStack(Items.FEATHER), 0xCC8FA3B0, "screen.refugee.staff.pie.rally_civilian"),
+			new Slice(StaffPieAction.RALLY_SPECIAL, new ItemStack(Items.EMERALD), 0xCC8B6EC4, "screen.refugee.staff.pie.rally_special"),
 			new Slice(StaffPieAction.RALLY_ALL, new ItemStack(Items.GOAT_HORN), 0xCCC4A35A, "screen.refugee.staff.pie.rally_all")
+	};
+	private static final Slice[] GUARD_SLICES = {
+			new Slice(StaffPieAction.GUARD_ADD, new ItemStack(Items.NAME_TAG), 0xCC3D8B4A, "screen.refugee.staff.pie.guard_add"),
+			new Slice(StaffPieAction.GUARD_RALLY_NEAR, new ItemStack(Items.SPYGLASS), 0xCCC4A35A, "screen.refugee.staff.pie.guard_rally_near"),
+			new Slice(StaffPieAction.GUARD_RALLY_ALL, new ItemStack(Items.ENDER_EYE), 0xCC8B5A9E, "screen.refugee.staff.pie.guard_rally_all"),
+			new Slice(StaffPieAction.GUARD_REMOVE, new ItemStack(Items.SHEARS), 0xCC8B3A3A, "screen.refugee.staff.pie.guard_remove")
 	};
 
 	private final StaffPage page;
@@ -64,6 +81,9 @@ public class StaffPieScreen extends Screen {
 		if (page == StaffPage.COMBAT_PIE) {
 			return Component.translatable("screen.refugee.staff.pie.combat");
 		}
+		if (page == StaffPage.BUILD_PIE) {
+			return Component.translatable("screen.refugee.staff.pie.build");
+		}
 		if (page == StaffPage.WAREHOUSE_PIE) {
 			return Component.translatable("screen.refugee.staff.pie.warehouse");
 		}
@@ -73,12 +93,18 @@ public class StaffPieScreen extends Screen {
 		if (page == StaffPage.RALLY_PIE) {
 			return Component.translatable("screen.refugee.staff.pie.rally");
 		}
+		if (page == StaffPage.GUARD_PIE) {
+			return Component.translatable("screen.refugee.staff.pie.guard");
+		}
 		return Component.translatable("screen.refugee.staff.pie.title");
 	}
 
 	private Slice[] slices() {
 		if (page == StaffPage.COMBAT_PIE) {
 			return COMBAT_SLICES;
+		}
+		if (page == StaffPage.BUILD_PIE) {
+			return BUILD_SLICES;
 		}
 		if (page == StaffPage.WAREHOUSE_PIE) {
 			return WAREHOUSE_SLICES;
@@ -88,6 +114,9 @@ public class StaffPieScreen extends Screen {
 		}
 		if (page == StaffPage.RALLY_PIE) {
 			return RALLY_SLICES;
+		}
+		if (page == StaffPage.GUARD_PIE) {
+			return GUARD_SLICES;
 		}
 		return ROOT_SLICES;
 	}

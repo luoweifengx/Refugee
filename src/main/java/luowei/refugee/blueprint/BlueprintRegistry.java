@@ -28,6 +28,7 @@ import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 
@@ -120,6 +121,23 @@ public final class BlueprintRegistry {
 		return get(id) != null;
 	}
 
+	public static boolean visibleTo(ServerPlayer player, ResourceLocation id) {
+		if (player == null) {
+			return false;
+		}
+		return visibleTo(player.getServer(), player.getUUID(), id);
+	}
+
+	public static boolean visibleTo(MinecraftServer server, UUID playerId, ResourceLocation id) {
+		if (id == null) {
+			return false;
+		}
+		if (TEMPLATES.containsKey(id)) {
+			return true;
+		}
+		return PlayerBlueprints.visibleTo(server, playerId, id);
+	}
+
 	public static boolean visibleTo(UUID playerId, ResourceLocation id) {
 		if (id == null) {
 			return false;
@@ -135,7 +153,7 @@ public final class BlueprintRegistry {
 	}
 
 	public static List<BlueprintCatalogEntry> catalog() {
-		return catalog(null);
+		return catalog((UUID) null);
 	}
 
 	public static List<BlueprintCatalogEntry> catalog(UUID playerId) {
@@ -147,12 +165,25 @@ public final class BlueprintRegistry {
 		return entries;
 	}
 
-	/** 该玩家可见的结构 NBT（自带 + 自己导入的）。 */
+	public static List<BlueprintCatalogEntry> catalog(MinecraftServer server, UUID playerId) {
+		List<BlueprintCatalogEntry> entries = new ArrayList<>();
+		entries.addAll(PlayerBlueprints.catalog(server, playerId));
+		entries.addAll(CATALOG);
+		return entries;
+	}
+
+	/** 该玩家可见的结构 NBT（自带 + 组织共享导入）。 */
 	public static Map<ResourceLocation, CompoundTag> templateNbts(UUID playerId) {
 		Map<ResourceLocation, CompoundTag> nbts = new LinkedHashMap<>(TEMPLATE_NBTS);
 		if (playerId != null) {
 			nbts.putAll(PlayerBlueprints.templateNbts(playerId));
 		}
+		return nbts;
+	}
+
+	public static Map<ResourceLocation, CompoundTag> templateNbts(MinecraftServer server, UUID playerId) {
+		Map<ResourceLocation, CompoundTag> nbts = new LinkedHashMap<>(TEMPLATE_NBTS);
+		nbts.putAll(PlayerBlueprints.templateNbts(server, playerId));
 		return nbts;
 	}
 

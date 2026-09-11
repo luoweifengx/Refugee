@@ -43,6 +43,8 @@ public abstract class VillagerBubbleMixin {
 		RefugeeBreeding.tickLook(villager);
 		RefugeeBubble.tick(villager);
 		RefugeeBuffMachine.tick(villager);
+		luowei.refugee.staff.GuardService.tickLocation(villager);
 		RefugeeCombat.tickEat(villager);
+		RefugeeCombat.tickEncounterReset(villager);
 	}
 }

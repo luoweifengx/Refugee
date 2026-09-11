@@ -19,6 +19,10 @@ public final class DeathDropService {
 
 	public static void dropOnDeath(Villager villager, ServerLevel level) {
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (data.isCrusader()) {
+			clearCrusaderGear(villager, data);
+			return;
+		}
 		if (data.isEating()) {
 			RefugeeCombat.cancelEat(villager);
 		}
@@ -46,6 +50,23 @@ public final class DeathDropService {
 		luowei.refugee.staff.StaffService.unbindWorker(villager);
 		if (data.isBuilding()) {
 			data.clearBuild();
+			RefugeeAttachments.markDirty(villager, data);
+		}
+	}
+
+	private static void clearCrusaderGear(Villager villager, RefugeeVillagerData data) {
+		if (data.isEating()) {
+			RefugeeCombat.cancelEat(villager);
+		}
+		for (EquipmentSlot slot : EquipmentSlot.values()) {
+			villager.setItemSlot(slot, ItemStack.EMPTY);
+		}
+		SimpleContainer inventory = villager.getInventory();
+		for (int i = 0; i < inventory.getContainerSize(); i++) {
+			inventory.setItem(i, ItemStack.EMPTY);
+		}
+		if (!data.resourceItem().isEmpty()) {
+			data.setResourceItem(ItemStack.EMPTY);
 			RefugeeAttachments.markDirty(villager, data);
 		}
 	}

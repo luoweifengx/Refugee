@@ -83,6 +83,26 @@ public final class OrgLogisticsData extends SavedData {
 		return org == null ? List.of() : List.copyOf(org.foodWarehouses);
 	}
 
+	public List<ContainerRef> smelters(UUID subjectId) {
+		OrgRecord org = orgs.get(subjectId);
+		return org == null ? List.of() : List.copyOf(org.smelters);
+	}
+
+	public List<ContainerRef> farmWarehouses(UUID subjectId) {
+		OrgRecord org = orgs.get(subjectId);
+		return org == null ? List.of() : List.copyOf(org.farmWarehouses);
+	}
+
+	public List<ContainerRef> gearWarehouses(UUID subjectId) {
+		OrgRecord org = orgs.get(subjectId);
+		return org == null ? List.of() : List.copyOf(org.gearWarehouses);
+	}
+
+	public List<ContainerRef> smeltResults(UUID subjectId) {
+		OrgRecord org = orgs.get(subjectId);
+		return org == null ? List.of() : List.copyOf(org.smeltResults);
+	}
+
 	public Set<UUID> subjectIds() {
 		return Set.copyOf(orgs.keySet());
 	}
@@ -96,7 +116,7 @@ public final class OrgLogisticsData extends SavedData {
 		if (org.warehouses.contains(ref)) {
 			return false;
 		}
-		org.foodWarehouses.remove(ref);
+		detach(org, ref);
 		org.warehouses.add(ref);
 		setDirty();
 		return true;
@@ -131,7 +151,7 @@ public final class OrgLogisticsData extends SavedData {
 		if (org.foodWarehouses.contains(ref)) {
 			return false;
 		}
-		org.warehouses.remove(ref);
+		detach(org, ref);
 		org.foodWarehouses.add(ref);
 		setDirty();
 		return true;
@@ -155,6 +175,155 @@ public final class OrgLogisticsData extends SavedData {
 	public boolean hasFoodWarehouse(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
 		OrgRecord org = orgs.get(subjectId);
 		return org != null && org.foodWarehouses.contains(new ContainerRef(dimension, pos.immutable()));
+	}
+
+	public boolean addSmelter(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		if (subjectId == null || dimension == null || pos == null) {
+			return false;
+		}
+		OrgRecord org = org(subjectId);
+		ContainerRef ref = new ContainerRef(dimension, pos.immutable());
+		if (org.smelters.contains(ref)) {
+			return false;
+		}
+		detach(org, ref);
+		org.smelters.add(ref);
+		setDirty();
+		return true;
+	}
+
+	public boolean removeSmelter(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		if (subjectId == null || dimension == null || pos == null) {
+			return false;
+		}
+		OrgRecord org = orgs.get(subjectId);
+		if (org == null) {
+			return false;
+		}
+		boolean removed = org.smelters.remove(new ContainerRef(dimension, pos.immutable()));
+		if (removed) {
+			setDirty();
+		}
+		return removed;
+	}
+
+	public boolean hasSmelter(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		OrgRecord org = orgs.get(subjectId);
+		return org != null && org.smelters.contains(new ContainerRef(dimension, pos.immutable()));
+	}
+
+	public boolean addFarmWarehouse(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		if (subjectId == null || dimension == null || pos == null) {
+			return false;
+		}
+		OrgRecord org = org(subjectId);
+		ContainerRef ref = new ContainerRef(dimension, pos.immutable());
+		if (org.farmWarehouses.contains(ref)) {
+			return false;
+		}
+		detach(org, ref);
+		org.farmWarehouses.add(ref);
+		setDirty();
+		return true;
+	}
+
+	public boolean removeFarmWarehouse(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		if (subjectId == null || dimension == null || pos == null) {
+			return false;
+		}
+		OrgRecord org = orgs.get(subjectId);
+		if (org == null) {
+			return false;
+		}
+		boolean removed = org.farmWarehouses.remove(new ContainerRef(dimension, pos.immutable()));
+		if (removed) {
+			setDirty();
+		}
+		return removed;
+	}
+
+	public boolean hasFarmWarehouse(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		OrgRecord org = orgs.get(subjectId);
+		return org != null && org.farmWarehouses.contains(new ContainerRef(dimension, pos.immutable()));
+	}
+
+	public boolean addGearWarehouse(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		if (subjectId == null || dimension == null || pos == null) {
+			return false;
+		}
+		OrgRecord org = org(subjectId);
+		ContainerRef ref = new ContainerRef(dimension, pos.immutable());
+		if (org.gearWarehouses.contains(ref)) {
+			return false;
+		}
+		detach(org, ref);
+		org.gearWarehouses.add(ref);
+		setDirty();
+		return true;
+	}
+
+	public boolean removeGearWarehouse(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		if (subjectId == null || dimension == null || pos == null) {
+			return false;
+		}
+		OrgRecord org = orgs.get(subjectId);
+		if (org == null) {
+			return false;
+		}
+		boolean removed = org.gearWarehouses.remove(new ContainerRef(dimension, pos.immutable()));
+		if (removed) {
+			setDirty();
+		}
+		return removed;
+	}
+
+	public boolean hasGearWarehouse(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		OrgRecord org = orgs.get(subjectId);
+		return org != null && org.gearWarehouses.contains(new ContainerRef(dimension, pos.immutable()));
+	}
+
+	public boolean addSmeltResult(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		if (subjectId == null || dimension == null || pos == null) {
+			return false;
+		}
+		OrgRecord org = org(subjectId);
+		ContainerRef ref = new ContainerRef(dimension, pos.immutable());
+		if (org.smeltResults.contains(ref)) {
+			return false;
+		}
+		detach(org, ref);
+		org.smeltResults.add(ref);
+		setDirty();
+		return true;
+	}
+
+	public boolean removeSmeltResult(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		if (subjectId == null || dimension == null || pos == null) {
+			return false;
+		}
+		OrgRecord org = orgs.get(subjectId);
+		if (org == null) {
+			return false;
+		}
+		boolean removed = org.smeltResults.remove(new ContainerRef(dimension, pos.immutable()));
+		if (removed) {
+			setDirty();
+		}
+		return removed;
+	}
+
+	public boolean hasSmeltResult(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		OrgRecord org = orgs.get(subjectId);
+		return org != null && org.smeltResults.contains(new ContainerRef(dimension, pos.immutable()));
+	}
+
+	private static void detach(OrgRecord org, ContainerRef ref) {
+		org.warehouses.remove(ref);
+		org.foodWarehouses.remove(ref);
+		org.farmWarehouses.remove(ref);
+		org.gearWarehouses.remove(ref);
+		org.smeltResults.remove(ref);
+		org.smelters.remove(ref);
 	}
 
 	public void addZone(UUID subjectId, WorkZone zone) {
@@ -250,19 +419,44 @@ public final class OrgLogisticsData extends SavedData {
 			return;
 		}
 		OrgRecord dest = org(to);
-		for (ContainerRef ref : src.warehouses) {
-			if (!dest.warehouses.contains(ref) && !dest.foodWarehouses.contains(ref)) {
-				dest.warehouses.add(ref);
-			}
-		}
-		for (ContainerRef ref : src.foodWarehouses) {
-			if (!dest.foodWarehouses.contains(ref) && !dest.warehouses.contains(ref)) {
-				dest.foodWarehouses.add(ref);
-			}
-		}
+		mergeChests(src.warehouses, dest, dest.warehouses);
+		mergeChests(src.foodWarehouses, dest, dest.foodWarehouses);
+		mergeChests(src.farmWarehouses, dest, dest.farmWarehouses);
+		mergeChests(src.gearWarehouses, dest, dest.gearWarehouses);
+		mergeChests(src.smeltResults, dest, dest.smeltResults);
+		mergeChests(src.smelters, dest, dest.smelters);
 		dest.zones.addAll(src.zones);
 		dest.jobs.addAll(src.jobs);
 		setDirty();
+	}
+
+	private static void mergeChests(List<ContainerRef> source, OrgRecord dest, List<ContainerRef> target) {
+		for (ContainerRef ref : source) {
+			if (owns(dest, ref)) {
+				continue;
+			}
+			target.add(ref);
+		}
+	}
+
+	private static boolean owns(OrgRecord org, ContainerRef ref) {
+		return org.warehouses.contains(ref)
+				|| org.foodWarehouses.contains(ref)
+				|| org.farmWarehouses.contains(ref)
+				|| org.gearWarehouses.contains(ref)
+				|| org.smeltResults.contains(ref)
+				|| org.smelters.contains(ref);
+	}
+
+	public boolean hasAnyMark(UUID subjectId, ResourceLocation dimension, BlockPos pos) {
+		if (subjectId == null || dimension == null || pos == null) {
+			return false;
+		}
+		OrgRecord org = orgs.get(subjectId);
+		if (org == null) {
+			return false;
+		}
+		return owns(org, new ContainerRef(dimension, pos.immutable()));
 	}
 
 	public List<BuildJob> jobs(UUID subjectId) {
@@ -310,6 +504,49 @@ public final class OrgLogisticsData extends SavedData {
 			}
 		}
 		return null;
+	}
+
+	public UUID subjectOfZone(UUID zoneId) {
+		if (zoneId == null) {
+			return null;
+		}
+		for (Map.Entry<UUID, OrgRecord> entry : orgs.entrySet()) {
+			for (WorkZone zone : entry.getValue().zones) {
+				if (zoneId.equals(zone.id())) {
+					return entry.getKey();
+				}
+			}
+		}
+		return null;
+	}
+
+	public boolean removeZone(UUID zoneId) {
+		if (zoneId == null) {
+			return false;
+		}
+		boolean changed = false;
+		for (OrgRecord org : orgs.values()) {
+			changed |= org.zones.removeIf(zone -> zoneId.equals(zone.id()));
+		}
+		if (changed) {
+			setDirty();
+		}
+		return changed;
+	}
+
+	public List<BuildJob> jobsWithStructure(ResourceLocation structureId) {
+		if (structureId == null) {
+			return List.of();
+		}
+		List<BuildJob> result = new ArrayList<>();
+		for (OrgRecord org : orgs.values()) {
+			for (BuildJob job : org.jobs) {
+				if (structureId.equals(job.structureId())) {
+					result.add(job);
+				}
+			}
+		}
+		return result;
 	}
 
 	public boolean removeJob(UUID jobId) {
@@ -372,13 +609,21 @@ public final class OrgLogisticsData extends SavedData {
 				ContainerRef.CODEC.listOf().optionalFieldOf("warehouses", List.of()).forGetter(org -> List.copyOf(org.warehouses)),
 				ContainerRef.CODEC.listOf().optionalFieldOf("food_warehouses", List.of()).forGetter(org -> List.copyOf(org.foodWarehouses)),
 				WorkZone.CODEC.listOf().optionalFieldOf("zones", List.of()).forGetter(org -> List.copyOf(org.zones)),
-				BuildJob.CODEC.listOf().optionalFieldOf("jobs", List.of()).forGetter(org -> List.copyOf(org.jobs))
+				BuildJob.CODEC.listOf().optionalFieldOf("jobs", List.of()).forGetter(org -> List.copyOf(org.jobs)),
+				ContainerRef.CODEC.listOf().optionalFieldOf("smelters", List.of()).forGetter(org -> List.copyOf(org.smelters)),
+				ContainerRef.CODEC.listOf().optionalFieldOf("farm_warehouses", List.of()).forGetter(org -> List.copyOf(org.farmWarehouses)),
+				ContainerRef.CODEC.listOf().optionalFieldOf("gear_warehouses", List.of()).forGetter(org -> List.copyOf(org.gearWarehouses)),
+				ContainerRef.CODEC.listOf().optionalFieldOf("smelt_results", List.of()).forGetter(org -> List.copyOf(org.smeltResults))
 		).apply(instance, OrgRecord::fromCodec));
 
 		private final List<ContainerRef> warehouses = new ArrayList<>();
 		private final List<ContainerRef> foodWarehouses = new ArrayList<>();
 		private final List<WorkZone> zones = new ArrayList<>();
 		private final List<BuildJob> jobs = new ArrayList<>();
+		private final List<ContainerRef> smelters = new ArrayList<>();
+		private final List<ContainerRef> farmWarehouses = new ArrayList<>();
+		private final List<ContainerRef> gearWarehouses = new ArrayList<>();
+		private final List<ContainerRef> smeltResults = new ArrayList<>();
 
 		public OrgRecord() {
 		}
@@ -387,7 +632,11 @@ public final class OrgLogisticsData extends SavedData {
 				List<ContainerRef> warehouses,
 				List<ContainerRef> foodWarehouses,
 				List<WorkZone> zones,
-				List<BuildJob> jobs
+				List<BuildJob> jobs,
+				List<ContainerRef> smelters,
+				List<ContainerRef> farmWarehouses,
+				List<ContainerRef> gearWarehouses,
+				List<ContainerRef> smeltResults
 		) {
 			OrgRecord org = new OrgRecord();
 			if (warehouses != null) {
@@ -402,6 +651,18 @@ public final class OrgLogisticsData extends SavedData {
 			if (jobs != null) {
 				org.jobs.addAll(jobs);
 			}
+			if (smelters != null) {
+				org.smelters.addAll(smelters);
+			}
+			if (farmWarehouses != null) {
+				org.farmWarehouses.addAll(farmWarehouses);
+			}
+			if (gearWarehouses != null) {
+				org.gearWarehouses.addAll(gearWarehouses);
+			}
+			if (smeltResults != null) {
+				org.smeltResults.addAll(smeltResults);
+			}
 			return org;
 		}
 
@@ -411,6 +672,22 @@ public final class OrgLogisticsData extends SavedData {
 
 		public List<ContainerRef> foodWarehouses() {
 			return foodWarehouses;
+		}
+
+		public List<ContainerRef> smelters() {
+			return smelters;
+		}
+
+		public List<ContainerRef> farmWarehouses() {
+			return farmWarehouses;
+		}
+
+		public List<ContainerRef> gearWarehouses() {
+			return gearWarehouses;
+		}
+
+		public List<ContainerRef> smeltResults() {
+			return smeltResults;
 		}
 
 		public List<WorkZone> zones() {

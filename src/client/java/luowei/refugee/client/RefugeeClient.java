@@ -16,6 +16,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.ARGB;
 import net.minecraft.util.Mth;
@@ -25,6 +26,7 @@ import net.minecraft.world.level.block.Blocks;
 import luowei.refugee.client.model.RefugeeVillagerModel;
 import luowei.refugee.interact.VillagerKitMenus;
 import luowei.refugee.network.BlueprintCatalogPayload;
+import luowei.refugee.network.BlueprintDeletePayload;
 import luowei.refugee.network.BlueprintSelectPayload;
 import luowei.refugee.network.BlueprintSelectionPayload;
 import luowei.refugee.network.GuideDialoguePayload;
@@ -126,11 +128,15 @@ public class RefugeeClient implements ClientModInitializer {
 						payload.page(),
 						payload.chests(),
 						payload.foodChests(),
+						payload.furnaces(),
 						payload.zones(),
 						payload.builds(),
 						payload.pendingCorner(),
 						payload.importBox(),
-						payload.patrolPoints()
+						payload.patrolPoints(),
+						payload.farmChests(),
+						payload.gearChests(),
+						payload.resultChests()
 				);
 				StaffClientNav.applyScreenForPage(client, payload.page());
 			});
@@ -279,5 +285,12 @@ public class RefugeeClient implements ClientModInitializer {
 
 	public static void selectBlueprint(BlueprintSelectPayload payload) {
 		ClientPlayNetworking.send(payload);
+	}
+
+	public static void deleteBlueprint(ResourceLocation id) {
+		if (id == null) {
+			return;
+		}
+		ClientPlayNetworking.send(new BlueprintDeletePayload(id));
 	}
 }

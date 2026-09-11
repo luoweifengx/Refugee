@@ -188,7 +188,7 @@ public class RefugeeBuildGoal extends Goal {
 				placeCooldown = RefugeeConfig.buildPlaceIntervalTicks;
 				return;
 			}
-			if (!current.isAir()) {
+			if (needsBreak(current)) {
 				if (current.getDestroySpeed(level, dest) < 0.0f) {
 					abortMining(level);
 					index++;
@@ -358,6 +358,11 @@ public class RefugeeBuildGoal extends Goal {
 
 	private static boolean shouldSkip(StructureTemplate.StructureBlockInfo info) {
 		return BlueprintBlocks.shouldSkip(info);
+	}
+
+	/** 空气、水、草等可直接覆盖，不先清障。 */
+	private static boolean needsBreak(BlockState state) {
+		return !state.isAir() && !state.canBeReplaced();
 	}
 
 	private BuildJob resolveJob(ServerLevel level, RefugeeVillagerData data) {

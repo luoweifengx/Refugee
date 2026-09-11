@@ -12,9 +12,8 @@ import net.minecraft.world.entity.npc.Villager;
 import luowei.refugee.interact.RefugeeRoles;
 
 /**
- * 跟随 / 守卫 / 建筑时只跳过 Brain.tick，不取消 customServerAiStep。
- * 1.21.5 的 GoalSelector 在 Mob.serverAiStep 里、customServerAiStep 之前 tick；
- * 但 Brain.tick 会在其后改写导航，必须跳过才能让跟随 Goal 生效。
+ * 工人 / 守卫 / 特殊 NPC 以及散人跟随、巡逻、逃逸时跳过 Brain.tick。
+ * 闲置散人仍跑原版 Brain。小孩一律原版。
  */
 @Mixin(Villager.class)
 public abstract class VillagerBrainMixin {

@@ -17,6 +17,10 @@ public final class ClientStaffState {
 	private static StaffPage page = StaffPage.ROOT;
 	private static List<BlockPos> chests = List.of();
 	private static List<BlockPos> foodChests = List.of();
+	private static List<BlockPos> farmChests = List.of();
+	private static List<BlockPos> gearChests = List.of();
+	private static List<BlockPos> resultChests = List.of();
+	private static List<BlockPos> furnaces = List.of();
 	private static List<AreaBox> zones = List.of();
 	private static List<AreaBox> builds = List.of();
 	private static BlockPos pendingCorner;
@@ -31,17 +35,25 @@ public final class ClientStaffState {
 			StaffPage nextPage,
 			List<BlockPos> nextChests,
 			List<BlockPos> nextFoodChests,
+			List<BlockPos> nextFurnaces,
 			List<AreaBox> nextZones,
 			List<AreaBox> nextBuilds,
 			Optional<BlockPos> nextCorner,
 			Optional<AreaBox> nextImport,
-			List<BlockPos> nextPatrol
+			List<BlockPos> nextPatrol,
+			List<BlockPos> nextFarmChests,
+			List<BlockPos> nextGearChests,
+			List<BlockPos> nextResultChests
 	) {
 		StaffPage previous = page;
 		mode = nextMode == null ? StaffMode.NONE : nextMode;
 		page = nextPage == null ? StaffPage.ROOT : nextPage;
 		chests = nextChests == null ? List.of() : List.copyOf(nextChests);
 		foodChests = nextFoodChests == null ? List.of() : List.copyOf(nextFoodChests);
+		farmChests = nextFarmChests == null ? List.of() : List.copyOf(nextFarmChests);
+		gearChests = nextGearChests == null ? List.of() : List.copyOf(nextGearChests);
+		resultChests = nextResultChests == null ? List.of() : List.copyOf(nextResultChests);
+		furnaces = nextFurnaces == null ? List.of() : List.copyOf(nextFurnaces);
 		zones = nextZones == null ? List.of() : List.copyOf(nextZones);
 		builds = nextBuilds == null ? List.of() : List.copyOf(nextBuilds);
 		pendingCorner = nextCorner == null ? null : nextCorner.orElse(null);
@@ -85,6 +97,22 @@ public final class ClientStaffState {
 		return foodChests;
 	}
 
+	public static List<BlockPos> farmChests() {
+		return farmChests;
+	}
+
+	public static List<BlockPos> gearChests() {
+		return gearChests;
+	}
+
+	public static List<BlockPos> resultChests() {
+		return resultChests;
+	}
+
+	public static List<BlockPos> furnaces() {
+		return furnaces;
+	}
+
 	public static List<AreaBox> zones() {
 		return zones;
 	}
@@ -110,6 +138,10 @@ public final class ClientStaffState {
 		page = StaffPage.ROOT;
 		chests = List.of();
 		foodChests = List.of();
+		farmChests = List.of();
+		gearChests = List.of();
+		resultChests = List.of();
+		furnaces = List.of();
 		zones = List.of();
 		builds = List.of();
 		pendingCorner = null;

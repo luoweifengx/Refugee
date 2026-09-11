@@ -804,9 +804,12 @@ public class SpecialSplashScreen extends Screen {
 
 	private static List<MenuOption> askCategoryOptions(boolean foodSecret) {
 		List<MenuOption> list = new ArrayList<>();
+		list.add(category("warehouse"));
+		list.add(category("work"));
+		list.add(category("structure"));
 		list.add(category("combat"));
-		list.add(category("build"));
-		list.add(category("town"));
+		list.add(category("rally"));
+		list.add(category("guard"));
 		list.add(category("secret"));
 		return List.copyOf(list);
 	}
@@ -818,22 +821,47 @@ public class SpecialSplashScreen extends Screen {
 	private static List<MenuOption> askItemOptions(String topic, boolean foodSecret) {
 		List<MenuOption> list = new ArrayList<>();
 		switch (topic == null ? "" : topic) {
+			case "warehouse" -> {
+				list.add(item("warehouse", "blocks"));
+				list.add(item("warehouse", "farm"));
+				list.add(item("warehouse", "gear"));
+				list.add(item("warehouse", "food"));
+				list.add(item("warehouse", "smelt"));
+				list.add(item("warehouse", "result"));
+			}
+			case "work" -> {
+				list.add(item("work", "box"));
+				list.add(item("work", "advance"));
+				list.add(item("work", "repair"));
+				list.add(item("work", "build"));
+				list.add(item("work", "smelt"));
+			}
+			case "structure" -> {
+				list.add(item("structure", "select"));
+				list.add(item("structure", "import"));
+			}
 			case "combat" -> {
 				list.add(item("combat", "garrison"));
 				list.add(item("combat", "follow"));
+				list.add(item("combat", "follow_entity"));
 				list.add(item("combat", "patrol"));
 				list.add(item("combat", "formation"));
+				list.add(item("combat", "equip"));
+				list.add(item("combat", "armor"));
 			}
-			case "build" -> {
-				list.add(item("build", "repair"));
-				list.add(item("build", "build"));
-				list.add(item("build", "mine"));
-				list.add(item("build", "advance"));
+			case "rally" -> {
+				list.add(item("rally", "melee"));
+				list.add(item("rally", "ranged"));
+				list.add(item("rally", "worker"));
+				list.add(item("rally", "civilian"));
+				list.add(item("rally", "special"));
+				list.add(item("rally", "all"));
 			}
-			case "town" -> {
-				list.add(item("town", "kit"));
-				list.add(item("town", "armor"));
-				list.add(item("town", "why"));
+			case "guard" -> {
+				list.add(item("guard", "add"));
+				list.add(item("guard", "rally_near"));
+				list.add(item("guard", "rally_all"));
+				list.add(item("guard", "remove"));
 			}
 			case "secret" -> {
 				if (foodSecret) {

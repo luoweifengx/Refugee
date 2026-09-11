@@ -50,6 +50,9 @@ public final class RefugeeInteractions {
 			if (level.isClientSide()) {
 				return InteractionResult.SUCCESS;
 			}
+			if (luowei.refugee.attachment.RefugeeAttachments.get(villager).isCrusader()) {
+				return InteractionResult.SUCCESS;
+			}
 			if (serverPlayer.isShiftKeyDown()) {
 				if (held.isEmpty() && RefugeeSpecialRole.isSpecial(villager)) {
 					SelectionService.toggleFollow(serverPlayer, villager);

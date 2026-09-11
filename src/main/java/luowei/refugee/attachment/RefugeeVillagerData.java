@@ -55,10 +55,14 @@ public final class RefugeeVillagerData {
 	public static final Codec<RefugeeVillagerData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
 			BASE_CODEC.forGetter(data -> data),
 			Codec.LONG.optionalFieldOf("last_depth_curse_tick", 0L).forGetter(data -> data.lastDepthCurseTick),
-			Codec.STRING.optionalFieldOf("worker_duty", "").forGetter(data -> data.workerDuty().id())
-	).apply(instance, (data, lastDepthCurseTick, workerDuty) -> {
+			Codec.STRING.optionalFieldOf("worker_duty", "").forGetter(data -> data.workerDuty().id()),
+			Codec.BOOL.optionalFieldOf("crusader", false).forGetter(data -> data.crusader),
+			UUIDUtil.CODEC.optionalFieldOf("guard_mark").forGetter(data -> Optional.ofNullable(data.guardMarkPlayerId))
+	).apply(instance, (data, lastDepthCurseTick, workerDuty, crusader, guardMark) -> {
 		data.lastDepthCurseTick = lastDepthCurseTick;
 		data.workerDuty = WorkerDuty.fromId(workerDuty);
+		data.crusader = crusader;
+		data.guardMarkPlayerId = guardMark.orElse(null);
 		return data;
 	}));
 
@@ -93,10 +97,14 @@ public final class RefugeeVillagerData {
 	private int eatWatchCount;
 	private FoodProperties eatWatchFood;
 	private RefugeeCombat.Mood combatMood = RefugeeCombat.Mood.IDLE;
+	private boolean fledThisEncounter;
+	private int fleeOnceTicks;
 	private int eatCooldown;
 	private int mainAttackCooldown;
 	private int offAttackCooldown;
 	private long lastDepthCurseTick;
+	private boolean crusader;
+	private UUID guardMarkPlayerId;
 
 	public RefugeeVillagerData() {
 	}
@@ -337,6 +345,10 @@ public final class RefugeeVillagerData {
 		return workerDuty() == WorkerDuty.REPAIRER;
 	}
 
+	public boolean isSmelterDuty() {
+		return workerDuty() == WorkerDuty.SMELTER;
+	}
+
 	public void setWorkerDuty(WorkerDuty duty) {
 		this.workerDuty = duty == null ? WorkerDuty.NONE : duty;
 	}
@@ -526,6 +538,28 @@ public final class RefugeeVillagerData {
 		this.combatMood = mood == null ? RefugeeCombat.Mood.IDLE : mood;
 	}
 
+	public boolean fledThisEncounter() {
+		return fledThisEncounter;
+	}
+
+	public void setFledThisEncounter(boolean fledThisEncounter) {
+		this.fledThisEncounter = fledThisEncounter;
+	}
+
+	public int fleeOnceTicks() {
+		return fleeOnceTicks;
+	}
+
+	public void setFleeOnceTicks(int fleeOnceTicks) {
+		this.fleeOnceTicks = Math.max(0, fleeOnceTicks);
+	}
+
+	public void tickFleeOnce() {
+		if (fleeOnceTicks > 0) {
+			fleeOnceTicks--;
+		}
+	}
+
 	public int eatCooldown() {
 		return eatCooldown;
 	}
@@ -540,6 +574,34 @@ public final class RefugeeVillagerData {
 
 	public void setLastDepthCurseTick(long lastDepthCurseTick) {
 		this.lastDepthCurseTick = lastDepthCurseTick;
+	}
+
+	public boolean isCrusader() {
+		return crusader;
+	}
+
+	public void setCrusader(boolean crusader) {
+		this.crusader = crusader;
+	}
+
+	public UUID guardMarkPlayerId() {
+		return guardMarkPlayerId;
+	}
+
+	public boolean hasGuardMark() {
+		return guardMarkPlayerId != null;
+	}
+
+	public boolean isGuardOf(UUID playerId) {
+		return playerId != null && playerId.equals(guardMarkPlayerId);
+	}
+
+	public void setGuardMark(UUID playerId) {
+		this.guardMarkPlayerId = playerId;
+	}
+
+	public void clearGuardMark() {
+		this.guardMarkPlayerId = null;
 	}
 
 	public int mainAttackCooldown() {

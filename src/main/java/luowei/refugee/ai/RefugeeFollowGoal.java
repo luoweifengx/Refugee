@@ -35,8 +35,7 @@ public class RefugeeFollowGoal extends Goal {
 				&& !villager.isBaby()
 				&& !RefugeeRoles.isGuard(villager)
 				&& !RefugeeCombat.isBusy(villager)
-				&& !RefugeeCombat.isEating(villager)
-				&& !RefugeeCombat.hasHostilesInGuardRadius(villager);
+				&& !RefugeeCombat.isEating(villager);
 	}
 
 	@Override

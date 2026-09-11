@@ -37,7 +37,11 @@ public final class SelectionService {
 		if (player == null || villager == null) {
 			return false;
 		}
-		UUID subjectId = RefugeeAttachments.get(villager).subjectId();
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (data.isCrusader()) {
+			return false;
+		}
+		UUID subjectId = data.subjectId();
 		if (subjectId == null) {
 			return false;
 		}
@@ -77,6 +81,27 @@ public final class SelectionService {
 		selectFollow(player, villager, data, selection);
 		giveBanner(player);
 		player.displayClientMessage(Component.translatable("message.refugee.follow.start"), true);
+		return true;
+	}
+
+	/**
+	 * 令一名可指挥村民跟随；已在跟随则视为成功。选中表从空变非空时发安顿旗。
+	 */
+	public static boolean follow(ServerPlayer player, Villager villager) {
+		if (!canCommand(player, villager)) {
+			return false;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		PlayerSelectionData selection = RefugeeAttachments.get(player);
+		UUID villagerId = villager.getUUID();
+		if (selection.isSelected(villagerId) && data.isFollowing() && player.getUUID().equals(data.followPlayerId())) {
+			return true;
+		}
+		boolean wasEmpty = selection.selectedVillagers().isEmpty();
+		selectFollow(player, villager, data, selection);
+		if (wasEmpty) {
+			giveBanner(player);
+		}
 		return true;
 	}
 
@@ -128,7 +153,7 @@ public final class SelectionService {
 			PlayerSelectionData selection
 	) {
 		removeFromOtherSelections(player, villager.getUUID());
-		if (data.isBuilding() || data.isBuilderDuty() || data.isRepairerDuty()) {
+		if (data.isBuilding() || data.workerDuty().isAssigned()) {
 			StaffService.unbindWorker(villager);
 		}
 		data.startFollowing(player.getUUID());
@@ -202,6 +227,7 @@ public final class SelectionService {
 	public static void onVillagerRemoved(UUID villagerId, ServerLevel level) {
 		RosterService.onVillagerGone(villagerId, level);
 		luowei.refugee.staff.StaffService.onVillagerGone(villagerId, level.getServer());
+		luowei.refugee.staff.GuardService.onVillagerRemoved(villagerId, level.getServer());
 		for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
 			PlayerSelectionData selection = RefugeeAttachments.get(player);
 			if (selection.removeSelected(villagerId)) {

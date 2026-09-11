@@ -20,7 +20,7 @@ import luowei.refugee.staff.StaffNavAction;
 import luowei.refugee.staff.StaffPage;
 
 /**
- * 指挥杖页面树客户端导航：E / Esc 回根，预览时 Tab 切通道、滚轮改值，右键先钉原点再开工。
+ * 指挥杖页面树客户端导航：E / Esc 回根，预览时 Tab 切通道、滚轮改值，右键先钉原点再开工；开工后解开钉住，可继续摆下一处。
  */
 public final class StaffClientNav {
 	private StaffClientNav() {
@@ -199,6 +199,7 @@ public final class StaffClientNav {
 				ClientBlueprintSelection.offsetZ(),
 				ClientBlueprintSelection.rotation()
 		));
+		ClientBlueprintSelection.unlockOrigin();
 		return true;
 	}
 
