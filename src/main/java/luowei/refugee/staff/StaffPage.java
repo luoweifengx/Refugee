@@ -19,7 +19,9 @@ package luowei.refugee.staff;
  *       （修复 / 建筑 / 熔炼：即时派工）
  *     BUILD → BUILD_PIE
  *       SELECT → BUILD_CATALOG → BUILD_PREVIEW
- *       IMPORT → IMPORT_NAME
+ *                BUILD_CATALOG 内：上传 / 分享 / 删除
+ *                SHARE → BUILD_SHARE
+ *       IMPORT → IMPORT_NAME（划为蓝图）
  *     COMBAT_PIE（战斗）
  *       COMBAT_FOLLOW
  *       COMBAT_PATROL
@@ -57,7 +59,8 @@ public enum StaffPage {
 	BUILD_PIE,
 	FARM_WAREHOUSE,
 	GEAR_WAREHOUSE,
-	SMELT_RESULT;
+	SMELT_RESULT,
+	BUILD_SHARE;
 
 	public static StaffPage byOrdinal(int ordinal) {
 		StaffPage[] values = values();
@@ -99,6 +102,6 @@ public enum StaffPage {
 	}
 
 	public boolean isStaffScreen() {
-		return isPie() || this == BUILD_CATALOG || this == IMPORT_NAME;
+		return isPie() || this == BUILD_CATALOG || this == IMPORT_NAME || this == BUILD_SHARE;
 	}
 }

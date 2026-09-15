@@ -17,7 +17,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BannerPatternLayers;
 
 import luowei.refugee.special.RefugeeSpecialRole;
 
@@ -38,7 +40,10 @@ public final class PlayerSelectionData {
 					.forGetter(data -> SpecialBindings.from(data)),
 			GuideIntroState.CODEC.optionalFieldOf("guide_intro", GuideIntroState.EMPTY)
 					.forGetter(data -> GuideIntroState.from(data)),
-			RosterEntry.CODEC.listOf().optionalFieldOf("guard", List.of()).forGetter(data -> List.copyOf(data.guardMembers.values()))
+			RosterEntry.CODEC.listOf().optionalFieldOf("guard", List.of()).forGetter(data -> List.copyOf(data.guardMembers.values())),
+			DyeColor.CODEC.optionalFieldOf("banner_base", DyeColor.WHITE).forGetter(data -> data.bannerBase),
+			BannerPatternLayers.CODEC.optionalFieldOf("banner_patterns", BannerPatternLayers.EMPTY)
+					.forGetter(data -> data.bannerPatterns)
 	).apply(instance, PlayerSelectionData::fromCodec));
 
 	private BlockPos containerPos;
@@ -65,6 +70,8 @@ public final class PlayerSelectionData {
 	private long guideSilentUntil;
 	private long guideIntroEligibleAt;
 	private boolean guideIntroOpen;
+	private DyeColor bannerBase = DyeColor.WHITE;
+	private BannerPatternLayers bannerPatterns = BannerPatternLayers.EMPTY;
 
 	public PlayerSelectionData() {
 	}
@@ -80,7 +87,9 @@ public final class PlayerSelectionData {
 			boolean defeated,
 			SpecialBindings specialBindings,
 			GuideIntroState guideIntro,
-			List<RosterEntry> guard
+			List<RosterEntry> guard,
+			DyeColor bannerBase,
+			BannerPatternLayers bannerPatterns
 	) {
 		PlayerSelectionData data = new PlayerSelectionData();
 		data.containerPos = container.orElse(null);
@@ -95,6 +104,8 @@ public final class PlayerSelectionData {
 		data.pendingKills.addAll(pendingKill);
 		data.starterGranted = starterGranted;
 		data.defeated = defeated;
+		data.bannerBase = bannerBase == null ? DyeColor.WHITE : bannerBase;
+		data.bannerPatterns = bannerPatterns == null ? BannerPatternLayers.EMPTY : bannerPatterns;
 		if (specialBindings != null) {
 			specialBindings.applyTo(data);
 		}
@@ -169,6 +180,19 @@ public final class PlayerSelectionData {
 
 	public void setDefeated(boolean defeated) {
 		this.defeated = defeated;
+	}
+
+	public DyeColor bannerBase() {
+		return bannerBase == null ? DyeColor.WHITE : bannerBase;
+	}
+
+	public BannerPatternLayers bannerPatterns() {
+		return bannerPatterns == null ? BannerPatternLayers.EMPTY : bannerPatterns;
+	}
+
+	public void setBannerStyle(DyeColor base, BannerPatternLayers patterns) {
+		this.bannerBase = base == null ? DyeColor.WHITE : base;
+		this.bannerPatterns = patterns == null ? BannerPatternLayers.EMPTY : patterns;
 	}
 
 	public boolean isRosterEmpty() {

@@ -57,12 +57,14 @@ public final class RefugeeVillagerData {
 			Codec.LONG.optionalFieldOf("last_depth_curse_tick", 0L).forGetter(data -> data.lastDepthCurseTick),
 			Codec.STRING.optionalFieldOf("worker_duty", "").forGetter(data -> data.workerDuty().id()),
 			Codec.BOOL.optionalFieldOf("crusader", false).forGetter(data -> data.crusader),
-			UUIDUtil.CODEC.optionalFieldOf("guard_mark").forGetter(data -> Optional.ofNullable(data.guardMarkPlayerId))
-	).apply(instance, (data, lastDepthCurseTick, workerDuty, crusader, guardMark) -> {
+			UUIDUtil.CODEC.optionalFieldOf("guard_mark").forGetter(data -> Optional.ofNullable(data.guardMarkPlayerId)),
+			Codec.BOOL.optionalFieldOf("claimable", false).forGetter(data -> data.claimable)
+	).apply(instance, (data, lastDepthCurseTick, workerDuty, crusader, guardMark, claimable) -> {
 		data.lastDepthCurseTick = lastDepthCurseTick;
 		data.workerDuty = WorkerDuty.fromId(workerDuty);
 		data.crusader = crusader;
 		data.guardMarkPlayerId = guardMark.orElse(null);
+		data.claimable = claimable;
 		return data;
 	}));
 
@@ -105,6 +107,7 @@ public final class RefugeeVillagerData {
 	private long lastDepthCurseTick;
 	private boolean crusader;
 	private UUID guardMarkPlayerId;
+	private boolean claimable;
 
 	public RefugeeVillagerData() {
 	}
@@ -165,6 +168,14 @@ public final class RefugeeVillagerData {
 
 	public void setSubjectId(UUID subjectId) {
 		this.subjectId = subjectId;
+	}
+
+	public boolean isClaimable() {
+		return claimable;
+	}
+
+	public void setClaimable(boolean claimable) {
+		this.claimable = claimable;
 	}
 
 	public UUID followPlayerId() {

@@ -238,11 +238,17 @@ public final class StaffClientNav {
 		Screen screen = client.screen;
 		if (!page.isPie() && screen instanceof StaffPieScreen) {
 			client.setScreen(null);
+			screen = client.screen;
 		}
-		if (page != StaffPage.BUILD_CATALOG && screen instanceof BlueprintSelectScreen) {
-			client.setScreen(null);
+		if (screen instanceof BlueprintSelectScreen select) {
+			boolean keepCatalog = page == StaffPage.BUILD_CATALOG && select.isCatalog();
+			boolean keepShare = page == StaffPage.BUILD_SHARE && !select.isCatalog();
+			if (!keepCatalog && !keepShare) {
+				client.setScreen(null);
+				screen = client.screen;
+			}
 		}
-		if (page != StaffPage.IMPORT_NAME && screen instanceof ImportNameScreen) {
+		if (page != StaffPage.IMPORT_NAME && screen instanceof ImportNameScreen name && !name.isUpload()) {
 			client.setScreen(null);
 		}
 	}

@@ -1,7 +1,12 @@
 package luowei.refugee.client;
 
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -18,6 +23,12 @@ import luowei.refugee.staff.StaffPieAction;
 public class StaffPieScreen extends Screen {
 	private static final int RADIUS = 52;
 	private static final int INNER = 8;
+	private static final int FILL_ALPHA = 0xA8;
+	private static final int HOVER_ALPHA = 0xD0;
+	private static final int SEPARATOR_COLOR = 0xB2141418;
+	private static final int RING_COLOR = 0xB2141418;
+	private static final float STROKE = 2.0f;
+	private static final float AA = 1.0f;
 	private static final Slice[] ROOT_SLICES = {
 			new Slice(StaffPieAction.WAREHOUSE, new ItemStack(Items.CHEST), 0xCC3A6EA5, "screen.refugee.staff.pie.warehouse"),
 			new Slice(StaffPieAction.ZONE, new ItemStack(Items.STONE_PICKAXE), 0xCC3D8B4A, "screen.refugee.staff.pie.zone"),
@@ -137,10 +148,7 @@ public class StaffPieScreen extends Screen {
 		int cy = height / 2;
 		Slice[] slices = slices();
 		Slice hover = hit(mouseX, mouseY, cx, cy, slices);
-		for (int i = 0; i < slices.length; i++) {
-			drawSector(graphics, cx, cy, i, slices.length, hover == slices[i], slices[i].color);
-		}
-		drawSeparators(graphics, cx, cy, slices.length);
+		drawPie(graphics, cx, cy, slices, hover);
 		for (int i = 0; i < slices.length; i++) {
 			drawIcon(graphics, cx, cy, i, slices.length, slices[i].icon);
 		}
@@ -215,76 +223,201 @@ public class StaffPieScreen extends Screen {
 		return new double[] { start, end };
 	}
 
-	private static void drawSector(GuiGraphics graphics, int cx, int cy, int index, int count, boolean hover, int color) {
-		double[] range = sectorRange(index, count);
-		int argb = hover ? (0xF0000000 | (color & 0x00FFFFFF)) : color;
-		for (int i = 0; i <= 72; i++) {
-			double t = range[0] + (range[1] - range[0]) * i / 72.0;
-			int x1 = cx + (int) Math.round(Math.cos(t) * INNER);
-			int y1 = cy + (int) Math.round(Math.sin(t) * INNER);
-			int x2 = cx + (int) Math.round(Math.cos(t) * RADIUS);
-			int y2 = cy + (int) Math.round(Math.sin(t) * RADIUS);
-			drawThickLine(graphics, x1, y1, x2, y2, argb);
+	private static void drawPie(GuiGraphics graphics, int cx, int cy, Slice[] slices, Slice hover) {
+		graphics.drawSpecial(buffers -> paintPie(graphics, buffers, cx, cy, slices, hover));
+	}
+
+	private static void paintPie(
+			GuiGraphics graphics,
+			MultiBufferSource buffers,
+			int cx,
+			int cy,
+			Slice[] slices,
+			Slice hover
+	) {
+		VertexConsumer consumer = buffers.getBuffer(RenderType.gui());
+		PoseStack.Pose pose = graphics.pose().last();
+		float half = STROKE * 0.5f;
+		for (int i = 0; i < slices.length; i++) {
+			double[] range = sectorRange(i, slices.length);
+			int argb = withAlpha(slices[i].color, hover == slices[i] ? HOVER_ALPHA : FILL_ALPHA);
+			fillAnnulus(consumer, pose, cx, cy, INNER, RADIUS, range[0], range[1], argb);
 		}
-		drawArc(graphics, cx, cy, RADIUS, range[0], range[1], argb);
-		drawArc(graphics, cx, cy, INNER, range[0], range[1], argb);
+		for (int i = 0; i < slices.length; i++) {
+			double t = -Math.PI / 2.0 + (Math.PI * 2.0) * i / slices.length;
+			strokeRadial(consumer, pose, cx, cy, INNER, RADIUS, t, half, AA, SEPARATOR_COLOR);
+		}
+		strokeCircle(consumer, pose, cx, cy, RADIUS, half, AA, RING_COLOR);
+		strokeCircle(consumer, pose, cx, cy, INNER, half, AA, RING_COLOR);
 	}
 
-	private static void drawSeparators(GuiGraphics graphics, int cx, int cy, int count) {
-		for (int i = 0; i < count; i++) {
-			double t = -Math.PI / 2.0 + (Math.PI * 2.0) * i / count;
-			int x1 = cx + (int) Math.round(Math.cos(t) * INNER);
-			int y1 = cy + (int) Math.round(Math.sin(t) * INNER);
-			int x2 = cx + (int) Math.round(Math.cos(t) * RADIUS);
-			int y2 = cy + (int) Math.round(Math.sin(t) * RADIUS);
-			drawSeparatorLine(graphics, x1, y1, x2, y2);
+	private static void strokeCircle(
+			VertexConsumer consumer,
+			PoseStack.Pose pose,
+			float cx,
+			float cy,
+			float radius,
+			float half,
+			float aa,
+			int color
+	) {
+		int clear = fade(color, 0.0f);
+		fillAnnulus(consumer, pose, cx, cy, radius - half, radius + half, 0.0, Math.PI * 2.0, color);
+		fillAnnulus(consumer, pose, cx, cy, radius + half, radius + half + aa, 0.0, Math.PI * 2.0, color, clear);
+		fillAnnulus(consumer, pose, cx, cy, radius - half - aa, radius - half, 0.0, Math.PI * 2.0, clear, color);
+	}
+
+	private static void strokeRadial(
+			VertexConsumer consumer,
+			PoseStack.Pose pose,
+			float cx,
+			float cy,
+			float inner,
+			float outer,
+			double angle,
+			float half,
+			float aa,
+			int color
+	) {
+		float cos = (float) Math.cos(angle);
+		float sin = (float) Math.sin(angle);
+		float px = -sin;
+		float py = cos;
+		float ix = cx + cos * inner;
+		float iy = cy + sin * inner;
+		float ox = cx + cos * outer;
+		float oy = cy + sin * outer;
+		int clear = fade(color, 0.0f);
+		radialStrip(consumer, pose, ix, iy, ox, oy, px, py, -half, half, color, color);
+		radialStrip(consumer, pose, ix, iy, ox, oy, px, py, half, half + aa, color, clear);
+		radialStrip(consumer, pose, ix, iy, ox, oy, px, py, -half - aa, -half, clear, color);
+	}
+
+	private static void radialStrip(
+			VertexConsumer consumer,
+			PoseStack.Pose pose,
+			float ix,
+			float iy,
+			float ox,
+			float oy,
+			float px,
+			float py,
+			float a,
+			float b,
+			int ca,
+			int cb
+	) {
+		float ax = px * a;
+		float ay = py * a;
+		float bx = px * b;
+		float by = py * b;
+		quad(
+				consumer,
+				pose,
+				ix + ax,
+				iy + ay,
+				ox + ax,
+				oy + ay,
+				ox + bx,
+				oy + by,
+				ix + bx,
+				iy + by,
+				ca,
+				ca,
+				cb,
+				cb
+		);
+	}
+
+	private static void fillAnnulus(
+			VertexConsumer consumer,
+			PoseStack.Pose pose,
+			float cx,
+			float cy,
+			float inner,
+			float outer,
+			double start,
+			double end,
+			int color
+	) {
+		fillAnnulus(consumer, pose, cx, cy, inner, outer, start, end, color, color);
+	}
+
+	private static void fillAnnulus(
+			VertexConsumer consumer,
+			PoseStack.Pose pose,
+			float cx,
+			float cy,
+			float inner,
+			float outer,
+			double start,
+			double end,
+			int innerColor,
+			int outerColor
+	) {
+		int steps = Math.max(12, (int) Math.ceil(Math.abs(end - start) * 18.0));
+		float prevCos = (float) Math.cos(start);
+		float prevSin = (float) Math.sin(start);
+		for (int i = 1; i <= steps; i++) {
+			double t = start + (end - start) * i / steps;
+			float cos = (float) Math.cos(t);
+			float sin = (float) Math.sin(t);
+			quad(
+					consumer,
+					pose,
+					cx + prevCos * outer,
+					cy + prevSin * outer,
+					cx + prevCos * inner,
+					cy + prevSin * inner,
+					cx + cos * inner,
+					cy + sin * inner,
+					cx + cos * outer,
+					cy + sin * outer,
+					outerColor,
+					innerColor,
+					innerColor,
+					outerColor
+			);
+			prevCos = cos;
+			prevSin = sin;
 		}
 	}
 
-	private static void drawArc(GuiGraphics graphics, int cx, int cy, int radius, double start, double end, int color) {
-		int prevX = cx + (int) Math.round(Math.cos(start) * radius);
-		int prevY = cy + (int) Math.round(Math.sin(start) * radius);
-		for (int i = 1; i <= 36; i++) {
-			double t = start + (end - start) * i / 36.0;
-			int x = cx + (int) Math.round(Math.cos(t) * radius);
-			int y = cy + (int) Math.round(Math.sin(t) * radius);
-			drawThickLine(graphics, prevX, prevY, x, y, color);
-			prevX = x;
-			prevY = y;
+	private static void quad(
+			VertexConsumer consumer,
+			PoseStack.Pose pose,
+			float x0,
+			float y0,
+			float x1,
+			float y1,
+			float x2,
+			float y2,
+			float x3,
+			float y3,
+			int c0,
+			int c1,
+			int c2,
+			int c3
+	) {
+		consumer.addVertex(pose, x0, y0, 0).setColor(c0);
+		consumer.addVertex(pose, x1, y1, 0).setColor(c1);
+		consumer.addVertex(pose, x2, y2, 0).setColor(c2);
+		consumer.addVertex(pose, x3, y3, 0).setColor(c3);
+	}
+
+	private static int withAlpha(int color, int alpha) {
+		return (alpha << 24) | (color & 0x00FFFFFF);
+	}
+
+	private static int fade(int color, float t) {
+		if (t <= 0.0f) {
+			return color & 0x00FFFFFF;
 		}
-	}
-
-	private static void drawThickLine(GuiGraphics graphics, int x0, int y0, int x1, int y1, int color) {
-		strokeLine(graphics, x0, y0, x1, y1, color, 1);
-	}
-
-	private static void drawSeparatorLine(GuiGraphics graphics, int x0, int y0, int x1, int y1) {
-		strokeLine(graphics, x0, y0, x1, y1, 0xFF000000, 2);
-	}
-
-	private static void strokeLine(GuiGraphics graphics, int x0, int y0, int x1, int y1, int color, int half) {
-		int dx = Math.abs(x1 - x0);
-		int dy = Math.abs(y1 - y0);
-		int sx = x0 < x1 ? 1 : -1;
-		int sy = y0 < y1 ? 1 : -1;
-		int err = dx - dy;
-		int x = x0;
-		int y = y0;
-		while (true) {
-			graphics.fill(x - half, y - half, x + half + 1, y + half + 1, color);
-			if (x == x1 && y == y1) {
-				break;
-			}
-			int e2 = 2 * err;
-			if (e2 > -dy) {
-				err -= dy;
-				x += sx;
-			}
-			if (e2 < dx) {
-				err += dx;
-				y += sy;
-			}
+		if (t >= 1.0f) {
+			return color;
 		}
+		int alpha = Math.round(((color >>> 24) & 0xFF) * t);
+		return (alpha << 24) | (color & 0x00FFFFFF);
 	}
 
 	private record Slice(StaffPieAction action, ItemStack icon, int color, String labelKey) {

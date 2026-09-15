@@ -8,7 +8,7 @@ import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 
 /**
- * 四个特殊难民角色：外观用原版职业皮肤，逻辑用自定义字段，不走原版工作 AI。
+ * 四个特殊难民角色：外观用对应原版职业村民模型，逻辑用自定义字段，不走原版工作 AI。
  */
 public enum RefugeeSpecialRole {
 	GUIDE("guide", VillagerProfession.NITWIT),
@@ -48,7 +48,12 @@ public enum RefugeeSpecialRole {
 		if (villager == null) {
 			return null;
 		}
-		return RefugeeAttachments.get(villager).specialRole();
+		String synced = villager.getAttached(RefugeeAttachments.SPECIAL_ROLE);
+		if (synced != null && !synced.isBlank()) {
+			return byId(synced);
+		}
+		RefugeeVillagerData data = villager.getAttached(RefugeeAttachments.VILLAGER);
+		return data == null ? null : data.specialRole();
 	}
 
 	public static boolean isSpecial(Villager villager) {
@@ -71,6 +76,7 @@ public enum RefugeeSpecialRole {
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		data.setSpecialRole(role);
 		RefugeeAttachments.markDirty(villager, data);
+		villager.setAttached(RefugeeAttachments.SPECIAL_ROLE, role.id());
 		villager.setVillagerData(villager.getVillagerData().withProfession(villager.registryAccess(), role.profession));
 	}
 }

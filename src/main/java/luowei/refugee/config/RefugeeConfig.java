@@ -38,7 +38,7 @@ import luowei.refugee.ai.RefugeeBuffState;
 import luowei.refugee.warehouse.MaterialCategory;
 
 /**
- * {@code config/refugee.json}：入境（每天 daytime 4000 必触发一波，档位人数再乘难度）、号角/钟、守卫、安顿、干活距离、仓库合并与村民 buff。缺文件时写出默认值。
+ * {@code config/refugee.json}：入境（每天 daytime 4000 必触发一波，档位人数再乘难度）、号角/钟、守卫、安顿、干活距离、仓库合并、村民 buff 与全灭。缺文件时写出默认值。
  */
 public final class RefugeeConfig {
 	public static final String FILE_NAME = "refugee.json";
@@ -118,6 +118,8 @@ public final class RefugeeConfig {
 	public static boolean villagerBuffsEnabled = false;
 	/** true：禁止村民被僵尸打死时转化成僵尸村民（按死亡掉落）；false：沿用原版转化。 */
 	public static boolean blockVillagerZombieConversion = true;
+	/** 名册清空：旁观失败，或继续游戏。 */
+	public static EmptyRosterMode emptyRosterMode = EmptyRosterMode.SPECTATOR;
 
 	public static List<BuffSpec> idleBuffs = DEFAULT_IDLE_BUFFS;
 	public static List<BuffSpec> rangedBuffs = DEFAULT_RANGED_BUFFS;
@@ -261,6 +263,7 @@ public final class RefugeeConfig {
 		warehouseMergeSoil = readBoolean(json, "warehouseMergeSoil", legacyMerge);
 		villagerBuffsEnabled = readBoolean(json, "villagerBuffsEnabled", villagerBuffsEnabled);
 		blockVillagerZombieConversion = readBoolean(json, "blockVillagerZombieConversion", blockVillagerZombieConversion);
+		emptyRosterMode = EmptyRosterMode.parse(readString(json, "emptyRosterMode", emptyRosterMode.id()), emptyRosterMode);
 		applyBuffs(json);
 	}
 
@@ -305,6 +308,7 @@ public final class RefugeeConfig {
 		json.addProperty("warehouseMergeSoil", warehouseMergeSoil);
 		json.addProperty("villagerBuffsEnabled", villagerBuffsEnabled);
 		json.addProperty("blockVillagerZombieConversion", blockVillagerZombieConversion);
+		json.addProperty("emptyRosterMode", emptyRosterMode.id());
 		JsonObject villagerBuffs = new JsonObject();
 		villagerBuffs.add("idle", writeBuffList(idleBuffs));
 		villagerBuffs.add("ranged", writeBuffList(rangedBuffs));
@@ -325,6 +329,14 @@ public final class RefugeeConfig {
 			return fallback;
 		}
 		return json.get(key).getAsBoolean();
+	}
+
+	private static String readString(JsonObject json, String key, String fallback) {
+		if (!json.has(key) || !json.get(key).isJsonPrimitive() || !json.get(key).getAsJsonPrimitive().isString()) {
+			return fallback;
+		}
+		String value = json.get(key).getAsString();
+		return value == null || value.isBlank() ? fallback : value;
 	}
 
 	private static int readIntAtLeast(JsonObject json, String key, int fallback, int min) {
@@ -518,6 +530,32 @@ public final class RefugeeConfig {
 		public ImmigrationTier {
 			minCount = Math.max(1, minCount);
 			maxCount = Math.max(minCount, maxCount);
+		}
+	}
+
+	public enum EmptyRosterMode {
+		SPECTATOR,
+		DISABLE_KEEP_INVENTORY;
+
+		public String id() {
+			return this == SPECTATOR ? "spectator" : "disableKeepInventory";
+		}
+
+		public static EmptyRosterMode parse(String raw, EmptyRosterMode fallback) {
+			if (raw == null || raw.isBlank()) {
+				return fallback;
+			}
+			String key = raw.trim();
+			if (key.equalsIgnoreCase("spectator")) {
+				return SPECTATOR;
+			}
+			if (key.equalsIgnoreCase("disableKeepInventory")
+					|| key.equalsIgnoreCase("disable_keep_inventory")
+					|| key.equalsIgnoreCase("keepInventoryOff")) {
+				return DISABLE_KEEP_INVENTORY;
+			}
+			Refugee.LOGGER.warn("emptyRosterMode {} is not spectator or disableKeepInventory; using {}", raw, fallback.id());
+			return fallback;
 		}
 	}
 

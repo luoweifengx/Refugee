@@ -4,12 +4,14 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityModelLayerRegistry;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+// import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
 
 import net.minecraft.client.gui.screens.MenuScreens;
+// import net.minecraft.client.renderer.entity.ThrownItemRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -24,13 +26,19 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.level.block.Blocks;
 
 import luowei.refugee.client.model.RefugeeVillagerModel;
+// import luowei.refugee.entity.ModEntities;
 import luowei.refugee.interact.VillagerKitMenus;
+import luowei.refugee.blueprint.BlueprintUpload;
 import luowei.refugee.network.BlueprintCatalogPayload;
 import luowei.refugee.network.BlueprintDeletePayload;
 import luowei.refugee.network.BlueprintSelectPayload;
 import luowei.refugee.network.BlueprintSelectionPayload;
+import luowei.refugee.network.BlueprintShareTargetsPayload;
+import luowei.refugee.network.BlueprintUploadChunkPayload;
+import luowei.refugee.network.BlueprintUploadStartPayload;
 import luowei.refugee.network.GuideDialoguePayload;
 import luowei.refugee.network.OpenImportNamePayload;
+// import luowei.refugee.network.OpenBannerStylePayload;
 import luowei.refugee.network.SpecialSplashAction;
 import luowei.refugee.network.SpecialSplashActionPayload;
 import luowei.refugee.network.SpecialSplashPayload;
@@ -47,6 +55,7 @@ public class RefugeeClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		EntityModelLayerRegistry.registerModelLayer(RefugeeVillagerModel.LAYER, RefugeeVillagerModel::createBodyLayer);
+		// EntityRendererRegistry.register(ModEntities.THROWN_SETTLEMENT_BANNER, ThrownItemRenderer::new);
 		MenuScreens.register(VillagerKitMenus.KIT, VillagerKitScreen::new);
 		BlueprintPreviewRenderer.register();
 		StaffOverlayRenderer.register();
@@ -102,7 +111,7 @@ public class RefugeeClient implements ClientModInitializer {
 							payload.hand(),
 							payload.selected() == null ? null : payload.selected().orElse(null)
 					));
-				} else if (client.screen instanceof BlueprintSelectScreen screen) {
+				} else if (client.screen instanceof BlueprintSelectScreen screen && screen.isCatalog()) {
 					screen.replaceEntries(payload.entries());
 				}
 			});
@@ -149,6 +158,14 @@ public class RefugeeClient implements ClientModInitializer {
 					payload.maxAxis(),
 					payload.maxVolume()
 			)));
+		});
+		// ClientPlayNetworking.registerGlobalReceiver(OpenBannerStylePayload.TYPE, (payload, context) -> {
+		// 	Minecraft client = context.client();
+		// 	client.execute(() -> client.setScreen(new BannerStyleScreen(payload.hand(), payload.text())));
+		// });
+		ClientPlayNetworking.registerGlobalReceiver(BlueprintShareTargetsPayload.TYPE, (payload, context) -> {
+			Minecraft client = context.client();
+			client.execute(() -> client.setScreen(new BlueprintSelectScreen(payload.ids(), payload.targets())));
 		});
 		ClientPlayNetworking.registerGlobalReceiver(GuideDialoguePayload.TYPE, (payload, context) -> {
 			Minecraft client = context.client();
@@ -288,9 +305,28 @@ public class RefugeeClient implements ClientModInitializer {
 	}
 
 	public static void deleteBlueprint(ResourceLocation id) {
-		if (id == null) {
+		deleteBlueprints(id == null ? java.util.List.of() : java.util.List.of(id));
+	}
+
+	public static void deleteBlueprints(java.util.List<ResourceLocation> ids) {
+		if (ids == null || ids.isEmpty()) {
 			return;
 		}
-		ClientPlayNetworking.send(new BlueprintDeletePayload(id));
+		ClientPlayNetworking.send(new BlueprintDeletePayload(ids));
+	}
+
+	public static void uploadBlueprint(String name, byte[] bytes) {
+		if (name == null || name.isBlank() || bytes == null || bytes.length == 0) {
+			return;
+		}
+		int chunks = BlueprintUpload.chunkCount(bytes.length);
+		ClientPlayNetworking.send(new BlueprintUploadStartPayload(name, bytes.length, chunks));
+		for (int i = 0; i < chunks; i++) {
+			int start = i * BlueprintUpload.CHUNK_SIZE;
+			int end = Math.min(bytes.length, start + BlueprintUpload.CHUNK_SIZE);
+			byte[] chunk = new byte[end - start];
+			System.arraycopy(bytes, start, chunk, 0, chunk.length);
+			ClientPlayNetworking.send(new BlueprintUploadChunkPayload(i, chunk));
+		}
 	}
 }

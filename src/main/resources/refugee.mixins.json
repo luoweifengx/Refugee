@@ -17,6 +17,7 @@
 		"VillagerAttributesMixin",
 		"VillagerBrainMixin",
 		"VillagerBubbleMixin",
+		"VillagerClaimableSpawnMixin",
 		"VillagerGolemSpawnMixin",
 		"VillagerGoalInitMixin",
 		"VillagerLoveParticleMixin",

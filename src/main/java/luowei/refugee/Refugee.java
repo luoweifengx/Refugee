@@ -46,6 +46,7 @@ public class Refugee implements ModInitializer {
 		RefugeeAttachments.register();
 		ModBlocks.register();
 		ModItems.register();
+		// luowei.refugee.entity.ModEntities.register();
 		VillagerKitMenus.register();
 		BlueprintRegistry.register();
 		RefugeeNetworking.register();

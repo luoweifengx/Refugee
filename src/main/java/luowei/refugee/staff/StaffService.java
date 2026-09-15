@@ -1,8 +1,11 @@
 package luowei.refugee.staff;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
@@ -35,6 +38,7 @@ import luowei.refugee.block.AltarBlockEntity;
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.blueprint.BlueprintRegistry;
+import luowei.refugee.blueprint.BlueprintUpload;
 import luowei.refugee.blueprint.PlayerBlueprints;
 import luowei.refugee.build.BuildHealth;
 import luowei.refugee.build.BuildJob;
@@ -57,6 +61,7 @@ import luowei.refugee.zone.WorkerDuty;
  */
 public final class StaffService {
 	private static final Map<UUID, StaffSession> SESSIONS = new ConcurrentHashMap<>();
+	private static final Map<UUID, PendingUpload> UPLOADS = new ConcurrentHashMap<>();
 
 	private StaffService() {
 	}
@@ -156,11 +161,14 @@ public final class StaffService {
 	}
 
 	public static void onAirUse(ServerPlayer player) {
-		if (tryCancelBuild(player) || tryCancelZone(player)) {
+		if (tryCancelAimed(player)) {
 			return;
 		}
 		StaffSession session = session(player);
 		if (session.isRoot()) {
+			if (player.isShiftKeyDown()) {
+				return;
+			}
 			session.setPages(StaffPage.PIE);
 			sync(player);
 			RefugeeNetworking.openStaffPie(player, StaffPage.PIE);
@@ -305,7 +313,7 @@ public final class StaffService {
 		if (!(held.getItem() instanceof CommandStaffItem)) {
 			return false;
 		}
-		if (tryCancelBuild(player) || tryCancelZone(player)) {
+		if (tryCancelAimed(player)) {
 			return true;
 		}
 		StaffSession session = session(player);
@@ -434,16 +442,184 @@ public final class StaffService {
 	}
 
 	public static void deleteBlueprint(ServerPlayer player, ResourceLocation structureId) {
-		if (player == null || structureId == null) {
+		deleteBlueprints(player, structureId == null ? List.of() : List.of(structureId));
+	}
+
+	public static void deleteBlueprints(ServerPlayer player, Collection<ResourceLocation> ids) {
+		if (player == null || ids == null || ids.isEmpty()) {
 			return;
 		}
 		MinecraftServer server = player.getServer();
-		if (!PlayerBlueprints.delete(server, player.getUUID(), structureId)) {
+		List<ResourceLocation> deleted = new ArrayList<>();
+		for (ResourceLocation id : ids) {
+			if (id == null) {
+				continue;
+			}
+			if (!PlayerBlueprints.delete(server, player.getUUID(), id)) {
+				continue;
+			}
+			deleted.add(id);
+			cancelJobsWithStructure(server, id);
+			clearSelectionUsing(server, id);
+		}
+		if (deleted.isEmpty()) {
 			player.displayClientMessage(Component.translatable("message.refugee.staff.blueprint.delete.denied"), true);
 			playFail(player);
 			return;
 		}
-		cancelJobsWithStructure(server, structureId);
+		RefugeeNetworking.syncCatalogToAll(server);
+		if (deleted.size() == 1) {
+			player.displayClientMessage(Component.translatable("message.refugee.staff.blueprint.deleted"), true);
+		} else {
+			player.displayClientMessage(Component.translatable("message.refugee.staff.blueprint.deleted.count", deleted.size()), true);
+		}
+		playSuccess(player);
+	}
+
+	public static void openShare(ServerPlayer player, Collection<ResourceLocation> ids) {
+		if (player == null || ids == null || ids.isEmpty()) {
+			return;
+		}
+		StaffPage page = page(player);
+		if (page != StaffPage.BUILD_CATALOG && page != StaffPage.BUILD_SHARE) {
+			return;
+		}
+		List<ResourceLocation> owned = new ArrayList<>();
+		for (ResourceLocation id : ids) {
+			if (PlayerBlueprints.owns(player.getUUID(), id)) {
+				owned.add(id);
+			}
+		}
+		if (owned.isEmpty()) {
+			player.displayClientMessage(Component.translatable("message.refugee.staff.blueprint.share.none"), true);
+			playFail(player);
+			return;
+		}
+		session(player).setPages(StaffPage.BUILD_PIE, StaffPage.BUILD_CATALOG, StaffPage.BUILD_SHARE);
+		sync(player);
+		RefugeeNetworking.openShare(player, owned);
+	}
+
+	public static void shareBlueprints(
+			ServerPlayer player,
+			boolean confirm,
+			Collection<ResourceLocation> ids,
+			Collection<UUID> targets
+	) {
+		if (player == null) {
+			return;
+		}
+		if (!confirm) {
+			returnToCatalog(player);
+			return;
+		}
+		if (ids == null || ids.isEmpty() || targets == null || targets.isEmpty()) {
+			player.displayClientMessage(Component.translatable("message.refugee.staff.blueprint.share.none"), true);
+			playFail(player);
+			return;
+		}
+		MinecraftServer server = player.getServer();
+		Set<UUID> validTargets = new LinkedHashSet<>();
+		for (UUID target : targets) {
+			if (PbsAdapter.isKnownShareTarget(server, target) && !player.getUUID().equals(target)) {
+				validTargets.add(target);
+			}
+		}
+		if (validTargets.isEmpty() || !PlayerBlueprints.share(server, player.getUUID(), ids, validTargets)) {
+			player.displayClientMessage(Component.translatable("message.refugee.staff.blueprint.share.denied"), true);
+			playFail(player);
+			returnToCatalog(player);
+			return;
+		}
+		notifyShareRecipients(server, player, validTargets);
+		RefugeeNetworking.syncCatalogToAll(server);
+		returnToCatalog(player);
+		player.displayClientMessage(
+				Component.translatable("message.refugee.staff.blueprint.shared", validTargets.size()),
+				true
+		);
+		playSuccess(player);
+	}
+
+	public static void beginUpload(ServerPlayer player, String name, int totalBytes, int chunks) {
+		if (player == null) {
+			return;
+		}
+		if (page(player) != StaffPage.BUILD_CATALOG) {
+			UPLOADS.remove(player.getUUID());
+			return;
+		}
+		if (totalBytes <= 0
+				|| totalBytes > BlueprintUpload.MAX_BYTES
+				|| chunks <= 0
+				|| chunks > BlueprintUpload.MAX_CHUNKS
+				|| chunks != BlueprintUpload.chunkCount(totalBytes)) {
+			player.displayClientMessage(Component.translatable("message.refugee.staff.blueprint.upload.too_large"), true);
+			playFail(player);
+			return;
+		}
+		String normalized = PlayerBlueprints.normalizeName(name);
+		if (normalized.isEmpty()) {
+			player.displayClientMessage(Component.translatable("message.refugee.staff.import.empty_name"), true);
+			playFail(player);
+			return;
+		}
+		UPLOADS.put(player.getUUID(), new PendingUpload(normalized, totalBytes, chunks));
+	}
+
+	public static void receiveUploadChunk(ServerPlayer player, int index, byte[] data) {
+		if (player == null || data == null) {
+			return;
+		}
+		PendingUpload pending = UPLOADS.get(player.getUUID());
+		if (pending == null) {
+			return;
+		}
+		if (!pending.accept(index, data)) {
+			UPLOADS.remove(player.getUUID());
+			player.displayClientMessage(Component.translatable("message.refugee.staff.blueprint.upload.failed"), true);
+			playFail(player);
+			return;
+		}
+		if (!pending.complete()) {
+			return;
+		}
+		UPLOADS.remove(player.getUUID());
+		PlayerBlueprints.ImportResult result = PlayerBlueprints.importBytes(player, pending.name, pending.buffer);
+		switch (result.status()) {
+			case OK -> {
+				RefugeeNetworking.syncCatalog(player, true, InteractionHand.MAIN_HAND);
+				player.displayClientMessage(Component.translatable("message.refugee.staff.blueprint.upload.done"), true);
+				playSuccess(player);
+			}
+			case EMPTY_NAME -> player.displayClientMessage(
+					Component.translatable("message.refugee.staff.import.empty_name"), true);
+			case DUPLICATE_NAME -> player.displayClientMessage(
+					Component.translatable("message.refugee.staff.import.duplicate"), true);
+			case TOO_LARGE_AXIS -> player.displayClientMessage(Component.translatable(
+					"message.refugee.staff.import.too_large_axis",
+					RefugeeConfig.importMaxAxis
+			), true);
+			case TOO_LARGE_VOLUME -> player.displayClientMessage(Component.translatable(
+					"message.refugee.staff.import.too_large_volume",
+					RefugeeConfig.importMaxVolume
+			), true);
+			case EMPTY -> player.displayClientMessage(
+					Component.translatable("message.refugee.staff.blueprint.upload.invalid"), true);
+			default -> {
+				player.displayClientMessage(Component.translatable("message.refugee.staff.blueprint.upload.failed"), true);
+				playFail(player);
+			}
+		}
+	}
+
+	private static void returnToCatalog(ServerPlayer player) {
+		session(player).setPages(StaffPage.BUILD_PIE, StaffPage.BUILD_CATALOG);
+		sync(player);
+		RefugeeNetworking.openSelector(player, InteractionHand.MAIN_HAND);
+	}
+
+	private static void clearSelectionUsing(MinecraftServer server, ResourceLocation structureId) {
 		for (ServerPlayer other : server.getPlayerList().getPlayers()) {
 			PlayerSelectionData selection = RefugeeAttachments.get(other);
 			if (structureId.equals(selection.structureId())) {
@@ -456,9 +632,32 @@ public final class StaffService {
 				}
 			}
 		}
-		RefugeeNetworking.syncCatalogToAll(server);
-		player.displayClientMessage(Component.translatable("message.refugee.staff.blueprint.deleted"), true);
-		playSuccess(player);
+	}
+
+	private static void notifyShareRecipients(MinecraftServer server, ServerPlayer sender, Set<UUID> targets) {
+		Set<UUID> notified = new LinkedHashSet<>();
+		Component message = Component.translatable(
+				"message.refugee.staff.blueprint.received",
+				sender.getGameProfile().getName()
+		);
+		for (UUID target : targets) {
+			ServerPlayer direct = server.getPlayerList().getPlayer(target);
+			if (direct != null && notified.add(direct.getUUID())) {
+				direct.displayClientMessage(message, false);
+			}
+			PbsAdapter.organizationOwner(server, target).ifPresent(ownerId -> {
+				ServerPlayer owner = server.getPlayerList().getPlayer(ownerId);
+				if (owner != null && notified.add(owner.getUUID()) && !sender.getUUID().equals(ownerId)) {
+					owner.displayClientMessage(message, false);
+				}
+			});
+			for (UUID memberId : PbsAdapter.organizationMembers(server, target)) {
+				ServerPlayer member = server.getPlayerList().getPlayer(memberId);
+				if (member != null && notified.add(member.getUUID()) && !sender.getUUID().equals(memberId)) {
+					member.displayClientMessage(message, false);
+				}
+			}
+		}
 	}
 
 	public static void cancelJobsWithStructure(MinecraftServer server, ResourceLocation structureId) {
@@ -1138,36 +1337,59 @@ public final class StaffService {
 		RefugeeAttachments.markDirty(villager, data);
 	}
 
+	public static boolean tryCancelAimed(ServerPlayer player) {
+		if (!canShiftCancel(player) || !(player.level() instanceof ServerLevel level)) {
+			return false;
+		}
+		BuildJob build = raycastBuild(player, level);
+		WorkZone zone = raycastZone(player, level);
+		if (build == null && zone == null) {
+			return false;
+		}
+		double buildDist = build == null ? Double.POSITIVE_INFINITY : aimDist(player, build.bounds().aabb());
+		double zoneDist = zone == null ? Double.POSITIVE_INFINITY : aimDist(player, zoneAimBox(zone));
+		if (zone != null && zoneDist <= buildDist) {
+			cancelZone(level, zone);
+			player.displayClientMessage(Component.translatable("message.refugee.staff.zone.cancelled"), true);
+			playSuccess(player);
+			return true;
+		}
+		cancelJob(level, build);
+		player.displayClientMessage(Component.translatable("message.refugee.staff.build.cancelled"), true);
+		playSuccess(player);
+		return true;
+	}
+
 	public static boolean tryCancelBuild(ServerPlayer player) {
-		if (player == null || !player.isShiftKeyDown() || !(player.level() instanceof ServerLevel level)) {
-			return false;
-		}
-		ItemStack held = player.getMainHandItem();
-		if (!(held.getItem() instanceof CommandStaffItem)) {
-			held = player.getOffhandItem();
-		}
-		if (!(held.getItem() instanceof CommandStaffItem)) {
-			return false;
-		}
-		if (page(player) == StaffPage.COMBAT_PATROL) {
+		if (!canShiftCancel(player) || !(player.level() instanceof ServerLevel level)) {
 			return false;
 		}
 		BuildJob hit = raycastBuild(player, level);
 		if (hit == null) {
 			return false;
 		}
-		UUID subjectId = OrgLogisticsData.get(level.getServer()).subjectOfJob(hit.id());
 		cancelJob(level, hit);
 		player.displayClientMessage(Component.translatable("message.refugee.staff.build.cancelled"), true);
 		playSuccess(player);
-		if (subjectId != null) {
-			syncSubject(level.getServer(), subjectId);
-		}
 		return true;
 	}
 
 	public static boolean tryCancelZone(ServerPlayer player) {
-		if (player == null || !player.isShiftKeyDown() || !(player.level() instanceof ServerLevel level)) {
+		if (!canShiftCancel(player) || !(player.level() instanceof ServerLevel level)) {
+			return false;
+		}
+		WorkZone hit = raycastZone(player, level);
+		if (hit == null) {
+			return false;
+		}
+		cancelZone(level, hit);
+		player.displayClientMessage(Component.translatable("message.refugee.staff.zone.cancelled"), true);
+		playSuccess(player);
+		return true;
+	}
+
+	private static boolean canShiftCancel(ServerPlayer player) {
+		if (player == null || !player.isShiftKeyDown()) {
 			return false;
 		}
 		ItemStack held = player.getMainHandItem();
@@ -1177,21 +1399,7 @@ public final class StaffService {
 		if (!(held.getItem() instanceof CommandStaffItem)) {
 			return false;
 		}
-		if (page(player) == StaffPage.COMBAT_PATROL) {
-			return false;
-		}
-		WorkZone hit = raycastZone(player, level);
-		if (hit == null) {
-			return false;
-		}
-		UUID subjectId = OrgLogisticsData.get(level.getServer()).subjectOfZone(hit.id());
-		cancelZone(level, hit);
-		player.displayClientMessage(Component.translatable("message.refugee.staff.zone.cancelled"), true);
-		playSuccess(player);
-		if (subjectId != null) {
-			syncSubject(level.getServer(), subjectId);
-		}
-		return true;
+		return page(player) != StaffPage.COMBAT_PATROL;
 	}
 
 	public static void cancelZone(ServerLevel level, WorkZone zone) {
@@ -1216,26 +1424,13 @@ public final class StaffService {
 
 	private static WorkZone raycastZone(ServerPlayer player, ServerLevel level) {
 		UUID subjectId = PbsAdapter.resolveSubject(player);
-		Vec3 start = player.getEyePosition();
-		double range = Math.max(32.0, player.blockInteractionRange() * 4.0);
-		Vec3 end = start.add(player.getLookAngle().scale(range));
 		WorkZone best = null;
 		double bestDist = Double.MAX_VALUE;
 		for (WorkZone zone : OrgLogisticsData.get(level.getServer()).zones(subjectId)) {
 			if (!level.dimension().location().equals(zone.dimension())) {
 				continue;
 			}
-			AABB box = (zone.isAdvance() ? zone.currentSlice() : zone.box()).aabb();
-			double dist;
-			if (box.contains(start)) {
-				dist = 0.0;
-			} else {
-				var clip = box.clip(start, end);
-				if (clip.isEmpty()) {
-					continue;
-				}
-				dist = clip.get().distanceToSqr(start);
-			}
+			double dist = aimDist(player, zoneAimBox(zone));
 			if (dist < bestDist) {
 				bestDist = dist;
 				best = zone;
@@ -1246,27 +1441,34 @@ public final class StaffService {
 
 	private static BuildJob raycastBuild(ServerPlayer player, ServerLevel level) {
 		UUID subjectId = PbsAdapter.resolveSubject(player);
-		Vec3 start = player.getEyePosition();
-		double range = Math.max(32.0, player.blockInteractionRange() * 4.0);
-		Vec3 end = start.add(player.getLookAngle().scale(range));
 		BuildJob best = null;
 		double bestDist = Double.MAX_VALUE;
 		for (BuildJob job : OrgLogisticsData.get(level.getServer()).jobs(subjectId)) {
 			if (!level.dimension().location().equals(job.dimension())) {
 				continue;
 			}
-			AABB box = job.bounds().aabb();
-			var clip = box.clip(start, end);
-			if (clip.isEmpty()) {
-				continue;
-			}
-			double dist = clip.get().distanceToSqr(start);
+			double dist = aimDist(player, job.bounds().aabb());
 			if (dist < bestDist) {
 				bestDist = dist;
 				best = job;
 			}
 		}
 		return best;
+	}
+
+	private static AABB zoneAimBox(WorkZone zone) {
+		return (zone.isAdvance() ? zone.currentSlice() : zone.box()).aabb();
+	}
+
+	private static double aimDist(ServerPlayer player, AABB box) {
+		Vec3 start = player.getEyePosition();
+		if (box.contains(start)) {
+			return 0.0;
+		}
+		double range = Math.max(32.0, player.blockInteractionRange() * 4.0);
+		Vec3 end = start.add(player.getLookAngle().scale(range));
+		var clip = box.clip(start, end);
+		return clip.isEmpty() ? Double.POSITIVE_INFINITY : clip.get().distanceToSqr(start);
 	}
 
 	private static boolean isUsableJob(ServerLevel level, BuildJob job) {
@@ -1384,6 +1586,7 @@ public final class StaffService {
 
 	public static void onLogout(UUID playerId) {
 		SESSIONS.remove(playerId);
+		UPLOADS.remove(playerId);
 	}
 
 	private static boolean isValidStructure(ServerPlayer player, ResourceLocation structureId) {
@@ -1659,5 +1862,41 @@ public final class StaffService {
 
 	private record FollowAssign(int followed, int cancelled) {
 		private static final FollowAssign EMPTY = new FollowAssign(0, 0);
+	}
+
+	private static final class PendingUpload {
+		private final String name;
+		private final byte[] buffer;
+		private final boolean[] received;
+		private int remaining;
+
+		private PendingUpload(String name, int totalBytes, int chunks) {
+			this.name = name;
+			this.buffer = new byte[totalBytes];
+			this.received = new boolean[chunks];
+			this.remaining = chunks;
+		}
+
+		private boolean accept(int index, byte[] data) {
+			if (index < 0 || index >= received.length || data == null || received[index]) {
+				return false;
+			}
+			int offset = index * BlueprintUpload.CHUNK_SIZE;
+			if (offset >= buffer.length) {
+				return false;
+			}
+			int length = Math.min(data.length, buffer.length - offset);
+			if (length != data.length && index != received.length - 1) {
+				return false;
+			}
+			System.arraycopy(data, 0, buffer, offset, length);
+			received[index] = true;
+			remaining--;
+			return true;
+		}
+
+		private boolean complete() {
+			return remaining <= 0;
+		}
 	}
 }

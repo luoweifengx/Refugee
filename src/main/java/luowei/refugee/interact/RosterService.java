@@ -36,6 +36,8 @@ import luowei.refugee.attachment.PlayerSelectionData;
 import luowei.refugee.attachment.PlayerSelectionData.RosterEntry;
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
+import luowei.refugee.config.RefugeeConfig;
+import luowei.refugee.config.RefugeeConfig.EmptyRosterMode;
 import luowei.refugee.config.RefugeePlayDifficulty;
 import luowei.refugee.settle.StandableFinder;
 import luowei.refugee.pbs.PbsAdapter;
@@ -44,7 +46,7 @@ import luowei.refugee.special.RefugeeSpecialRole;
 import luowei.refugee.special.SpecialRefugeeService;
 
 /**
- * 玩家难民名册、按原版难度发放开局难民、死亡扣一人延迟击杀、空名册旁观失败。
+ * 玩家难民名册、按原版难度发放开局难民、死亡扣一人延迟击杀、空名册旁观。
  */
 public final class RosterService {
 	private static final Map<UUID, Integer> pendingStarters = new ConcurrentHashMap<>();
@@ -117,11 +119,15 @@ public final class RosterService {
 		queuedKills.remove(villagerId);
 		for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
 			PlayerSelectionData data = RefugeeAttachments.get(player);
-			boolean changed = data.removeRoster(villagerId);
+			boolean lostRoster = data.removeRoster(villagerId);
+			boolean changed = lostRoster;
 			changed |= data.removePendingKill(villagerId);
 			changed |= data.clearSpecialBinding(villagerId);
 			if (changed) {
 				RefugeeAttachments.markDirty(player, data);
+			}
+			if (lostRoster) {
+				afterRosterLoss(player, data);
 			}
 		}
 	}
@@ -159,9 +165,7 @@ public final class RosterService {
 			return;
 		}
 		if (data.isRosterEmpty()) {
-			data.setDefeated(true);
-			RefugeeAttachments.markDirty(player, data);
-			player.sendSystemMessage(Component.translatable("message.refugee.defeated"));
+			applyEmptyRoster(player, data);
 			return;
 		}
 		if (!RefugeePlayDifficulty.of(level).playerDeathSacrifices()) {
@@ -177,6 +181,7 @@ public final class RosterService {
 		SelectionService.collectBannersIfEmpty(player);
 		queuedKills.add(sacrificed.villagerId());
 		player.sendSystemMessage(Component.translatable("message.refugee.death.sacrifice", data.rosterSize()));
+		afterRosterLoss(player, data);
 	}
 
 	private static void onEntityLoad(Entity entity, ServerLevel level) {
@@ -197,6 +202,7 @@ public final class RosterService {
 		}
 		UUID subjectId = RefugeeAttachments.get(villager).subjectId();
 		if (subjectId == null) {
+			SelectionService.markClaimableIfInVillage(villager, level);
 			return;
 		}
 		ServerPlayer owner = level.getServer().getPlayerList().getPlayer(subjectId);
@@ -428,8 +434,9 @@ public final class RosterService {
 		queuedKills.remove(villagerId);
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 			PlayerSelectionData data = RefugeeAttachments.get(player);
+			boolean lostRoster = data.removeRoster(villagerId);
 			boolean changed = data.removePendingKill(villagerId);
-			changed |= data.removeRoster(villagerId);
+			changed |= lostRoster;
 			changed |= data.clearSpecialBinding(villagerId);
 			if (data.removeSelected(villagerId)) {
 				changed = true;
@@ -437,6 +444,9 @@ public final class RosterService {
 			}
 			if (changed) {
 				RefugeeAttachments.markDirty(player, data);
+			}
+			if (lostRoster) {
+				afterRosterLoss(player, data);
 			}
 		}
 	}
@@ -449,6 +459,31 @@ public final class RosterService {
 			}
 		}
 		return null;
+	}
+
+	private static void afterRosterLoss(ServerPlayer player, PlayerSelectionData data) {
+		if (player == null || data == null || data.isDefeated()) {
+			return;
+		}
+		if (data.isRosterEmpty() && data.isStarterGranted()) {
+			applyEmptyRoster(player, data);
+		}
+	}
+
+	private static void applyEmptyRoster(ServerPlayer player, PlayerSelectionData data) {
+		if (player == null || data == null || data.isDefeated()) {
+			return;
+		}
+		if (RefugeeConfig.emptyRosterMode != EmptyRosterMode.SPECTATOR) {
+			return;
+		}
+		data.setDefeated(true);
+		RefugeeAttachments.markDirty(player, data);
+		if (player.isAlive()) {
+			applySpectator(player, true);
+		} else {
+			player.sendSystemMessage(Component.translatable("message.refugee.defeated"));
+		}
 	}
 
 	private static void applySpectator(ServerPlayer player, boolean announce) {

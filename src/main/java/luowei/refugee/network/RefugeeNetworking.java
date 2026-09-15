@@ -54,12 +54,19 @@ public final class RefugeeNetworking {
 		PayloadTypeRegistry.playS2C().register(StaffOpenPiePayload.TYPE, StaffOpenPiePayload.STREAM_CODEC);
 		PayloadTypeRegistry.playS2C().register(StaffSyncPayload.TYPE, StaffSyncPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playS2C().register(OpenImportNamePayload.TYPE, OpenImportNamePayload.STREAM_CODEC);
+		// PayloadTypeRegistry.playS2C().register(OpenBannerStylePayload.TYPE, OpenBannerStylePayload.STREAM_CODEC);
+		PayloadTypeRegistry.playS2C().register(BlueprintShareTargetsPayload.TYPE, BlueprintShareTargetsPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(BlueprintSelectPayload.TYPE, BlueprintSelectPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(BlueprintDeletePayload.TYPE, BlueprintDeletePayload.STREAM_CODEC);
+		PayloadTypeRegistry.playC2S().register(BlueprintShareOpenPayload.TYPE, BlueprintShareOpenPayload.STREAM_CODEC);
+		PayloadTypeRegistry.playC2S().register(BlueprintSharePayload.TYPE, BlueprintSharePayload.STREAM_CODEC);
+		PayloadTypeRegistry.playC2S().register(BlueprintUploadStartPayload.TYPE, BlueprintUploadStartPayload.STREAM_CODEC);
+		PayloadTypeRegistry.playC2S().register(BlueprintUploadChunkPayload.TYPE, BlueprintUploadChunkPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(TerritoryMapRequestPayload.TYPE, TerritoryMapRequestPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(SpecialSplashActionPayload.TYPE, SpecialSplashActionPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(StaffPiePayload.TYPE, StaffPiePayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(ImportNamePayload.TYPE, ImportNamePayload.STREAM_CODEC);
+		// PayloadTypeRegistry.playC2S().register(BannerStyleSavePayload.TYPE, BannerStyleSavePayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(StaffNavPayload.TYPE, StaffNavPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(StaffBuildPlacePayload.TYPE, StaffBuildPlacePayload.STREAM_CODEC);
 		ServerPlayNetworking.registerGlobalReceiver(BlueprintSelectPayload.TYPE, (payload, context) -> {
@@ -68,7 +75,33 @@ public final class RefugeeNetworking {
 		});
 		ServerPlayNetworking.registerGlobalReceiver(BlueprintDeletePayload.TYPE, (payload, context) -> {
 			ServerPlayer player = context.player();
-			context.server().execute(() -> StaffService.deleteBlueprint(player, payload.id()));
+			context.server().execute(() -> StaffService.deleteBlueprints(player, payload.ids()));
+		});
+		ServerPlayNetworking.registerGlobalReceiver(BlueprintShareOpenPayload.TYPE, (payload, context) -> {
+			ServerPlayer player = context.player();
+			context.server().execute(() -> StaffService.openShare(player, payload.ids()));
+		});
+		ServerPlayNetworking.registerGlobalReceiver(BlueprintSharePayload.TYPE, (payload, context) -> {
+			ServerPlayer player = context.player();
+			context.server().execute(() -> StaffService.shareBlueprints(
+					player,
+					payload.confirm(),
+					payload.ids(),
+					payload.targets()
+			));
+		});
+		ServerPlayNetworking.registerGlobalReceiver(BlueprintUploadStartPayload.TYPE, (payload, context) -> {
+			ServerPlayer player = context.player();
+			context.server().execute(() -> StaffService.beginUpload(
+					player,
+					payload.name(),
+					payload.totalBytes(),
+					payload.chunks()
+			));
+		});
+		ServerPlayNetworking.registerGlobalReceiver(BlueprintUploadChunkPayload.TYPE, (payload, context) -> {
+			ServerPlayer player = context.player();
+			context.server().execute(() -> StaffService.receiveUploadChunk(player, payload.index(), payload.data()));
 		});
 		ServerPlayNetworking.registerGlobalReceiver(TerritoryMapRequestPayload.TYPE, (payload, context) -> {
 			ServerPlayer player = context.player();
@@ -86,6 +119,10 @@ public final class RefugeeNetworking {
 			ServerPlayer player = context.player();
 			context.server().execute(() -> StaffService.handleImportName(player, payload.confirm(), payload.name()));
 		});
+		// ServerPlayNetworking.registerGlobalReceiver(BannerStyleSavePayload.TYPE, (payload, context) -> {
+		// 	ServerPlayer player = context.player();
+		// 	context.server().execute(() -> luowei.refugee.settle.SettlementBannerService.save(player, payload));
+		// });
 		ServerPlayNetworking.registerGlobalReceiver(StaffNavPayload.TYPE, (payload, context) -> {
 			ServerPlayer player = context.player();
 			context.server().execute(() -> StaffService.handleNav(player, payload.action()));
@@ -250,6 +287,16 @@ public final class RefugeeNetworking {
 		return entity instanceof Villager villager
 				&& RefugeeSpecialRole.is(villager, RefugeeSpecialRole.CARTOGRAPHER)
 				&& villager.distanceTo(player) <= 16.0f;
+	}
+
+	public static void openShare(ServerPlayer player, List<ResourceLocation> ids) {
+		if (player == null || ids == null || ids.isEmpty()) {
+			return;
+		}
+		ServerPlayNetworking.send(player, new BlueprintShareTargetsPayload(
+				List.copyOf(ids),
+				PbsAdapter.listShareTargets(player.getServer(), player.getUUID())
+		));
 	}
 
 	public static void openSelector(ServerPlayer player, InteractionHand hand) {

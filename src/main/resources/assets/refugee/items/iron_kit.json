@@ -1,6 +1,6 @@
 {
 	"model": {
 		"type": "minecraft:model",
-		"model": "minecraft:item/iron_chestplate"
+		"model": "refugee:item/iron_kit"
 	}
 }

@@ -172,7 +172,7 @@ public final class BlueprintRegistry {
 		return entries;
 	}
 
-	/** 该玩家可见的结构 NBT（自带 + 组织共享导入）。 */
+	/** 该玩家可见的结构 NBT（自带 + 本人划入/上传 + 他人分享）。 */
 	public static Map<ResourceLocation, CompoundTag> templateNbts(UUID playerId) {
 		Map<ResourceLocation, CompoundTag> nbts = new LinkedHashMap<>(TEMPLATE_NBTS);
 		if (playerId != null) {
@@ -304,7 +304,7 @@ public final class BlueprintRegistry {
 				把原版结构方块导出的 .nbt 放到本目录，然后执行 /refugee blueprint reload。
 				本目录只放基础可造建筑（城墙/房屋/道路/哨塔/仓库/农田等）。
 				世界生成建筑在 config/refugee/worldgen/。
-				玩家导入的结构存在世界存档 refugee/blueprints/<玩家UUID>/，互不可见。
+				玩家导入/划入/上传的结构存在世界存档 refugee/blueprints/<玩家UUID>/，默认仅自己可见，分享后对方才能使用。
 				Drop vanilla structure-block .nbt files here, then run /refugee blueprint reload.
 
 				id 规则 / id rule: hut.nbt → refugee:hut

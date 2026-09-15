@@ -8,7 +8,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.StructureTags;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.entity.player.Inventory;
@@ -31,7 +33,7 @@ public final class SelectionService {
 	}
 
 	/**
-	 * 仅所属玩家或同组织成员可指挥。无主村民不可接管。
+	 * 仅所属玩家或同组织成员可指挥。普通无主不可接管；刷怪蛋 / 村庄村民可认领。
 	 */
 	public static boolean canCommand(ServerPlayer player, Villager villager) {
 		if (player == null || villager == null) {
@@ -43,9 +45,68 @@ public final class SelectionService {
 		}
 		UUID subjectId = data.subjectId();
 		if (subjectId == null) {
-			return false;
+			return data.isClaimable();
 		}
 		return subjectId.equals(player.getUUID()) || subjectId.equals(PbsAdapter.resolveSubject(player));
+	}
+
+	/**
+	 * 刷怪蛋、发射器、结构生成的无主村民标为可认领。
+	 */
+	public static void markClaimableFromSpawn(Villager villager, EntitySpawnReason spawnReason) {
+		if (villager == null || spawnReason == null) {
+			return;
+		}
+		if (spawnReason != EntitySpawnReason.SPAWN_ITEM_USE
+				&& spawnReason != EntitySpawnReason.DISPENSER
+				&& spawnReason != EntitySpawnReason.STRUCTURE) {
+			return;
+		}
+		markClaimable(villager);
+	}
+
+	/**
+	 * 旧档：无主且仍在村庄结构内的村民补可认领。
+	 */
+	public static void markClaimableIfInVillage(Villager villager, ServerLevel level) {
+		if (villager == null || level == null) {
+			return;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (data.subjectId() != null || data.isClaimable() || data.isCrusader()) {
+			return;
+		}
+		if (!level.structureManager().getStructureWithPieceAt(villager.blockPosition(), StructureTags.VILLAGE).isValid()) {
+			return;
+		}
+		markClaimable(villager);
+	}
+
+	/**
+	 * 可认领无主村民在首次指挥时归属操作者（组织则归组织）。
+	 */
+	public static void claimIfNeeded(ServerPlayer player, Villager villager) {
+		if (player == null || villager == null) {
+			return;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (data.subjectId() != null || !data.isClaimable() || data.isCrusader()) {
+			return;
+		}
+		UUID subjectId = PbsAdapter.resolveSubject(player);
+		data.setSubjectId(subjectId);
+		data.setClaimable(false);
+		RefugeeAttachments.markDirty(villager, data);
+		RosterService.registerOwnedIfPlayer(player.level().getServer(), subjectId, villager);
+	}
+
+	private static void markClaimable(Villager villager) {
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (data.subjectId() != null || data.isClaimable() || data.isCrusader()) {
+			return;
+		}
+		data.setClaimable(true);
+		RefugeeAttachments.markDirty(villager, data);
 	}
 
 	private static void denyCommand(ServerPlayer player) {
@@ -62,6 +123,7 @@ public final class SelectionService {
 			denyCommand(player);
 			return false;
 		}
+		claimIfNeeded(player, villager);
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		PlayerSelectionData selection = RefugeeAttachments.get(player);
 		UUID villagerId = villager.getUUID();
@@ -91,6 +153,7 @@ public final class SelectionService {
 		if (!canCommand(player, villager)) {
 			return false;
 		}
+		claimIfNeeded(player, villager);
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		PlayerSelectionData selection = RefugeeAttachments.get(player);
 		UUID villagerId = villager.getUUID();
@@ -130,6 +193,7 @@ public final class SelectionService {
 				denied = true;
 				continue;
 			}
+			claimIfNeeded(player, villager);
 			RefugeeVillagerData data = RefugeeAttachments.get(villager);
 			selectFollow(player, villager, data, selection);
 			count++;

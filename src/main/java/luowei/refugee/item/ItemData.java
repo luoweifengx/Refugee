@@ -3,12 +3,15 @@ package luowei.refugee.item;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.level.block.BannerBlock;
+import net.minecraft.world.level.block.entity.BannerPatternLayers;
 
 /**
- * CUSTOM_DATA 读写（1.21.5 Optional NBT）。蓝图结构名与安顿白旗标记共用。
+ * CUSTOM_DATA 读写（1.21.5 Optional NBT）。蓝图结构名与安顿旗标记共用。
  */
 public final class ItemData {
 	public static final String STRUCTURE_KEY = "refugee_structure";
@@ -48,6 +51,18 @@ public final class ItemData {
 		CompoundTag tag = tag(stack);
 		tag.putBoolean(SETTLEMENT_BANNER_KEY, true);
 		setTag(stack, tag);
+		return stack;
+	}
+
+	public static ItemStack createSettlementBanner(DyeColor base, BannerPatternLayers layers) {
+		DyeColor color = base == null ? DyeColor.WHITE : base;
+		ItemStack stack = new ItemStack(BannerBlock.byColor(color).asItem());
+		CompoundTag tag = tag(stack);
+		tag.putBoolean(SETTLEMENT_BANNER_KEY, true);
+		setTag(stack, tag);
+		if (layers != null && !layers.layers().isEmpty()) {
+			stack.set(DataComponents.BANNER_PATTERNS, layers);
+		}
 		return stack;
 	}
 

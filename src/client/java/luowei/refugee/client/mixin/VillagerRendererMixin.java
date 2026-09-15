@@ -29,6 +29,7 @@ import luowei.refugee.client.model.RefugeeVillagerHeldItemLayer;
 import luowei.refugee.client.model.RefugeeVillagerModel;
 import luowei.refugee.client.talk.RefugeeBubbleRenderState;
 import luowei.refugee.interact.RefugeeRoles;
+import luowei.refugee.special.RefugeeSpecialRole;
 import luowei.refugee.talk.RefugeeBubble;
 
 @Mixin(VillagerRenderer.class)
@@ -72,6 +73,7 @@ public abstract class VillagerRendererMixin extends AgeableMobRenderer<Villager,
 		if (state instanceof RefugeeBubbleRenderState bubbleState) {
 			bubbleState.refugee$setBubbleIcon(RefugeeBubble.get(villager));
 		}
+		RefugeeSpecialRole special = RefugeeSpecialRole.of(villager);
 		if (!(state instanceof RefugeeVillagerArmState arms)) {
 			return;
 		}
@@ -82,7 +84,8 @@ public abstract class VillagerRendererMixin extends AgeableMobRenderer<Villager,
 			return;
 		}
 		boolean eating = villager.isUsingItem() && RefugeeRoles.isFood(villager.getUseItem());
-		boolean independent = eating
+		boolean independent = special != null
+				|| eating
 				|| RefugeeAttachments.isRefugee(villager)
 				|| RefugeeRoles.isGiveableTool(villager.getMainHandItem())
 				|| RefugeeRoles.isGiveableTool(villager.getOffhandItem())

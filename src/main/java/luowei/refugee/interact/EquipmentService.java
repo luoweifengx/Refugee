@@ -23,6 +23,7 @@ public final class EquipmentService {
 			player.displayClientMessage(Component.translatable("message.refugee.command.denied"), true);
 			return true;
 		}
+		SelectionService.claimIfNeeded(player, villager);
 		ItemStack held = player.getItemInHand(hand);
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		boolean wasBuilder = RefugeeRoles.isBuilder(villager);

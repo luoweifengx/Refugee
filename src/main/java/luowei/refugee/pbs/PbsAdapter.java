@@ -18,7 +18,9 @@ import net.minecraft.world.level.ChunkPos;
 import luowei.player_block_status.lib.api.PlayerBlockStatusLib;
 import luowei.player_block_status.lib.api.TerritoryQueries;
 import luowei.player_block_status.lib.chunk.ChunkState;
+import luowei.player_block_status.lib.org.OrganizationData;
 import luowei.player_block_status.lib.org.OrganizationRecord;
+import luowei.refugee.blueprint.BlueprintShareTarget;
 
 /**
  * PBS 公开 API 适配：计分入口、领土查询、玩家/组织主体解析。
@@ -179,25 +181,54 @@ public final class PbsAdapter {
 		return PlayerBlockStatusLib.queryPlayerOrganization(server, playerId);
 	}
 
+	public static String territoryName(MinecraftServer server, UUID subjectId) {
+		return PlayerBlockStatusLib.resolveTerritoryName(server, subjectId);
+	}
+
 	/**
-	 * 蓝图共享范围：本人 + 所在组织的主人与成员。
+	 * 蓝图分享列表：在线玩家（不含自己）与全部 PBS 组织。
 	 */
-	public static Set<UUID> shareGroup(MinecraftServer server, UUID playerId) {
-		Set<UUID> ids = new LinkedHashSet<>();
-		if (playerId != null) {
-			ids.add(playerId);
+	public static List<BlueprintShareTarget> listShareTargets(MinecraftServer server, UUID viewerId) {
+		List<BlueprintShareTarget> targets = new ArrayList<>();
+		if (server == null) {
+			return targets;
 		}
-		if (server == null || playerId == null) {
-			return ids;
+		Set<UUID> seen = new LinkedHashSet<>();
+		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+			UUID id = player.getUUID();
+			if (id == null || id.equals(viewerId) || !seen.add(id)) {
+				continue;
+			}
+			UUID subject = resolveSubject(server, id);
+			targets.add(new BlueprintShareTarget(
+					id,
+					displayName(server, id),
+					territoryName(server, subject),
+					false
+			));
 		}
-		UUID orgId = organizationOf(server, playerId).orElse(null);
-		if (orgId == null) {
-			return ids;
+		for (OrganizationRecord org : OrganizationData.get(server).getOrganizations().values()) {
+			if (org == null || org.id() == null || !seen.add(org.id())) {
+				continue;
+			}
+			targets.add(new BlueprintShareTarget(
+					org.id(),
+					displayName(server, org.id()),
+					territoryName(server, org.id()),
+					true
+			));
 		}
-		ids.add(orgId);
-		ids.addAll(organizationMembers(server, orgId));
-		organizationOwner(server, orgId).ifPresent(ids::add);
-		return ids;
+		return targets;
+	}
+
+	public static boolean isKnownShareTarget(MinecraftServer server, UUID id) {
+		if (server == null || id == null) {
+			return false;
+		}
+		if (server.getPlayerList().getPlayer(id) != null) {
+			return true;
+		}
+		return PlayerBlockStatusLib.queryOrganization(server, id).isPresent();
 	}
 
 	public static Optional<UUID> organizationOwner(MinecraftServer server, UUID orgId) {
