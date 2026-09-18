@@ -62,7 +62,7 @@ public final class RefugeeAttachments {
 			}
 			RefugeeSpecialRole role = data.specialRole();
 			if (role != null) {
-				villager.setAttached(SPECIAL_ROLE, role.id());
+				RefugeeSpecialRole.apply(villager, role);
 			}
 		});
 	}

@@ -805,11 +805,12 @@ public class SpecialSplashScreen extends Screen {
 	private static List<MenuOption> askCategoryOptions(boolean foodSecret) {
 		List<MenuOption> list = new ArrayList<>();
 		list.add(category("warehouse"));
-		list.add(category("work"));
+		list.add(category("special"));
 		list.add(category("structure"));
+		list.add(category("guard"));
+		list.add(category("work"));
 		list.add(category("combat"));
 		list.add(category("rally"));
-		list.add(category("guard"));
 		list.add(category("secret"));
 		return List.copyOf(list);
 	}
@@ -823,22 +824,26 @@ public class SpecialSplashScreen extends Screen {
 		switch (topic == null ? "" : topic) {
 			case "warehouse" -> {
 				list.add(item("warehouse", "blocks"));
-				list.add(item("warehouse", "farm"));
-				list.add(item("warehouse", "gear"));
-				list.add(item("warehouse", "food"));
 				list.add(item("warehouse", "smelt"));
 				list.add(item("warehouse", "result"));
+				list.add(item("warehouse", "gear"));
+				list.add(item("warehouse", "food"));
+				list.add(item("warehouse", "farm"));
+			}
+			case "special" -> {
+				list.add(item("special", "banner"));
+				list.add(item("special", "altar"));
 			}
 			case "work" -> {
 				list.add(item("work", "box"));
 				list.add(item("work", "advance"));
-				list.add(item("work", "repair"));
 				list.add(item("work", "build"));
+				list.add(item("work", "repair"));
 				list.add(item("work", "smelt"));
 			}
 			case "structure" -> {
-				list.add(item("structure", "select"));
 				list.add(item("structure", "import"));
+				list.add(item("structure", "select"));
 			}
 			case "combat" -> {
 				list.add(item("combat", "garrison"));

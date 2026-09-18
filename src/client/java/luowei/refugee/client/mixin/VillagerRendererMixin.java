@@ -84,13 +84,17 @@ public abstract class VillagerRendererMixin extends AgeableMobRenderer<Villager,
 			return;
 		}
 		boolean eating = villager.isUsingItem() && RefugeeRoles.isFood(villager.getUseItem());
-		boolean independent = special != null
-				|| eating
-				|| RefugeeAttachments.isRefugee(villager)
-				|| RefugeeRoles.isGiveableTool(villager.getMainHandItem())
-				|| RefugeeRoles.isGiveableTool(villager.getOffhandItem())
-				|| RefugeeRoles.isShield(villager.getMainHandItem())
-				|| RefugeeRoles.isShield(villager.getOffhandItem());
+		boolean independent;
+		if (special != null) {
+			independent = eating;
+		} else {
+			independent = eating
+					|| RefugeeAttachments.isRefugee(villager)
+					|| RefugeeRoles.isGiveableTool(villager.getMainHandItem())
+					|| RefugeeRoles.isGiveableTool(villager.getOffhandItem())
+					|| RefugeeRoles.isShield(villager.getMainHandItem())
+					|| RefugeeRoles.isShield(villager.getOffhandItem());
+		}
 		arms.refugee$setIndependentArms(independent);
 		arms.refugee$setAttackTime(villager.getAttackAnim(tickDelta));
 		arms.refugee$setUsingItem(villager.isUsingItem());
@@ -100,10 +104,17 @@ public abstract class VillagerRendererMixin extends AgeableMobRenderer<Villager,
 		arms.refugee$setUseDuration(use.isEmpty() ? 0.0F : use.getUseDuration(villager));
 		arms.refugee$setMainHand(villager.getMainHandItem().copy());
 		arms.refugee$setOffHand(villager.getOffhandItem().copy());
-		arms.refugee$setHeadArmor(villager.getItemBySlot(EquipmentSlot.HEAD).copy());
-		arms.refugee$setChestArmor(villager.getItemBySlot(EquipmentSlot.CHEST).copy());
-		arms.refugee$setLegsArmor(villager.getItemBySlot(EquipmentSlot.LEGS).copy());
-		arms.refugee$setFeetArmor(villager.getItemBySlot(EquipmentSlot.FEET).copy());
+		if (special != null) {
+			arms.refugee$setHeadArmor(ItemStack.EMPTY);
+			arms.refugee$setChestArmor(ItemStack.EMPTY);
+			arms.refugee$setLegsArmor(ItemStack.EMPTY);
+			arms.refugee$setFeetArmor(ItemStack.EMPTY);
+		} else {
+			arms.refugee$setHeadArmor(villager.getItemBySlot(EquipmentSlot.HEAD).copy());
+			arms.refugee$setChestArmor(villager.getItemBySlot(EquipmentSlot.CHEST).copy());
+			arms.refugee$setLegsArmor(villager.getItemBySlot(EquipmentSlot.LEGS).copy());
+			arms.refugee$setFeetArmor(villager.getItemBySlot(EquipmentSlot.FEET).copy());
+		}
 		HumanoidArm swinging = villager.swingingArm == InteractionHand.OFF_HAND
 				? villager.getMainArm().getOpposite()
 				: villager.getMainArm();
