@@ -50,12 +50,11 @@ public enum RefugeePlayDifficulty {
 		return this != PEACEFUL;
 	}
 
-	/** 简单为基准 1；普通 7/6、困难/极限 4/3，抽中人数后再乘并向上取整。 */
+	/** 和平、简单、普通为 1；困难和极限用原先的普通倍率 7/6，抽中人数后再乘并向上取整。 */
 	public double arrivalMultiplier() {
 		return switch (this) {
-			case HARDCORE, HARD -> 4.0 / 3.0;
-			case NORMAL -> 7.0 / 6.0;
-			case EASY, PEACEFUL -> 1.0;
+			case HARDCORE, HARD -> 7.0 / 6.0;
+			case NORMAL, EASY, PEACEFUL -> 1.0;
 		};
 	}
 

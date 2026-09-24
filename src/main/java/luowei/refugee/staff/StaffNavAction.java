@@ -11,7 +11,9 @@ public enum StaffNavAction {
 	ADVANCE_NEXT_AXIS,
 	ADVANCE_PREV_AXIS,
 	ADVANCE_POSITIVE,
-	ADVANCE_NEGATIVE;
+	ADVANCE_NEGATIVE,
+	IMPORT_VERTEX_NEXT,
+	IMPORT_VERTEX_PREV;
 
 	public static StaffNavAction byOrdinal(int ordinal) {
 		StaffNavAction[] values = values();

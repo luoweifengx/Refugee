@@ -12,8 +12,8 @@ import net.minecraft.world.entity.npc.Villager;
 import luowei.refugee.interact.RefugeeRoles;
 
 /**
- * 工人 / 守卫 / 特殊 NPC 以及散人跟随、巡逻、逃逸时跳过 Brain.tick。
- * 闲置散人仍跑原版 Brain。小孩一律原版。
+ * 守卫 / 特殊 NPC，以及工人正在干活时跳过 Brain.tick。
+ * 闲置工人和闲置散人跑原版 Brain，晚上由 Brain 去睡觉。小孩一律原版。
  */
 @Mixin(Villager.class)
 public abstract class VillagerBrainMixin {

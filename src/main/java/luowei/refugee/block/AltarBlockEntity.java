@@ -22,15 +22,16 @@ import net.minecraft.world.level.block.state.BlockState;
 
 public class AltarBlockEntity extends RandomizableContainerBlockEntity {
 	private NonNullList<ItemStack> items = NonNullList.withSize(AltarService.SIZE, ItemStack.EMPTY);
+	private boolean finaleBeam;
 	private final ContainerOpenersCounter openersCounter = new ContainerOpenersCounter() {
 		@Override
 		protected void onOpen(Level level, BlockPos pos, BlockState state) {
-			playSound(SoundEvents.CHEST_OPEN);
+			playSound(SoundEvents.SCULK_CLICKING);
 		}
 
 		@Override
 		protected void onClose(Level level, BlockPos pos, BlockState state) {
-			playSound(SoundEvents.CHEST_CLOSE);
+			playSound(SoundEvents.SCULK_CLICKING_STOP);
 		}
 
 		@Override
@@ -53,6 +54,7 @@ public class AltarBlockEntity extends RandomizableContainerBlockEntity {
 		if (!this.trySaveLootTable(tag)) {
 			ContainerHelper.saveAllItems(tag, this.items, registries);
 		}
+		tag.putBoolean("FinaleBeam", this.finaleBeam);
 	}
 
 	@Override
@@ -62,6 +64,31 @@ public class AltarBlockEntity extends RandomizableContainerBlockEntity {
 		if (!this.tryLoadLootTable(tag)) {
 			ContainerHelper.loadAllItems(tag, this.items, registries);
 		}
+		this.finaleBeam = tag.getBooleanOr("FinaleBeam", false);
+	}
+
+	public boolean hasFinaleBeam() {
+		return this.finaleBeam;
+	}
+
+	public void setFinaleBeam(boolean finaleBeam) {
+		if (this.finaleBeam == finaleBeam) {
+			return;
+		}
+		this.finaleBeam = finaleBeam;
+		this.setChanged();
+	}
+
+	@Override
+	public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
+		CompoundTag tag = super.getUpdateTag(registries);
+		tag.putBoolean("FinaleBeam", this.finaleBeam);
+		return tag;
+	}
+
+	@Override
+	public net.minecraft.network.protocol.Packet<net.minecraft.network.protocol.game.ClientGamePacketListener> getUpdatePacket() {
+		return net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket.create(this);
 	}
 
 	@Override

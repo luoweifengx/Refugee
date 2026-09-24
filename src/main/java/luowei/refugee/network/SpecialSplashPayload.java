@@ -21,11 +21,14 @@ public record SpecialSplashPayload(
 		int introIndex,
 		String interruptKey,
 		boolean foodSecret,
-		boolean seek
+		boolean seek,
+		String storyId,
+		int storyLines
 ) implements CustomPacketPayload {
 	public static final byte MODE_NORMAL = 0;
 	public static final byte MODE_INTRO = 1;
 	public static final byte MODE_ABANDON = 2;
+	public static final byte MODE_STORY = 3;
 
 	public static final CustomPacketPayload.Type<SpecialSplashPayload> TYPE =
 			new CustomPacketPayload.Type<>(Refugee.id("special_splash"));
@@ -33,11 +36,25 @@ public record SpecialSplashPayload(
 			StreamCodec.ofMember(SpecialSplashPayload::write, SpecialSplashPayload::new);
 
 	public SpecialSplashPayload(int entityId, String roleId, List<String> talkLines) {
-		this(entityId, roleId, talkLines, null, MODE_NORMAL, 0, "", false, false);
+		this(entityId, roleId, talkLines, null, MODE_NORMAL, 0, "", false, false, "", 0);
 	}
 
 	public SpecialSplashPayload(int entityId, String roleId, List<String> talkLines, String initialTalkKey) {
-		this(entityId, roleId, talkLines, initialTalkKey, MODE_NORMAL, 0, "", false, false);
+		this(entityId, roleId, talkLines, initialTalkKey, MODE_NORMAL, 0, "", false, false, "", 0);
+	}
+
+	public SpecialSplashPayload(
+			int entityId,
+			String roleId,
+			List<String> talkLines,
+			String initialTalkKey,
+			byte screenMode,
+			int introIndex,
+			String interruptKey,
+			boolean foodSecret,
+			boolean seek
+	) {
+		this(entityId, roleId, talkLines, initialTalkKey, screenMode, introIndex, interruptKey, foodSecret, seek, "", 0);
 	}
 
 	public SpecialSplashPayload(FriendlyByteBuf buf) {
@@ -50,7 +67,9 @@ public record SpecialSplashPayload(
 				buf.readVarInt(),
 				readOptionalUtf(buf),
 				buf.readBoolean(),
-				buf.readBoolean()
+				buf.readBoolean(),
+				blankToEmpty(buf.readUtf()),
+				buf.readVarInt()
 		);
 	}
 
@@ -68,11 +87,17 @@ public record SpecialSplashPayload(
 		buf.writeUtf(interruptKey == null ? "" : interruptKey);
 		buf.writeBoolean(foodSecret);
 		buf.writeBoolean(seek);
+		buf.writeUtf(storyId == null ? "" : storyId);
+		buf.writeVarInt(storyLines);
 	}
 
 	private static String readOptionalUtf(FriendlyByteBuf buf) {
 		String value = buf.readUtf();
 		return value == null || value.isBlank() ? null : value;
+	}
+
+	private static String blankToEmpty(String value) {
+		return value == null ? "" : value;
 	}
 
 	private static List<String> readLines(FriendlyByteBuf buf) {

@@ -67,6 +67,19 @@ public final class SpecialRefugeeService {
 			return false;
 		}
 		boolean empty = held == null || held.isEmpty();
+		if (SpecialStoryService.isBanished(player.getServer(), PbsAdapter.resolveSubject(player))) {
+			return true;
+		}
+		if (SpecialStoryService.isLocked(player)) {
+			SpecialStoryKind locked = SpecialStoryService.lockedStory(player);
+			if (locked != null) {
+				return true;
+			}
+		}
+		boolean canTalk = empty || (role == RefugeeSpecialRole.NURSE && held != null && held.is(Items.EMERALD));
+		if (canTalk && SpecialStoryService.tryResumeOnInteract(player, villager)) {
+			return true;
+		}
 		return switch (role) {
 			case GUIDE -> {
 				if (!empty) {
@@ -121,7 +134,22 @@ public final class SpecialRefugeeService {
 		}
 		if (action == SpecialSplashAction.INTRO_ADVANCE
 				|| action == SpecialSplashAction.INTRO_FINISH
-				|| action == SpecialSplashAction.INTRO_INTERRUPT) {
+				|| action == SpecialSplashAction.INTRO_INTERRUPT
+				|| action == SpecialSplashAction.CLOSE) {
+			SpecialStoryKind story = SpecialStoryService.lockedStory(player);
+			if (story != null || action == SpecialSplashAction.CLOSE) {
+				switch (action) {
+					case INTRO_ADVANCE -> SpecialStoryService.onStoryAdvance(player, entityId);
+					case INTRO_FINISH -> SpecialStoryService.onStoryFinish(player, entityId);
+					case INTRO_INTERRUPT -> SpecialStoryService.onStoryInterrupt(player, entityId);
+					case CLOSE -> SpecialStoryService.onSplashClose(player, entityId);
+					default -> {
+					}
+				}
+				if (story != null) {
+					return;
+				}
+			}
 			switch (action) {
 				case INTRO_ADVANCE -> GuideTutorialService.onIntroAdvance(player, entityId);
 				case INTRO_FINISH -> GuideTutorialService.onIntroFinish(player, entityId);
@@ -163,6 +191,28 @@ public final class SpecialRefugeeService {
 				if (role == RefugeeSpecialRole.ENCHANTER) {
 					RefugeeBubble.onTalk(villager);
 					EnchanterTrades.open(player, villager);
+				}
+			}
+			case DIVINE -> {
+				if (role == RefugeeSpecialRole.ENCHANTER) {
+					RefugeeBubble.onTalk(villager);
+					if (SpecialStoryService.needsBookTalk(player)) {
+						SpecialStoryService.requestBookTalkThenDivine(player);
+					} else {
+						EnchanterTrades.divine(player, villager);
+					}
+				}
+			}
+			case BOOK_PAPER -> {
+				if (role == RefugeeSpecialRole.ENCHANTER) {
+					RefugeeBubble.onTalk(villager);
+					EnchanterTrades.giveBook(player, Items.PAPER, 6);
+				}
+			}
+			case BOOK_LEATHER -> {
+				if (role == RefugeeSpecialRole.ENCHANTER) {
+					RefugeeBubble.onTalk(villager);
+					EnchanterTrades.giveBook(player, Items.LEATHER, 2);
 				}
 			}
 		}
@@ -217,6 +267,9 @@ public final class SpecialRefugeeService {
 	 */
 	public static String onImmigrationSuccess(ServerLevel level, UUID subjectId, BlockPos around) {
 		if (level == null || subjectId == null) {
+			return "none";
+		}
+		if (SpecialStoryService.isBanished(level.getServer(), subjectId)) {
 			return "none";
 		}
 		MinecraftServer server = level.getServer();
@@ -347,6 +400,9 @@ public final class SpecialRefugeeService {
 		if (player == null || level == null || feet == null || role == null) {
 			return null;
 		}
+		if (SpecialStoryService.isBanished(level.getServer(), PbsAdapter.resolveSubject(player))) {
+			return null;
+		}
 		Villager villager = EntityType.VILLAGER.create(level, EntitySpawnReason.MOB_SUMMONED);
 		if (villager == null) {
 			return null;
@@ -418,9 +474,13 @@ public final class SpecialRefugeeService {
 			List<ServerPlayer> members,
 			RefugeeSpecialRole role
 	) {
+		if (SpecialStoryService.isBanished(level.getServer(), subjectId)) {
+			return false;
+		}
 		return switch (role) {
 			case NURSE -> true;
-			case CARTOGRAPHER -> PbsAdapter.territoryCounts(level, subjectId).owned() > CARTOGRAPHER_OWNED_THRESHOLD;
+			case CARTOGRAPHER -> SpecialStoryService.cartographerAppeared(level.getServer(), subjectId)
+					|| PbsAdapter.territoryCounts(level, subjectId).owned() > CARTOGRAPHER_OWNED_THRESHOLD;
 			case ENCHANTER -> isEnchanterEligible(level, members);
 			case GUIDE -> isGuideEligible(level, members);
 		};
@@ -475,6 +535,9 @@ public final class SpecialRefugeeService {
 		}
 		MinecraftServer server = level.getServer();
 		UUID subjectId = PbsAdapter.resolveSubject(player);
+		if (SpecialStoryService.isBanished(server, subjectId)) {
+			return TrySpawnOutcome.fail(TrySpawnResult.SKIPPED);
+		}
 		pruneSubject(server, subjectId);
 		if (adoptOrgSpecial(server, subjectId, role) || orgRoleTaken(server, subjectId, role)) {
 			return TrySpawnOutcome.fail(TrySpawnResult.SKIPPED);
@@ -493,10 +556,15 @@ public final class SpecialRefugeeService {
 		if (villager == null) {
 			return TrySpawnOutcome.fail(TrySpawnResult.CREATE_FAILED);
 		}
+		if (role == RefugeeSpecialRole.CARTOGRAPHER) {
+			boolean returning = SpecialStoryData.get(server).of(subjectId).cartographerAway;
+			SpecialStoryService.onCartographerSpawned(player, returning);
+		}
 		if (role == RefugeeSpecialRole.ENCHANTER) {
 			RefugeeVillagerData villagerData = RefugeeAttachments.get(villager);
 			villagerData.setGuardCenter(feet);
 			RefugeeAttachments.markDirty(villager, villagerData);
+			SpecialStoryService.onEnchanterSpawned(player);
 		}
 		if (role == RefugeeSpecialRole.GUIDE) {
 			for (ServerPlayer member : playersOfSubject(server, subjectId)) {

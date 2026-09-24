@@ -44,6 +44,7 @@ import luowei.refugee.pbs.PbsAdapter;
 import luowei.refugee.pbs.OrgMergeService;
 import luowei.refugee.special.RefugeeSpecialRole;
 import luowei.refugee.special.SpecialRefugeeService;
+import luowei.refugee.special.SpecialStoryService;
 
 /**
  * 玩家难民名册、按原版难度发放开局难民、死亡扣一人延迟击杀、空名册旁观。
@@ -164,6 +165,7 @@ public final class RosterService {
 		if (data.isDefeated()) {
 			return;
 		}
+		SpecialStoryService.onPlayerDeath(player);
 		if (data.isRosterEmpty()) {
 			applyEmptyRoster(player, data);
 			return;
@@ -182,6 +184,32 @@ public final class RosterService {
 		queuedKills.add(sacrificed.villagerId());
 		player.sendSystemMessage(Component.translatable("message.refugee.death.sacrifice", data.rosterSize()));
 		afterRosterLoss(player, data);
+	}
+
+	/**
+	 * 与玩家死亡相同的献祭：从操作者名册取一人并排队击杀。名册空或已败北时返回 -1。
+	 *
+	 * @return 献祭后剩余名册人数
+	 */
+	public static int sacrificeOne(ServerPlayer player) {
+		if (player == null) {
+			return -1;
+		}
+		PlayerSelectionData data = RefugeeAttachments.get(player);
+		if (data.isDefeated() || data.isRosterEmpty()) {
+			return -1;
+		}
+		RosterEntry sacrificed = data.pollSacrificeRoster();
+		if (sacrificed == null) {
+			return -1;
+		}
+		data.removeSelected(sacrificed.villagerId());
+		data.addPendingKill(sacrificed.villagerId());
+		RefugeeAttachments.markDirty(player, data);
+		SelectionService.collectBannersIfEmpty(player);
+		queuedKills.add(sacrificed.villagerId());
+		afterRosterLoss(player, data);
+		return data.rosterSize();
 	}
 
 	private static void onEntityLoad(Entity entity, ServerLevel level) {
@@ -484,6 +512,21 @@ public final class RosterService {
 		} else {
 			player.sendSystemMessage(Component.translatable("message.refugee.defeated"));
 		}
+	}
+
+	/**
+	 * 名册还在时死亡不掉落。名册已空且配置为关闭死亡不掉落时，按原版掉落。
+	 */
+	public static boolean keepsInventoryOnDeath(ServerPlayer player) {
+		if (player == null) {
+			return false;
+		}
+		PlayerSelectionData data = RefugeeAttachments.get(player);
+		if (data.isDefeated()) {
+			return true;
+		}
+		return !(data.isStarterGranted() && data.isRosterEmpty()
+				&& RefugeeConfig.emptyRosterMode == EmptyRosterMode.DISABLE_KEEP_INVENTORY);
 	}
 
 	private static void applySpectator(ServerPlayer player, boolean announce) {

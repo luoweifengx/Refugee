@@ -20,6 +20,7 @@ import luowei.refugee.network.SpecialSplashPayload;
 import luowei.refugee.special.GuideTutorialService;
 import luowei.refugee.special.NurseService;
 import luowei.refugee.special.RefugeeSpecialRole;
+import luowei.refugee.special.SpecialStoryKind;
 
 /**
  * 特殊居民开屏：对齐旅商 SPLASH——无全屏遮罩、底部对话框、超过两项分两列、对准 NPC。
@@ -63,11 +64,17 @@ public class SpecialSplashScreen extends Screen {
 	private long farewellCloseAtMs = -1L;
 	private boolean suppressInterrupt;
 	private int introIndex;
+	private final String storyId;
+	private final int storyLines;
+	private final boolean storyLoop;
 	private boolean seekPending;
 	private boolean interruptPending;
 	private String interruptTalkKey = "";
+	private final String storyLineKey;
 	private AskLevel askLevel = AskLevel.NONE;
 	private String askTopic = "";
+	/** 当前条目是从指挥杖的子类进来的，返回时回到那些子类。 */
+	private boolean askFromStaff;
 
 	private float[] markerProgress;
 	private long lastAnimMs = -1L;
@@ -94,11 +101,11 @@ public class SpecialSplashScreen extends Screen {
 	private boolean lookActive;
 
 	public SpecialSplashScreen(int villagerEntityId, RefugeeSpecialRole role, List<String> talkLines) {
-		this(villagerEntityId, role, talkLines, null, SpecialSplashPayload.MODE_NORMAL, 0, "", false, false);
+		this(villagerEntityId, role, talkLines, null, SpecialSplashPayload.MODE_NORMAL, 0, "", false, false, "", 0);
 	}
 
 	public SpecialSplashScreen(int villagerEntityId, RefugeeSpecialRole role, List<String> talkLines, String initialTalkKey) {
-		this(villagerEntityId, role, talkLines, initialTalkKey, SpecialSplashPayload.MODE_NORMAL, 0, "", false, false);
+		this(villagerEntityId, role, talkLines, initialTalkKey, SpecialSplashPayload.MODE_NORMAL, 0, "", false, false, "", 0);
 	}
 
 	public SpecialSplashScreen(
@@ -111,7 +118,7 @@ public class SpecialSplashScreen extends Screen {
 			String interruptKey,
 			boolean foodSecret
 	) {
-		this(villagerEntityId, role, talkLines, initialTalkKey, screenMode, introIndex, interruptKey, foodSecret, false);
+		this(villagerEntityId, role, talkLines, initialTalkKey, screenMode, introIndex, interruptKey, foodSecret, false, "", 0);
 	}
 
 	public SpecialSplashScreen(
@@ -125,6 +132,22 @@ public class SpecialSplashScreen extends Screen {
 			boolean foodSecret,
 			boolean seek
 	) {
+		this(villagerEntityId, role, talkLines, initialTalkKey, screenMode, introIndex, interruptKey, foodSecret, seek, "", 0);
+	}
+
+	public SpecialSplashScreen(
+			int villagerEntityId,
+			RefugeeSpecialRole role,
+			List<String> talkLines,
+			String initialTalkKey,
+			byte screenMode,
+			int introIndex,
+			String interruptKey,
+			boolean foodSecret,
+			boolean seek,
+			String storyId,
+			int storyLines
+	) {
 		super(Component.translatable("role.refugee." + role.id()));
 		this.villagerEntityId = villagerEntityId;
 		this.role = role;
@@ -132,7 +155,17 @@ public class SpecialSplashScreen extends Screen {
 		this.talkPool = buildTalkPool(role, this.rawTalkLines);
 		this.screenMode = screenMode;
 		this.foodSecret = foodSecret;
-		this.introIndex = Mth.clamp(introIndex, 0, GuideTutorialService.INTRO_LINES - 1);
+		this.storyId = storyId == null ? "" : storyId;
+		this.storyLines = Math.max(1, storyLines);
+		this.storyLineKey = screenMode == SpecialSplashPayload.MODE_STORY && initialTalkKey != null
+				? initialTalkKey
+				: "";
+		SpecialStoryKind kind = SpecialStoryKind.byId(this.storyId);
+		this.storyLoop = kind != null && kind.loop();
+		int maxIndex = screenMode == SpecialSplashPayload.MODE_STORY
+				? Math.max(0, this.storyLines - 1)
+				: GuideTutorialService.INTRO_LINES - 1;
+		this.introIndex = Mth.clamp(introIndex, 0, maxIndex);
 		this.options = new ArrayList<>(optionsFor(role, screenMode));
 		this.markerProgress = newMarkers(this.options.size());
 		if (screenMode == SpecialSplashPayload.MODE_ABANDON) {
@@ -153,6 +186,18 @@ public class SpecialSplashScreen extends Screen {
 			} else {
 				this.talkText = Component.translatable(GuideTutorialService.INTRO_KEY_PREFIX + this.introIndex);
 			}
+		} else if (screenMode == SpecialSplashPayload.MODE_STORY) {
+			if (interruptKey != null && !interruptKey.isBlank()) {
+				this.interruptPending = true;
+				this.interruptTalkKey = interruptKey;
+				this.talkText = Component.translatable(interruptKey);
+			} else if (!this.storyLineKey.isBlank()) {
+				this.talkText = Component.translatable(this.storyLineKey);
+			} else if (kind != null) {
+				this.talkText = Component.translatable(kind.lineKey(this.introIndex));
+			} else {
+				this.talkText = Component.empty();
+			}
 		} else if (initialTalkKey != null && !initialTalkKey.isBlank()) {
 			this.talkText = Component.translatable(initialTalkKey);
 		} else {
@@ -171,7 +216,7 @@ public class SpecialSplashScreen extends Screen {
 				"",
 				foodSecret
 		);
-		screen.enterAskCategories();
+		screen.enterAskGroups();
 		return screen;
 	}
 
@@ -221,8 +266,14 @@ public class SpecialSplashScreen extends Screen {
 	@Override
 	public void removed() {
 		this.lookActive = false;
-		if (this.screenMode == SpecialSplashPayload.MODE_INTRO && !this.suppressInterrupt && !this.farewellPending) {
+		if ((this.screenMode == SpecialSplashPayload.MODE_INTRO
+				|| (this.screenMode == SpecialSplashPayload.MODE_STORY && !this.storyLoop))
+				&& !this.suppressInterrupt
+				&& !this.farewellPending) {
 			RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.INTRO_INTERRUPT);
+		}
+		if (!this.suppressInterrupt) {
+			RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.CLOSE);
 		}
 		super.removed();
 	}
@@ -234,7 +285,7 @@ public class SpecialSplashScreen extends Screen {
 
 	@Override
 	public boolean shouldCloseOnEsc() {
-		return this.askLevel != AskLevel.ITEMS;
+		return this.askLevel != AskLevel.ITEMS && this.askLevel != AskLevel.CATEGORIES;
 	}
 
 	@Override
@@ -255,7 +306,7 @@ public class SpecialSplashScreen extends Screen {
 		if (button != 0) {
 			return true;
 		}
-		if (this.screenMode == SpecialSplashPayload.MODE_INTRO) {
+		if (this.screenMode == SpecialSplashPayload.MODE_INTRO || this.screenMode == SpecialSplashPayload.MODE_STORY) {
 			advanceIntro();
 			return true;
 		}
@@ -274,10 +325,18 @@ public class SpecialSplashScreen extends Screen {
 	@Override
 	public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
 		if (keyCode == GLFW.GLFW_KEY_ESCAPE && this.askLevel == AskLevel.ITEMS) {
-			enterAskCategories();
+			if (this.askFromStaff) {
+				enterAskCategories();
+			} else {
+				enterAskGroups();
+			}
 			return true;
 		}
-		if (this.screenMode == SpecialSplashPayload.MODE_INTRO
+		if (keyCode == GLFW.GLFW_KEY_ESCAPE && this.askLevel == AskLevel.CATEGORIES) {
+			enterAskGroups();
+			return true;
+		}
+		if ((this.screenMode == SpecialSplashPayload.MODE_INTRO || this.screenMode == SpecialSplashPayload.MODE_STORY)
 				&& (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_SPACE || keyCode == GLFW.GLFW_KEY_KP_ENTER)) {
 			advanceIntro();
 			return true;
@@ -286,7 +345,9 @@ public class SpecialSplashScreen extends Screen {
 			this.onClose();
 			return true;
 		}
-		if (this.screenMode == SpecialSplashPayload.MODE_INTRO || this.screenMode == SpecialSplashPayload.MODE_ABANDON) {
+		if (this.screenMode == SpecialSplashPayload.MODE_INTRO
+				|| this.screenMode == SpecialSplashPayload.MODE_STORY
+				|| this.screenMode == SpecialSplashPayload.MODE_ABANDON) {
 			return super.keyPressed(keyCode, scanCode, modifiers);
 		}
 		if (keyCode == GLFW.GLFW_KEY_DOWN) {
@@ -455,7 +516,9 @@ public class SpecialSplashScreen extends Screen {
 	}
 
 	private boolean hideMenu() {
-		return this.screenMode == SpecialSplashPayload.MODE_INTRO || this.screenMode == SpecialSplashPayload.MODE_ABANDON;
+		return this.screenMode == SpecialSplashPayload.MODE_INTRO
+				|| this.screenMode == SpecialSplashPayload.MODE_ABANDON
+				|| this.screenMode == SpecialSplashPayload.MODE_STORY;
 	}
 
 	/** 超过 2 项时右侧再开一列，与旅商开屏一致。 */
@@ -490,17 +553,25 @@ public class SpecialSplashScreen extends Screen {
 		switch (option.kind()) {
 			case TALK -> cycleTalk();
 			case ASK -> openAskWindow();
-			case ASK_CATEGORY -> enterAskItems(option.id());
+			case ASK_GROUP -> enterAskGroup(option.id());
+			case ASK_CATEGORY -> enterAskItems(option.id(), true);
 			case ASK_ITEM -> showAskBody(option);
 			case HEAL -> RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.HEAL);
 			case MAP -> RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.MAP);
 			case TRADE -> RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.TRADE);
+			case DIVINE -> RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.DIVINE);
+			case BOOK_PAPER -> RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.BOOK_PAPER);
+			case BOOK_LEATHER -> RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.BOOK_LEATHER);
 			case FAREWELL -> beginFarewell();
 		}
 	}
 
 	private void advanceIntro() {
 		if (this.farewellPending) {
+			return;
+		}
+		if (this.screenMode == SpecialSplashPayload.MODE_STORY) {
+			advanceStory();
 			return;
 		}
 		if (this.seekPending) {
@@ -527,6 +598,43 @@ public class SpecialSplashScreen extends Screen {
 		startTalkSwap(Component.translatable(GuideTutorialService.INTRO_KEY_PREFIX + this.introIndex));
 	}
 
+	private void advanceStory() {
+		if (this.interruptPending) {
+			this.interruptPending = false;
+			SpecialStoryKind resumeKind = SpecialStoryKind.byId(this.storyId);
+			String key = !this.storyLineKey.isBlank()
+					? this.storyLineKey
+					: resumeKind == null ? "" : resumeKind.lineKey(this.introIndex);
+			if (!key.isBlank()) {
+				startTalkSwap(Component.translatable(key));
+			}
+			return;
+		}
+		SpecialStoryKind kind = SpecialStoryKind.byId(this.storyId);
+		if (kind == null) {
+			this.suppressInterrupt = true;
+			RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.INTRO_FINISH);
+			return;
+		}
+		if (this.storyLoop) {
+			this.introIndex = (this.introIndex + 1) % Math.max(1, this.storyLines);
+			RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.INTRO_ADVANCE);
+			startTalkSwap(Component.translatable(kind.lineKey(this.introIndex)));
+			return;
+		}
+		if (this.introIndex >= this.storyLines - 1) {
+			this.suppressInterrupt = true;
+			RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.INTRO_FINISH);
+			if (this.minecraft != null) {
+				this.minecraft.setScreen(null);
+			}
+			return;
+		}
+		this.introIndex++;
+		RefugeeClient.sendSplashAction(this.villagerEntityId, SpecialSplashAction.INTRO_ADVANCE);
+		startTalkSwap(Component.translatable(kind.lineKey(this.introIndex)));
+	}
+
 	private void openAskWindow() {
 		if (this.minecraft == null) {
 			return;
@@ -534,16 +642,34 @@ public class SpecialSplashScreen extends Screen {
 		this.minecraft.setScreen(ask(this.villagerEntityId, this.role, this.rawTalkLines, this.foodSecret));
 	}
 
+	private void enterAskGroups() {
+		this.askLevel = AskLevel.GROUPS;
+		this.askTopic = "";
+		this.askFromStaff = false;
+		replaceOptions(askGroupOptions());
+		startTalkSwap(Component.translatable("screen.refugee.splash.guide.what"));
+	}
+
+	private void enterAskGroup(String id) {
+		if ("staff".equals(id)) {
+			enterAskCategories();
+			return;
+		}
+		enterAskItems(id, false);
+	}
+
 	private void enterAskCategories() {
 		this.askLevel = AskLevel.CATEGORIES;
 		this.askTopic = "";
+		this.askFromStaff = false;
 		replaceOptions(askCategoryOptions(this.foodSecret));
 		startTalkSwap(Component.translatable("screen.refugee.splash.guide.what"));
 	}
 
-	private void enterAskItems(String topic) {
+	private void enterAskItems(String topic, boolean fromStaff) {
 		this.askLevel = AskLevel.ITEMS;
 		this.askTopic = topic == null ? "" : topic;
+		this.askFromStaff = fromStaff;
 		replaceOptions(askItemOptions(this.askTopic, this.foodSecret));
 		startTalkSwap(Component.translatable("screen.refugee.splash.guide.what"));
 	}
@@ -780,7 +906,9 @@ public class SpecialSplashScreen extends Screen {
 	}
 
 	private static List<MenuOption> optionsFor(RefugeeSpecialRole role, byte screenMode) {
-		if (screenMode == SpecialSplashPayload.MODE_INTRO || screenMode == SpecialSplashPayload.MODE_ABANDON) {
+		if (screenMode == SpecialSplashPayload.MODE_INTRO
+				|| screenMode == SpecialSplashPayload.MODE_ABANDON
+				|| screenMode == SpecialSplashPayload.MODE_STORY) {
 			return List.of();
 		}
 		List<MenuOption> list = new ArrayList<>();
@@ -794,7 +922,11 @@ public class SpecialSplashScreen extends Screen {
 		switch (role) {
 			case NURSE -> list.add(new MenuOption(Kind.HEAL, "screen.refugee.splash.heal", "", "", false));
 			case CARTOGRAPHER -> list.add(new MenuOption(Kind.MAP, "screen.refugee.splash.map", "", "", false));
-			case ENCHANTER -> list.add(new MenuOption(Kind.TRADE, "screen.refugee.splash.trade", "", "", false));
+			case ENCHANTER -> {
+				list.add(new MenuOption(Kind.DIVINE, "screen.refugee.splash.divine", "", "", false));
+				list.add(new MenuOption(Kind.BOOK_PAPER, "screen.refugee.splash.book_paper", "", "", false));
+				list.add(new MenuOption(Kind.BOOK_LEATHER, "screen.refugee.splash.book_leather", "", "", false));
+			}
 			default -> {
 			}
 		}
@@ -802,16 +934,27 @@ public class SpecialSplashScreen extends Screen {
 		return List.copyOf(list);
 	}
 
+	private static List<MenuOption> askGroupOptions() {
+		return List.of(
+				group("mechanic"),
+				group("staff"),
+				group("blocks")
+		);
+	}
+
+	private static MenuOption group(String id) {
+		return new MenuOption(Kind.ASK_GROUP, "screen.refugee.splash.guide.ask." + id, id, "", false);
+	}
+
 	private static List<MenuOption> askCategoryOptions(boolean foodSecret) {
 		List<MenuOption> list = new ArrayList<>();
 		list.add(category("warehouse"));
-		list.add(category("special"));
 		list.add(category("structure"));
 		list.add(category("guard"));
 		list.add(category("work"));
 		list.add(category("combat"));
 		list.add(category("rally"));
-		list.add(category("secret"));
+		// list.add(category("secret")); // 神秘暂时不用
 		return List.copyOf(list);
 	}
 
@@ -822,6 +965,20 @@ public class SpecialSplashScreen extends Screen {
 	private static List<MenuOption> askItemOptions(String topic, boolean foodSecret) {
 		List<MenuOption> list = new ArrayList<>();
 		switch (topic == null ? "" : topic) {
+			case "mechanic" -> {
+				list.add(item("mechanic", "villager"));
+				list.add(item("mechanic", "npc"));
+				list.add(item("mechanic", "farmer"));
+				list.add(item("mechanic", "worker"));
+				list.add(item("mechanic", "soldier"));
+			}
+			case "blocks" -> {
+				list.add(item("special", "banner"));
+				list.add(item("special", "altar"));
+				list.add(item("blocks", "bed"));
+				list.add(item("blocks", "bell"));
+				list.add(item("blocks", "kit"));
+			}
 			case "warehouse" -> {
 				list.add(item("warehouse", "blocks"));
 				list.add(item("warehouse", "smelt"));
@@ -829,10 +986,6 @@ public class SpecialSplashScreen extends Screen {
 				list.add(item("warehouse", "gear"));
 				list.add(item("warehouse", "food"));
 				list.add(item("warehouse", "farm"));
-			}
-			case "special" -> {
-				list.add(item("special", "banner"));
-				list.add(item("special", "altar"));
 			}
 			case "work" -> {
 				list.add(item("work", "box"));
@@ -868,18 +1021,18 @@ public class SpecialSplashScreen extends Screen {
 				list.add(item("guard", "rally_all"));
 				list.add(item("guard", "remove"));
 			}
-			case "secret" -> {
-				if (foodSecret) {
-					list.add(item("secret", "ritual"));
-				}
-				list.add(new MenuOption(
-						Kind.ASK_ITEM,
-						"screen.refugee.splash.guide.ask.secret.portal",
-						"portal",
-						"screen.refugee.splash.guide.ask.secret.portal.body",
-						true
-				));
-			}
+			// case "secret" -> { // 神秘暂时不用
+			// 	if (foodSecret) {
+			// 		list.add(item("secret", "ritual"));
+			// 	}
+			// 	list.add(new MenuOption(
+			// 			Kind.ASK_ITEM,
+			// 			"screen.refugee.splash.guide.ask.secret.portal",
+			// 			"portal",
+			// 			"screen.refugee.splash.guide.ask.secret.portal.body",
+			// 			true
+			// 	));
+			// }
 			default -> {
 			}
 		}
@@ -921,16 +1074,21 @@ public class SpecialSplashScreen extends Screen {
 	private enum Kind {
 		TALK,
 		ASK,
+		ASK_GROUP,
 		ASK_CATEGORY,
 		ASK_ITEM,
 		HEAL,
 		MAP,
 		TRADE,
+		DIVINE,
+		BOOK_PAPER,
+		BOOK_LEATHER,
 		FAREWELL
 	}
 
 	private enum AskLevel {
 		NONE,
+		GROUPS,
 		CATEGORIES,
 		ITEMS
 	}

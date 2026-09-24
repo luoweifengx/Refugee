@@ -103,6 +103,11 @@ public final class StaffService {
 		}
 	}
 
+	public static void showRelations(ServerPlayer player, StaffPage... pages) {
+		session(player).setPages(pages);
+		sync(player);
+	}
+
 	public static void resetToRoot(ServerPlayer player) {
 		StaffSession session = session(player);
 		PlayerSelectionData selection = RefugeeAttachments.get(player);
@@ -116,6 +121,10 @@ public final class StaffService {
 	public static void handleNav(ServerPlayer player, StaffNavAction action) {
 		if (action == StaffNavAction.RESET || action == StaffNavAction.POP) {
 			resetToRoot(player);
+			return;
+		}
+		if (action == StaffNavAction.IMPORT_VERTEX_NEXT || action == StaffNavAction.IMPORT_VERTEX_PREV) {
+			cycleImportVertex(player, action == StaffNavAction.IMPORT_VERTEX_NEXT);
 			return;
 		}
 		if (page(player) != StaffPage.ZONE_ADVANCE) {
@@ -245,6 +254,26 @@ public final class StaffService {
 			case GUARD_RALLY_NEAR -> applyGuardRallyNear(player);
 			case GUARD_RALLY_ALL -> applyGuardRallyAll(player);
 			case GUARD_REMOVE -> applyGuardRemove(player);
+			case RELATIONS -> {
+				session(player).setPages(StaffPage.RELATIONS_PIE);
+				sync(player);
+				RefugeeNetworking.openStaffPie(player, StaffPage.RELATIONS_PIE);
+			}
+			case ORG_CREATE -> RelationsService.openCreate(player);
+			case ORG_INVITE -> RelationsService.openInvite(player);
+			case ORG_INVITE_MANAGE -> RelationsService.openInviteManage(player);
+			case ORG_MANAGE -> RelationsService.openManage(player);
+			case RESCUE -> RelationsService.openRescue(player);
+			case ORG_INFO -> RelationsService.showInfo(player);
+			case ORG_LEAVE -> RelationsService.leave(player);
+			case ORG_KICK -> RelationsService.openKick(player);
+			case ORG_TRANSFER -> RelationsService.openTransfer(player);
+			case ORG_RENAME, TERRITORY_MINE -> RelationsService.openTerritoryTexts(player);
+			case RELATIONS_LIST -> DiplomacyService.openList(player);
+			case DECLARE_WAR -> DiplomacyService.openWar(player);
+			case RECONCILE -> DiplomacyService.openPeace(player);
+			case ALLY -> DiplomacyService.openAlly(player);
+			case RECONCILE_INBOX -> DiplomacyService.openInbox(player);
 		}
 	}
 
@@ -277,7 +306,12 @@ public final class StaffService {
 			player.displayClientMessage(Component.translatable("message.refugee.staff.import.no_box"), true);
 			return;
 		}
-		PlayerBlueprints.ImportResult result = PlayerBlueprints.capture(player, box, name);
+		PlayerBlueprints.ImportResult result = PlayerBlueprints.capture(
+				player,
+				box,
+				name,
+				session.omittedImportBlocks()
+		);
 		switch (result.status()) {
 			case OK -> {
 				session.clearImportBox();
@@ -681,6 +715,15 @@ public final class StaffService {
 		}
 	}
 
+	private static void cycleImportVertex(ServerPlayer player, boolean forward) {
+		StaffPage page = page(player);
+		if (page != StaffPage.IMPORT && page != StaffPage.IMPORT_NAME) {
+			return;
+		}
+		int mode = session(player).cycleImportVertexMode(forward);
+		player.displayClientMessage(Component.translatable(StaffSession.importVertexMessage(mode)), true);
+	}
+
 	private static boolean pickImportCorner(ServerPlayer player, BlockPos pos) {
 		if (!(player.level() instanceof ServerLevel level)) {
 			return false;
@@ -691,6 +734,7 @@ public final class StaffService {
 		}
 		ResourceLocation dimension = level.dimension().location();
 		if (session.zoneCorner() == null || !dimension.equals(session.zoneDimension())) {
+			session.beginImportCorner(pos);
 			session.setZoneCorner(dimension, pos);
 			sync(player);
 			player.displayClientMessage(Component.translatable("message.refugee.staff.import.corner1"), true);
@@ -716,6 +760,7 @@ public final class StaffService {
 			player.displayClientMessage(Component.translatable("message.refugee.staff.import.unloaded"), true);
 			return true;
 		}
+		session.completeImportCorners(session.zoneCorner(), pos);
 		session.clearZoneCorner();
 		session.setPendingImport(box);
 		session.setPages(StaffPage.BUILD_PIE, StaffPage.IMPORT, StaffPage.IMPORT_NAME);

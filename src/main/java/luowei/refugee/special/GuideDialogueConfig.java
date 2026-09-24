@@ -35,7 +35,7 @@ import luowei.refugee.compat.FoodCompat;
 public final class GuideDialogueConfig {
 	public static final String DIRECTORY_NAME = "refugee";
 	public static final String FILE_NAME = "guide.json";
-	public static final int SCHEMA_VERSION = 6;
+	public static final int SCHEMA_VERSION = 8;
 
 	public static final String MOD_PBS = "player-block-status";
 	public static final String MOD_TRAVEL = "travel-business-team";
@@ -282,13 +282,13 @@ public final class GuideDialogueConfig {
 				"指挥杖",
 				"Command staff",
 				List.of(
-						"一根木棍即可合成指挥杖。对空气右键打开扇形菜单：右上=仓库，右下=工作区，左下=选择建筑，左上=划为蓝图。",
-						"仓库模式右键箱子加入或踢出，加入后按木头/木板/石头/泥沙/种子/杂项整理。E 或 Esc 退出。建筑从仓库远程取料，不靠近箱子。",
+						"一根木棍即可合成指挥杖。对空气右键打开扇形菜单：右上=仓库，右下=工作区，左下=选择建筑，左上=划为蓝图。人员关系里可以建组织、邀请、处理邀请、管理组织，也能献祭一名居民把亡魂送回祭坛。",
+						"仓库模式右键箱子加入或踢出，加入后按木头/木板/石头/泥沙/玻璃/石英/发光方块/种子/杂项整理。E 或 Esc 退出。建筑从仓库远程取料，不靠近箱子。",
 						"工作区用两点划出范围。当前跟随的镐工人采石，斧只砍原木，锄会犁地、收熟作物并补种，铲只挖泥沙。潜行右键工作区绿框可取消；潜行右键正在建造的村民可停止建造。"
 				),
 				List.of(
-						"Craft a command staff with one stick. Right-click air for a pie menu: top-right=warehouse, bottom-right=work zone, bottom-left=select build, top-left=mark blueprint.",
-						"In warehouse mode, right-click a chest to add or remove it; adding sorts logs/planks/stone/soil/seeds/misc. E or Esc exits. Builders pull from the warehouse remotely.",
+						"Craft a command staff with one stick. Right-click air for a pie menu: top-right=warehouse, bottom-right=work zone, bottom-left=select build, top-left=mark blueprint. People covers organizations, invites, and rescuing a ghost at your altar by sacrificing one resident.",
+						"In warehouse mode, right-click a chest to add or remove it; adding sorts logs/planks/stone/soil/glass/quartz/lights/seeds/misc. E or Esc exits. Builders pull from the warehouse remotely.",
 						"A work zone is two corners. Following pickaxe workers mine stone, axes chop logs only, hoes till/harvest/replant, and shovels dig soil and sand. Sneak-right-click a zone's green box to cancel it. Sneak-right-click a building villager to stop the job."
 				)
 		));

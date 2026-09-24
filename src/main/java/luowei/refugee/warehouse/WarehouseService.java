@@ -565,7 +565,7 @@ public final class WarehouseService {
 	}
 
 	/**
-	 * 建筑取料：木头/木板/石头/泥沙按各自开关宽松；种子、杂项与珍贵物精确。
+	 * 建筑取料：木头/木板/石头/泥沙/玻璃/石英/发光方块按各自开关宽松；种子、杂项与珍贵物精确。
 	 */
 	public static boolean tryConsumeForBuild(ServerLevel level, UUID subjectId, Item material) {
 		if (level == null || subjectId == null || material == null) {
@@ -763,7 +763,10 @@ public final class WarehouseService {
 				MaterialCategory.LOG,
 				MaterialCategory.PLANKS,
 				MaterialCategory.STONE,
-				MaterialCategory.SOIL
+				MaterialCategory.SOIL,
+				MaterialCategory.GLASS,
+				MaterialCategory.QUARTZ,
+				MaterialCategory.LIGHT
 		)) {
 			ordered.addAll(compact(buckets.getOrDefault(category, List.of())));
 		}

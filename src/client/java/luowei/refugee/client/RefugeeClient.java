@@ -4,14 +4,12 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityModelLayerRegistry;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-// import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
 
 import net.minecraft.client.gui.screens.MenuScreens;
-// import net.minecraft.client.renderer.entity.ThrownItemRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -26,7 +24,6 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.level.block.Blocks;
 
 import luowei.refugee.client.model.RefugeeVillagerModel;
-// import luowei.refugee.entity.ModEntities;
 import luowei.refugee.interact.VillagerKitMenus;
 import luowei.refugee.blueprint.BlueprintUpload;
 import luowei.refugee.network.BlueprintCatalogPayload;
@@ -38,7 +35,6 @@ import luowei.refugee.network.BlueprintUploadChunkPayload;
 import luowei.refugee.network.BlueprintUploadStartPayload;
 import luowei.refugee.network.GuideDialoguePayload;
 import luowei.refugee.network.OpenImportNamePayload;
-// import luowei.refugee.network.OpenBannerStylePayload;
 import luowei.refugee.network.SpecialSplashAction;
 import luowei.refugee.network.SpecialSplashActionPayload;
 import luowei.refugee.network.SpecialSplashPayload;
@@ -55,8 +51,15 @@ public class RefugeeClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		EntityModelLayerRegistry.registerModelLayer(RefugeeVillagerModel.LAYER, RefugeeVillagerModel::createBodyLayer);
-		// EntityRendererRegistry.register(ModEntities.THROWN_SETTLEMENT_BANNER, ThrownItemRenderer::new);
+		net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry.register(
+				luowei.refugee.entity.ModEntities.COPPER_GOLEM,
+				CopperGolemRenderer::new
+		);
 		MenuScreens.register(VillagerKitMenus.KIT, VillagerKitScreen::new);
+		net.minecraft.client.renderer.blockentity.BlockEntityRenderers.register(
+				luowei.refugee.block.ModBlocks.ALTAR_ENTITY,
+				AltarBeamRenderer::new
+		);
 		BlueprintPreviewRenderer.register();
 		StaffOverlayRenderer.register();
 		HudRenderCallback.EVENT.register(RefugeeClient::renderPreviewHud);
@@ -159,10 +162,30 @@ public class RefugeeClient implements ClientModInitializer {
 					payload.maxVolume()
 			)));
 		});
-		// ClientPlayNetworking.registerGlobalReceiver(OpenBannerStylePayload.TYPE, (payload, context) -> {
-		// 	Minecraft client = context.client();
-		// 	client.execute(() -> client.setScreen(new BannerStyleScreen(payload.hand(), payload.text())));
-		// });
+		ClientPlayNetworking.registerGlobalReceiver(luowei.refugee.network.RelationsOpenListPayload.TYPE, (payload, context) -> {
+			Minecraft client = context.client();
+			client.execute(() -> client.setScreen(new RelationsListScreen(payload.kind(), payload.rows())));
+		});
+		ClientPlayNetworking.registerGlobalReceiver(luowei.refugee.network.RelationsOpenNamePayload.TYPE, (payload, context) -> {
+			Minecraft client = context.client();
+			client.execute(() -> client.setScreen(new RelationsNameScreen(payload.kind(), payload.suggested())));
+		});
+		ClientPlayNetworking.registerGlobalReceiver(luowei.refugee.network.RelationsOpenTextsPayload.TYPE, (payload, context) -> {
+			Minecraft client = context.client();
+			client.execute(() -> client.setScreen(new RelationsTextsScreen(
+					payload.selfText(),
+					payload.othersText(),
+					payload.othersEditable()
+			)));
+		});
+		ClientPlayNetworking.registerGlobalReceiver(luowei.refugee.network.RelationsOpenInvitesPayload.TYPE, (payload, context) -> {
+			Minecraft client = context.client();
+			client.execute(() -> client.setScreen(new RelationsInviteScreen(
+					payload.pending(),
+					payload.orgName(),
+					payload.territoryName()
+			)));
+		});
 		ClientPlayNetworking.registerGlobalReceiver(BlueprintShareTargetsPayload.TYPE, (payload, context) -> {
 			Minecraft client = context.client();
 			client.execute(() -> client.setScreen(new BlueprintSelectScreen(payload.ids(), payload.targets())));
@@ -187,7 +210,9 @@ public class RefugeeClient implements ClientModInitializer {
 						payload.introIndex(),
 						payload.interruptKey() == null ? "" : payload.interruptKey(),
 						payload.foodSecret(),
-						payload.seek()
+						payload.seek(),
+						payload.storyId() == null ? "" : payload.storyId(),
+						payload.storyLines()
 				));
 			});
 		});

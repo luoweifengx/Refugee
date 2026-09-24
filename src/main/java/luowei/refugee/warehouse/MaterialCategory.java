@@ -13,20 +13,25 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
- * 全局物品分类器。仓库内存维护木头/木板/石头/泥沙/种子/杂项；PRECIOUS 仅用于从杂项里剥离，建筑时必须精确扣除。
+ * 全局物品分类器。仓库内存维护木头/木板/石头/泥沙/玻璃/石英/发光方块/种子/杂项；PRECIOUS 仅用于从杂项里剥离，建筑时必须精确扣除。
  */
 public enum MaterialCategory {
 	LOG,
 	PLANKS,
 	STONE,
 	SOIL,
+	GLASS,
+	QUARTZ,
+	LIGHT,
 	SEED,
 	MISC,
 	PRECIOUS,
 	NONE;
 
 	public boolean isWarehouseCategory() {
-		return this == LOG || this == PLANKS || this == STONE || this == SOIL || this == SEED || this == MISC;
+		return this == LOG || this == PLANKS || this == STONE || this == SOIL
+				|| this == GLASS || this == QUARTZ || this == LIGHT
+				|| this == SEED || this == MISC;
 	}
 
 	/**
@@ -46,6 +51,15 @@ public enum MaterialCategory {
 	public static MaterialCategory of(Item item) {
 		if (item == null || item == Items.AIR) {
 			return NONE;
+		}
+		if (isGlassFamily(item)) {
+			return GLASS;
+		}
+		if (isQuartzFamily(item)) {
+			return QUARTZ;
+		}
+		if (isLightFamily(item)) {
+			return LIGHT;
 		}
 		if (isPrecious(item)) {
 			return PRECIOUS;
@@ -198,7 +212,51 @@ public enum MaterialCategory {
 	}
 
 	/**
-	 * 各种砖都是石头。石英砖走 PRECIOUS 优先，不会落到这里。
+	 * 玻璃、染色玻璃、遮光玻璃及对应玻璃板。玻璃瓶和望远镜不是方块，不会落到这里。
+	 */
+	private static boolean isGlassFamily(Item item) {
+		if (blockState(item) == null) {
+			return false;
+		}
+		return idPath(item).contains("glass");
+	}
+
+	/**
+	 * 下界石英与石英块、柱、楼梯、台阶、錾制、平滑、石英砖。下界石英矿石留给 PRECIOUS。
+	 */
+	private static boolean isQuartzFamily(Item item) {
+		String path = idPath(item);
+		if (path.isEmpty() || path.contains("_ore")) {
+			return false;
+		}
+		return path.contains("quartz");
+	}
+
+	/**
+	 * 灯笼、南瓜灯、荧石、海晶灯、菌光体、末地烛、蛙明灯、营火、蜡烛、红石灯、铜灯。火把仍走杂项。
+	 */
+	private static boolean isLightFamily(Item item) {
+		if (blockState(item) == null) {
+			return false;
+		}
+		String path = idPath(item);
+		if (path.isEmpty() || path.contains("torch")) {
+			return false;
+		}
+		return path.contains("lantern")
+				|| path.equals("glowstone")
+				|| path.equals("shroomlight")
+				|| path.equals("end_rod")
+				|| path.contains("froglight")
+				|| path.contains("campfire")
+				|| path.equals("candle")
+				|| path.endsWith("_candle")
+				|| path.equals("redstone_lamp")
+				|| path.contains("copper_bulb");
+	}
+
+	/**
+	 * 各种砖都是石头。石英砖走 QUARTZ 优先，不会落到这里。
 	 */
 	private static boolean isBrickFamily(Item item) {
 		if (item == Items.BRICK
@@ -252,15 +310,6 @@ public enum MaterialCategory {
 		}
 		if (item == Items.ANCIENT_DEBRIS
 				|| item == Items.NETHER_QUARTZ_ORE
-				|| item == Items.QUARTZ
-				|| item == Items.QUARTZ_BLOCK
-				|| item == Items.QUARTZ_PILLAR
-				|| item == Items.QUARTZ_STAIRS
-				|| item == Items.QUARTZ_SLAB
-				|| item == Items.CHISELED_QUARTZ_BLOCK
-				|| item == Items.SMOOTH_QUARTZ
-				|| item == Items.SMOOTH_QUARTZ_STAIRS
-				|| item == Items.SMOOTH_QUARTZ_SLAB
 				|| item == Items.COAL
 				|| item == Items.COAL_BLOCK
 				|| item == Items.CHARCOAL
@@ -313,7 +362,6 @@ public enum MaterialCategory {
 				|| path.startsWith("raw_")
 				|| path.endsWith("_ingot")
 				|| path.equals("netherite_scrap")
-				|| path.contains("quartz")
 				|| path.contains("amethyst")
 				|| path.endsWith("_block") && isMineralBlockPath(path);
 	}
@@ -328,7 +376,6 @@ public enum MaterialCategory {
 				|| path.contains("lapis")
 				|| path.contains("redstone")
 				|| path.contains("netherite")
-				|| path.contains("quartz")
 				|| path.contains("amethyst");
 	}
 

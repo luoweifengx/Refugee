@@ -29,7 +29,7 @@ import luowei.refugee.staff.StaffPage;
  * 手持指挥杖且已选定结构时，在准星方块或右键钉住的原点处绘制半透明结构投影。
  */
 public final class BlueprintPreviewRenderer {
-	private static final double MAX_DISTANCE = 20.0;
+	private static final double MAX_DISTANCE = 128.0;
 	private static final float ALPHA = 0.45f;
 
 	private BlueprintPreviewRenderer() {

@@ -11,6 +11,9 @@ public final class WarehouseIndex {
 	private int planks;
 	private int stone;
 	private int soil;
+	private int glass;
+	private int quartz;
+	private int light;
 	private int seed;
 	private int misc;
 
@@ -55,6 +58,9 @@ public final class WarehouseIndex {
 			case PLANKS -> planks += count;
 			case STONE -> stone += count;
 			case SOIL -> soil += count;
+			case GLASS -> glass += count;
+			case QUARTZ -> quartz += count;
+			case LIGHT -> light += count;
 			case SEED -> seed += count;
 			case MISC -> misc += count;
 			default -> {
@@ -68,6 +74,9 @@ public final class WarehouseIndex {
 			case PLANKS -> planks;
 			case STONE -> stone;
 			case SOIL -> soil;
+			case GLASS -> glass;
+			case QUARTZ -> quartz;
+			case LIGHT -> light;
 			case SEED -> seed;
 			case MISC -> misc;
 			default -> 0;
@@ -88,6 +97,18 @@ public final class WarehouseIndex {
 
 	public int soil() {
 		return soil;
+	}
+
+	public int glass() {
+		return glass;
+	}
+
+	public int quartz() {
+		return quartz;
+	}
+
+	public int light() {
+		return light;
 	}
 
 	public int seed() {

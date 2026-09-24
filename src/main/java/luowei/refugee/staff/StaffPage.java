@@ -30,6 +30,10 @@ package luowei.refugee.staff;
  *       近战 / 远程 / 工人 / 散人 / 特殊 / 全部
  *     GUARD → GUARD_PIE
  *       添加 / 范围召集 / 全部召集 / 除名
+ *     RELATIONS → RELATIONS_PIE
+ *       创建组织 / 邀请 / 邀请管理 / 组织管理 / 人员救助
+ *       ORG_MANAGE → ORG_MANAGE_PIE
+ *         信息 / 离开 / 踢人 / 移交 / 改领地名
  * </pre>
  *
  * {@link #BUILD_HUB} 已弃用，保留以免网络 ordinal 错位。新页只追加。
@@ -60,7 +64,18 @@ public enum StaffPage {
 	FARM_WAREHOUSE,
 	GEAR_WAREHOUSE,
 	SMELT_RESULT,
-	BUILD_SHARE;
+	BUILD_SHARE,
+	RELATIONS_PIE,
+	ORG_MANAGE_PIE,
+	ORG_CREATE,
+	ORG_INVITE,
+	ORG_INVITES,
+	ORG_KICK,
+	ORG_TRANSFER,
+	ORG_RENAME,
+	ORG_RESCUE,
+	TERRITORY_MINE,
+	DIPLOMACY;
 
 	public static StaffPage byOrdinal(int ordinal) {
 		StaffPage[] values = values();
@@ -94,7 +109,8 @@ public enum StaffPage {
 
 	public boolean isPie() {
 		return this == PIE || this == COMBAT_PIE || this == WAREHOUSE_PIE || this == ZONE_PIE
-				|| this == RALLY_PIE || this == GUARD_PIE || this == BUILD_PIE;
+				|| this == RALLY_PIE || this == GUARD_PIE || this == BUILD_PIE
+				|| this == RELATIONS_PIE || this == ORG_MANAGE_PIE;
 	}
 
 	public boolean isWorld() {
@@ -102,6 +118,9 @@ public enum StaffPage {
 	}
 
 	public boolean isStaffScreen() {
-		return isPie() || this == BUILD_CATALOG || this == IMPORT_NAME || this == BUILD_SHARE;
+		return isPie() || this == BUILD_CATALOG || this == IMPORT_NAME || this == BUILD_SHARE
+				|| this == ORG_CREATE || this == ORG_INVITE || this == ORG_INVITES
+				|| this == ORG_KICK || this == ORG_TRANSFER || this == ORG_RENAME || this == ORG_RESCUE
+				|| this == TERRITORY_MINE || this == DIPLOMACY;
 	}
 }

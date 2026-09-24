@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -222,6 +223,15 @@ public final class PlayerBlueprints {
 	}
 
 	public static ImportResult capture(ServerPlayer player, AreaBox box, String rawName) {
+		return capture(player, box, rawName, List.of());
+	}
+
+	public static ImportResult capture(
+			ServerPlayer player,
+			AreaBox box,
+			String rawName,
+			Collection<BlockPos> omitWorld
+	) {
 		if (player == null || box == null || !(player.level() instanceof ServerLevel level)) {
 			return ImportResult.of(ImportStatus.FAILED);
 		}
@@ -243,11 +253,15 @@ public final class PlayerBlueprints {
 		int sy = box.sizeY();
 		int sz = box.sizeZ();
 		BlueprintNbtWriter writer = new BlueprintNbtWriter(sx, sy, sz);
+		Set<BlockPos> omit = omitPositions(omitWorld);
 		BlockPos min = box.min();
 		for (int y = 0; y < sy; y++) {
 			for (int z = 0; z < sz; z++) {
 				for (int x = 0; x < sx; x++) {
 					BlockPos world = min.offset(x, y, z);
+					if (omit.contains(world)) {
+						continue;
+					}
 					BlockState state = level.getBlockState(world);
 					if (BlueprintBlocks.shouldSkip(state)) {
 						continue;
@@ -281,6 +295,19 @@ public final class PlayerBlueprints {
 			Refugee.LOGGER.warn("Failed to import blueprint for {}", playerId, exception);
 			return ImportResult.of(ImportStatus.FAILED);
 		}
+	}
+
+	private static Set<BlockPos> omitPositions(Collection<BlockPos> omitWorld) {
+		if (omitWorld == null || omitWorld.isEmpty()) {
+			return Set.of();
+		}
+		Set<BlockPos> omit = new HashSet<>();
+		for (BlockPos pos : omitWorld) {
+			if (pos != null) {
+				omit.add(pos.immutable());
+			}
+		}
+		return omit;
 	}
 
 	public static ImportStatus checkSize(AreaBox box) {

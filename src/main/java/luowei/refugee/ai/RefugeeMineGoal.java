@@ -70,7 +70,7 @@ public class RefugeeMineGoal extends Goal {
 
 	@Override
 	public boolean canUse() {
-		if (villager.isBaby() || !RefugeeRoles.isBuilder(villager)) {
+		if (villager.isBaby() || !RefugeeRoles.isBuilder(villager) || WorkerSleep.yields(villager)) {
 			return false;
 		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);

@@ -53,7 +53,11 @@ public class ArmorKitItem extends Item {
 		for (ItemStack previous : equip(villager, held)) {
 			giveBack(player, previous);
 		}
+		boolean iron = held.getItem() instanceof ArmorKitItem armorKit && armorKit.kind() == Kind.IRON;
 		held.shrink(1);
+		if (iron && player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+			luowei.refugee.special.SpecialStoryService.onIronKitGiven(serverPlayer);
+		}
 		return true;
 	}
 

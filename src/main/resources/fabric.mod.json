@@ -39,6 +39,7 @@
 	"suggests": {
 		"food-health-hunger": "*",
 		"travel-business-team": "*",
-		"fortress-besieged": "*"
+		"fortress-besieged": "*",
+		"glory": "*"
 	}
 }

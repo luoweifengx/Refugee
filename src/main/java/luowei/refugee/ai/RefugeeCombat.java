@@ -9,6 +9,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -231,6 +233,45 @@ public final class RefugeeCombat {
 		return !level.getEntitiesOfClass(Monster.class, box, monster ->
 				monster.isAlive() && monster.distanceToSqr(center) <= radius * radius
 		).isEmpty();
+	}
+
+	public static boolean isFactionEnemy(Villager villager, LivingEntity candidate) {
+		if (villager == null || candidate == null || candidate == villager || !candidate.isAlive() || candidate.isRemoved()) {
+			return false;
+		}
+		if (candidate instanceof ArmorStand || (candidate instanceof Player player && player.isSpectator())) {
+			return false;
+		}
+		return !(candidate instanceof Villager other) || !RefugeeAttachments.get(other).isHostileFaction();
+	}
+
+	public static LivingEntity nearestOutsider(Villager villager, Vec3 center, double radius) {
+		if (!(villager.level() instanceof ServerLevel level) || center == null) {
+			return null;
+		}
+		AABB box = new AABB(center, center).inflate(radius);
+		LivingEntity best = null;
+		double bestDist = Double.MAX_VALUE;
+		for (LivingEntity living : level.getEntitiesOfClass(LivingEntity.class, box, candidate -> isFactionEnemy(villager, candidate))) {
+			double dist = living.distanceToSqr(center);
+			if (dist <= radius * radius && dist < bestDist) {
+				bestDist = dist;
+				best = living;
+			}
+		}
+		return best;
+	}
+
+	public static void attackUnarmed(Villager villager, LivingEntity target) {
+		if (villager == null || target == null || !target.isAlive() || villager.distanceTo(target) >= 2.2) {
+			return;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (data.mainAttackCooldown() > 0) {
+			return;
+		}
+		melee(villager, target, InteractionHand.MAIN_HAND);
+		setHandCooldown(villager, data, InteractionHand.MAIN_HAND, RefugeeConfig.meleeAttackIntervalTicks);
 	}
 
 	public static Monster nearestHostile(Villager villager, Vec3 center, double radius) {

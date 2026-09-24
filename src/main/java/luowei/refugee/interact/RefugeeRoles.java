@@ -12,6 +12,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ShieldItem;
 
+import luowei.refugee.ai.WorkerSleep;
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.special.RefugeeSpecialRole;
@@ -234,14 +235,17 @@ public final class RefugeeRoles {
 	}
 
 	/**
-	 * 闲置散人跑原版 Brain；工人 / 守卫 / 特殊 NPC 以及散人在跟随、巡逻、逃逸时停 Brain。
+	 * 工人空闲时跑原版 Brain，晚上能睡就交给 Brain。守卫、特殊 NPC，以及正在干活、跟随、巡逻、逃逸时停 Brain。
 	 */
 	public static boolean overridesBrain(Villager villager) {
 		if (villager == null || villager.isBaby()) {
 			return false;
 		}
-		if (RefugeeSpecialRole.isSpecial(villager)) {
+		if (RefugeeSpecialRole.isSpecial(villager) || RefugeeAttachments.get(villager).isHostileFaction()) {
 			return true;
+		}
+		if (isBuilder(villager)) {
+			return !WorkerSleep.yields(villager) && WorkerSleep.isWorking(villager);
 		}
 		if (!matchesRallyCivilian(villager)) {
 			return true;
@@ -253,7 +257,8 @@ public final class RefugeeRoles {
 
 	/** 散人 / 工人 / 特殊 NPC：被打才逃一次。守卫走战斗状态机。 */
 	public static boolean fleesWhenHit(Villager villager) {
-		return villager != null && !villager.isBaby() && !isGuard(villager);
+		return villager != null && !villager.isBaby() && !isGuard(villager)
+				&& !RefugeeAttachments.get(villager).isHostileFaction();
 	}
 
 	public static EquipmentSlot armorSlot(Villager villager, ItemStack stack) {

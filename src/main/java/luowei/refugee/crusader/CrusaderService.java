@@ -148,6 +148,7 @@ public final class CrusaderService {
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		data.setSubjectId(subjectId);
 		data.setCrusader(true);
+		data.setHostileFaction(true);
 		data.setGuardCenter(feet);
 		RefugeeAttachments.markDirty(villager, data);
 		equip(villager, kit);
@@ -187,8 +188,13 @@ public final class CrusaderService {
 	}
 
 	private static void onCrusaderLoaded(Villager villager) {
-		if (!RefugeeAttachments.get(villager).isCrusader() || !(villager.level() instanceof ServerLevel)) {
+		RefugeeVillagerData loaded = RefugeeAttachments.get(villager);
+		if (!loaded.isCrusader() || !(villager.level() instanceof ServerLevel)) {
 			return;
+		}
+		if (!loaded.isHostileFaction()) {
+			loaded.setHostileFaction(true);
+			RefugeeAttachments.markDirty(villager, loaded);
 		}
 		MinecraftServer server = villager.level().getServer();
 		if (server == null || server.overworld() == null) {

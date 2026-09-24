@@ -114,6 +114,9 @@ public class ImportNameScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+		if (StaffClientNav.handleScreenKey(this, keyCode, scanCode)) {
+			return true;
+		}
 		if (keyCode == 256) {
 			cancel();
 			return true;

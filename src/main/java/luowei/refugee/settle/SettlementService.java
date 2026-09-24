@@ -10,6 +10,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.level.block.AbstractBannerBlock;
 
 import luowei.refugee.attachment.PlayerSelectionData;
 import luowei.refugee.attachment.RefugeeAttachments;
@@ -65,7 +66,9 @@ public final class SettlementService {
 	}
 
 	private static void destroyBanner(ServerLevel level, BlockPos bannerPos) {
-		level.destroyBlock(bannerPos, false);
+		if (level.getBlockState(bannerPos).getBlock() instanceof AbstractBannerBlock) {
+			level.destroyBlock(bannerPos, false);
+		}
 	}
 
 	private static Entity findLoaded(ServerLevel prefer, UUID id) {

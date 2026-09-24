@@ -58,13 +58,15 @@ public final class RefugeeVillagerData {
 			Codec.STRING.optionalFieldOf("worker_duty", "").forGetter(data -> data.workerDuty().id()),
 			Codec.BOOL.optionalFieldOf("crusader", false).forGetter(data -> data.crusader),
 			UUIDUtil.CODEC.optionalFieldOf("guard_mark").forGetter(data -> Optional.ofNullable(data.guardMarkPlayerId)),
-			Codec.BOOL.optionalFieldOf("claimable", false).forGetter(data -> data.claimable)
-	).apply(instance, (data, lastDepthCurseTick, workerDuty, crusader, guardMark, claimable) -> {
+			Codec.BOOL.optionalFieldOf("claimable", false).forGetter(data -> data.claimable),
+			Codec.BOOL.optionalFieldOf("hostile_faction", false).forGetter(data -> data.hostileFaction)
+	).apply(instance, (data, lastDepthCurseTick, workerDuty, crusader, guardMark, claimable, hostileFaction) -> {
 		data.lastDepthCurseTick = lastDepthCurseTick;
 		data.workerDuty = WorkerDuty.fromId(workerDuty);
 		data.crusader = crusader;
 		data.guardMarkPlayerId = guardMark.orElse(null);
 		data.claimable = claimable;
+		data.hostileFaction = hostileFaction;
 		return data;
 	}));
 
@@ -106,6 +108,9 @@ public final class RefugeeVillagerData {
 	private int offAttackCooldown;
 	private long lastDepthCurseTick;
 	private boolean crusader;
+	private boolean hostileFaction;
+	/** 当晚开始尝试入睡的游戏时刻；-1 表示没在试。不写入存档。 */
+	private long sleepAttemptStart = -1L;
 	private UUID guardMarkPlayerId;
 	private boolean claimable;
 
@@ -593,6 +598,25 @@ public final class RefugeeVillagerData {
 
 	public void setCrusader(boolean crusader) {
 		this.crusader = crusader;
+	}
+
+	public boolean isHostileFaction() {
+		return hostileFaction;
+	}
+
+	public void setHostileFaction(boolean hostileFaction) {
+		this.hostileFaction = hostileFaction;
+	}
+
+	public void clearSleepAttempt() {
+		this.sleepAttemptStart = -1L;
+	}
+
+	public boolean continueSleepAttempt(long gameTime, int limitTicks) {
+		if (sleepAttemptStart < 0L) {
+			sleepAttemptStart = gameTime;
+		}
+		return gameTime - sleepAttemptStart < limitTicks;
 	}
 
 	public UUID guardMarkPlayerId() {

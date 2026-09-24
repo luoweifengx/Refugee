@@ -42,7 +42,7 @@ import luowei.refugee.warehouse.MaterialCategory;
  */
 public final class RefugeeConfig {
 	public static final String FILE_NAME = "refugee.json";
-	public static final int IMMIGRATION_SCHEMA = 4;
+	public static final int IMMIGRATION_SCHEMA = 5;
 	public static final int DEFAULT_IMMIGRATION_INTERVAL_TICKS = 2000;
 	public static final int DEFAULT_IMMIGRATION_EVENT_DAY_TIME = 4000;
 
@@ -59,11 +59,11 @@ public final class RefugeeConfig {
 			ResourceLocation.parse("minecraft:overworld")
 	);
 	private static final List<ImmigrationTier> DEFAULT_IMMIGRATION_TIERS = List.of(
-			new ImmigrationTier(10, 1.00, 4, 8),
-			new ImmigrationTier(25, 1.00, 7, 13),
-			new ImmigrationTier(45, 1.00, 11, 19),
-			new ImmigrationTier(80, 1.00, 14, 24),
-			new ImmigrationTier(160, 1.00, 17, 30),
+			new ImmigrationTier(20, 1.00, 4, 8),
+			new ImmigrationTier(50, 1.00, 7, 13),
+			new ImmigrationTier(90, 1.00, 11, 19),
+			new ImmigrationTier(160, 1.00, 14, 24),
+			new ImmigrationTier(320, 1.00, 17, 30),
 			new ImmigrationTier(Integer.MAX_VALUE, 1.00, 20, 35)
 	);
 
@@ -114,6 +114,12 @@ public final class RefugeeConfig {
 	public static boolean warehouseMergeStone = true;
 	/** true：泥沙大类可互换取料并按类整理。 */
 	public static boolean warehouseMergeSoil = true;
+	/** true：玻璃大类可互换取料并按类整理。 */
+	public static boolean warehouseMergeGlass = true;
+	/** true：石英大类可互换取料并按类整理。 */
+	public static boolean warehouseMergeQuartz = true;
+	/** true：发光方块大类可互换取料并按类整理。 */
+	public static boolean warehouseMergeLight = true;
 	/** true：按职业给村民常驻 buff；false：不施加并清掉本模组管理的效果。 */
 	public static boolean villagerBuffsEnabled = false;
 	/** true：禁止村民被僵尸打死时转化成僵尸村民（按死亡掉落）；false：沿用原版转化。 */
@@ -194,12 +200,16 @@ public final class RefugeeConfig {
 			case PLANKS -> warehouseMergePlanks;
 			case STONE -> warehouseMergeStone;
 			case SOIL -> warehouseMergeSoil;
+			case GLASS -> warehouseMergeGlass;
+			case QUARTZ -> warehouseMergeQuartz;
+			case LIGHT -> warehouseMergeLight;
 			default -> false;
 		};
 	}
 
 	public static boolean anyMergeCategory() {
-		return warehouseMergeLogs || warehouseMergePlanks || warehouseMergeStone || warehouseMergeSoil;
+		return warehouseMergeLogs || warehouseMergePlanks || warehouseMergeStone || warehouseMergeSoil
+				|| warehouseMergeGlass || warehouseMergeQuartz || warehouseMergeLight;
 	}
 
 	private static void apply(JsonObject json) {
@@ -261,6 +271,9 @@ public final class RefugeeConfig {
 		warehouseMergePlanks = readBoolean(json, "warehouseMergePlanks", legacyMerge);
 		warehouseMergeStone = readBoolean(json, "warehouseMergeStone", legacyMerge);
 		warehouseMergeSoil = readBoolean(json, "warehouseMergeSoil", legacyMerge);
+		warehouseMergeGlass = readBoolean(json, "warehouseMergeGlass", legacyMerge);
+		warehouseMergeQuartz = readBoolean(json, "warehouseMergeQuartz", legacyMerge);
+		warehouseMergeLight = readBoolean(json, "warehouseMergeLight", legacyMerge);
 		villagerBuffsEnabled = readBoolean(json, "villagerBuffsEnabled", villagerBuffsEnabled);
 		blockVillagerZombieConversion = readBoolean(json, "blockVillagerZombieConversion", blockVillagerZombieConversion);
 		emptyRosterMode = EmptyRosterMode.parse(readString(json, "emptyRosterMode", emptyRosterMode.id()), emptyRosterMode);
@@ -306,6 +319,9 @@ public final class RefugeeConfig {
 		json.addProperty("warehouseMergePlanks", warehouseMergePlanks);
 		json.addProperty("warehouseMergeStone", warehouseMergeStone);
 		json.addProperty("warehouseMergeSoil", warehouseMergeSoil);
+		json.addProperty("warehouseMergeGlass", warehouseMergeGlass);
+		json.addProperty("warehouseMergeQuartz", warehouseMergeQuartz);
+		json.addProperty("warehouseMergeLight", warehouseMergeLight);
 		json.addProperty("villagerBuffsEnabled", villagerBuffsEnabled);
 		json.addProperty("blockVillagerZombieConversion", blockVillagerZombieConversion);
 		json.addProperty("emptyRosterMode", emptyRosterMode.id());

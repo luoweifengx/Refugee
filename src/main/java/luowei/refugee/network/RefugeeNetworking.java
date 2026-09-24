@@ -30,10 +30,15 @@ import luowei.refugee.special.GuideDialogueConfig;
 import luowei.refugee.special.GuideTutorialService;
 import luowei.refugee.special.RefugeeSpecialRole;
 import luowei.refugee.special.SpecialRefugeeService;
+import luowei.refugee.special.SpecialStoryKind;
+import luowei.refugee.special.SpecialStoryService;
 import luowei.refugee.special.TerritoryMapService;
 import luowei.refugee.staff.CommandStaffItem;
 import luowei.refugee.staff.StaffMode;
 import luowei.refugee.staff.StaffPage;
+import luowei.refugee.staff.RelationsListKind;
+import luowei.refugee.staff.RelationsNameKind;
+import luowei.refugee.staff.RelationsService;
 import luowei.refugee.staff.StaffService;
 import luowei.refugee.zone.AreaBox;
 
@@ -54,7 +59,6 @@ public final class RefugeeNetworking {
 		PayloadTypeRegistry.playS2C().register(StaffOpenPiePayload.TYPE, StaffOpenPiePayload.STREAM_CODEC);
 		PayloadTypeRegistry.playS2C().register(StaffSyncPayload.TYPE, StaffSyncPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playS2C().register(OpenImportNamePayload.TYPE, OpenImportNamePayload.STREAM_CODEC);
-		// PayloadTypeRegistry.playS2C().register(OpenBannerStylePayload.TYPE, OpenBannerStylePayload.STREAM_CODEC);
 		PayloadTypeRegistry.playS2C().register(BlueprintShareTargetsPayload.TYPE, BlueprintShareTargetsPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(BlueprintSelectPayload.TYPE, BlueprintSelectPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(BlueprintDeletePayload.TYPE, BlueprintDeletePayload.STREAM_CODEC);
@@ -66,9 +70,16 @@ public final class RefugeeNetworking {
 		PayloadTypeRegistry.playC2S().register(SpecialSplashActionPayload.TYPE, SpecialSplashActionPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(StaffPiePayload.TYPE, StaffPiePayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(ImportNamePayload.TYPE, ImportNamePayload.STREAM_CODEC);
-		// PayloadTypeRegistry.playC2S().register(BannerStyleSavePayload.TYPE, BannerStyleSavePayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(StaffNavPayload.TYPE, StaffNavPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(StaffBuildPlacePayload.TYPE, StaffBuildPlacePayload.STREAM_CODEC);
+		PayloadTypeRegistry.playS2C().register(RelationsOpenListPayload.TYPE, RelationsOpenListPayload.STREAM_CODEC);
+		PayloadTypeRegistry.playS2C().register(RelationsOpenNamePayload.TYPE, RelationsOpenNamePayload.STREAM_CODEC);
+		PayloadTypeRegistry.playS2C().register(RelationsOpenInvitesPayload.TYPE, RelationsOpenInvitesPayload.STREAM_CODEC);
+		PayloadTypeRegistry.playC2S().register(RelationsPickPayload.TYPE, RelationsPickPayload.STREAM_CODEC);
+		PayloadTypeRegistry.playC2S().register(RelationsNamePayload.TYPE, RelationsNamePayload.STREAM_CODEC);
+		PayloadTypeRegistry.playC2S().register(RelationsInviteReplyPayload.TYPE, RelationsInviteReplyPayload.STREAM_CODEC);
+		PayloadTypeRegistry.playS2C().register(RelationsOpenTextsPayload.TYPE, RelationsOpenTextsPayload.STREAM_CODEC);
+		PayloadTypeRegistry.playC2S().register(RelationsTextsPayload.TYPE, RelationsTextsPayload.STREAM_CODEC);
 		ServerPlayNetworking.registerGlobalReceiver(BlueprintSelectPayload.TYPE, (payload, context) -> {
 			ServerPlayer player = context.player();
 			context.server().execute(() -> applySelection(player, payload.id()));
@@ -119,13 +130,35 @@ public final class RefugeeNetworking {
 			ServerPlayer player = context.player();
 			context.server().execute(() -> StaffService.handleImportName(player, payload.confirm(), payload.name()));
 		});
-		// ServerPlayNetworking.registerGlobalReceiver(BannerStyleSavePayload.TYPE, (payload, context) -> {
-		// 	ServerPlayer player = context.player();
-		// 	context.server().execute(() -> luowei.refugee.settle.SettlementBannerService.save(player, payload));
-		// });
 		ServerPlayNetworking.registerGlobalReceiver(StaffNavPayload.TYPE, (payload, context) -> {
 			ServerPlayer player = context.player();
 			context.server().execute(() -> StaffService.handleNav(player, payload.action()));
+		});
+		ServerPlayNetworking.registerGlobalReceiver(RelationsPickPayload.TYPE, (payload, context) -> {
+			ServerPlayer player = context.player();
+			context.server().execute(() -> RelationsService.handlePick(
+					player,
+					payload.kind(),
+					payload.confirm(),
+					payload.ids()
+			));
+		});
+		ServerPlayNetworking.registerGlobalReceiver(RelationsNamePayload.TYPE, (payload, context) -> {
+			ServerPlayer player = context.player();
+			context.server().execute(() -> RelationsService.handleName(
+					player,
+					payload.kind(),
+					payload.confirm(),
+					payload.name()
+			));
+		});
+		ServerPlayNetworking.registerGlobalReceiver(RelationsTextsPayload.TYPE, (payload, context) -> {
+			ServerPlayer player = context.player();
+			context.server().execute(() -> RelationsService.handleTexts(player, payload.confirm(), payload.selfText(), payload.othersText()));
+		});
+		ServerPlayNetworking.registerGlobalReceiver(RelationsInviteReplyPayload.TYPE, (payload, context) -> {
+			ServerPlayer player = context.player();
+			context.server().execute(() -> RelationsService.handleInviteReply(player, payload.accept()));
 		});
 		ServerPlayNetworking.registerGlobalReceiver(StaffBuildPlacePayload.TYPE, (payload, context) -> {
 			ServerPlayer player = context.player();
@@ -167,6 +200,7 @@ public final class RefugeeNetworking {
 				? GuideDialogueConfig.talkLines(player)
 				: List.of();
 		boolean foodSecret = role == RefugeeSpecialRole.GUIDE && GuideTutorialService.foodSecretVisible();
+		SpecialStoryService.tryLock(player, villager, null);
 		ServerPlayNetworking.send(player, new SpecialSplashPayload(
 				villager.getId(),
 				role.id(),
@@ -192,6 +226,7 @@ public final class RefugeeNetworking {
 			return;
 		}
 		List<String> talkLines = GuideDialogueConfig.talkLines(player);
+		SpecialStoryService.tryLock(player, villager, null);
 		ServerPlayNetworking.send(player, new SpecialSplashPayload(
 				villager.getId(),
 				RefugeeSpecialRole.GUIDE.id(),
@@ -202,6 +237,36 @@ public final class RefugeeNetworking {
 				interruptKey == null ? "" : interruptKey,
 				GuideTutorialService.foodSecretVisible(),
 				seek && !abandon
+		));
+	}
+
+	public static void openStorySplash(
+			ServerPlayer player,
+			Villager villager,
+			SpecialStoryKind kind,
+			int step,
+			String initialTalkKey,
+			String interruptKey
+	) {
+		if (player == null || villager == null || kind == null) {
+			return;
+		}
+		RefugeeSpecialRole role = RefugeeSpecialRole.of(villager);
+		List<String> talkLines = role == RefugeeSpecialRole.GUIDE
+				? GuideDialogueConfig.talkLines(player)
+				: List.of();
+		ServerPlayNetworking.send(player, new SpecialSplashPayload(
+				villager.getId(),
+				role == null ? kind.id() : role.id(),
+				talkLines,
+				initialTalkKey,
+				SpecialSplashPayload.MODE_STORY,
+				step,
+				interruptKey == null ? "" : interruptKey,
+				GuideTutorialService.foodSecretVisible(),
+				false,
+				kind.id(),
+				kind.lines()
 		));
 	}
 
@@ -317,6 +382,34 @@ public final class RefugeeNetworking {
 				RefugeeConfig.importMaxAxis,
 				RefugeeConfig.importMaxVolume
 		));
+	}
+
+	public static void openRelationsList(ServerPlayer player, RelationsListKind kind, List<RelationsPlayerRow> rows) {
+		if (player == null || kind == null) {
+			return;
+		}
+		ServerPlayNetworking.send(player, new RelationsOpenListPayload(kind, rows == null ? List.of() : List.copyOf(rows)));
+	}
+
+	public static void openRelationsName(ServerPlayer player, RelationsNameKind kind, String suggested) {
+		if (player == null || kind == null) {
+			return;
+		}
+		ServerPlayNetworking.send(player, new RelationsOpenNamePayload(kind, suggested == null ? "" : suggested));
+	}
+
+	public static void openRelationsTexts(ServerPlayer player, String selfText, String othersText, boolean othersEditable) {
+		if (player == null) {
+			return;
+		}
+		ServerPlayNetworking.send(player, new RelationsOpenTextsPayload(selfText, othersText, othersEditable));
+	}
+
+	public static void openRelationsInvites(ServerPlayer player, boolean pending, String orgName, String territoryName) {
+		if (player == null) {
+			return;
+		}
+		ServerPlayNetworking.send(player, new RelationsOpenInvitesPayload(pending, orgName, territoryName));
 	}
 
 	public static void openStaffPie(ServerPlayer player) {

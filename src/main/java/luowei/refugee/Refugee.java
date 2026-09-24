@@ -46,7 +46,7 @@ public class Refugee implements ModInitializer {
 		RefugeeAttachments.register();
 		ModBlocks.register();
 		ModItems.register();
-		// luowei.refugee.entity.ModEntities.register();
+		luowei.refugee.entity.ModEntities.register();
 		VillagerKitMenus.register();
 		BlueprintRegistry.register();
 		RefugeeNetworking.register();
@@ -58,6 +58,7 @@ public class Refugee implements ModInitializer {
 		LandmarkSpawnService.register();
 		SpecialRefugeeService.register();
 		luowei.refugee.special.GuideTutorialService.register();
+		luowei.refugee.special.SpecialStoryService.register();
 		luowei.refugee.pbs.OrgMergeService.register();
 		RefugeeImmigration.register();
 		luowei.refugee.crusader.CrusaderService.register();
@@ -66,8 +67,14 @@ public class Refugee implements ModInitializer {
 			if (entity instanceof Villager villager) {
 				RefugeeCombat.onDamaged(villager, source);
 			}
+			if (entity instanceof net.minecraft.server.level.ServerPlayer player && taken > 0.0f) {
+				luowei.refugee.special.SpecialStoryService.onPlayerHurt(player);
+			}
 		});
 		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
+			if (entity instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon) {
+				luowei.refugee.special.SpecialStoryService.onDragonKilled(entity.level().getServer());
+			}
 			if (entity instanceof Villager villager && entity.level() instanceof ServerLevel level) {
 				if (RefugeeSpecialRole.isSpecial(villager)) {
 					SpecialRefugeeService.markSpecialGone(level.getServer(), villager.getUUID());

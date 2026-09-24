@@ -1,0 +1,13 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "misc",
+	"group": "bed",
+	"ingredients": [
+		"minecraft:white_bed",
+		"minecraft:black_dye"
+	],
+	"result": {
+		"id": "minecraft:black_bed",
+		"count": 1
+	}
+}

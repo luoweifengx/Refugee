@@ -1,5 +1,7 @@
 package luowei.refugee.client;
 
+import java.util.Arrays;
+
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 
@@ -21,6 +23,8 @@ import luowei.refugee.staff.StaffPieAction;
  * 指挥杖扇形菜单：按当前页绘制扇区，物品图标，不暂停世界。
  */
 public class StaffPieScreen extends Screen {
+	private static final int SLICES_PER_PAGE = 6;
+	private static final int MAX_PAGES = 6;
 	private static final int RADIUS = 52;
 	private static final int INNER = 8;
 	private static final int FILL_ALPHA = 0xA8;
@@ -35,7 +39,8 @@ public class StaffPieScreen extends Screen {
 			new Slice(StaffPieAction.BUILD, new ItemStack(Items.CRAFTING_TABLE), 0xCCB07A2E, "screen.refugee.staff.pie.build"),
 			new Slice(StaffPieAction.COMBAT, new ItemStack(Items.IRON_SWORD), 0xCC8B3A3A, "screen.refugee.staff.pie.combat"),
 			new Slice(StaffPieAction.RALLY, new ItemStack(Items.GOAT_HORN), 0xCCC4A35A, "screen.refugee.staff.pie.rally"),
-			new Slice(StaffPieAction.GUARD, new ItemStack(Items.IRON_HELMET), 0xCC5A6E8B, "screen.refugee.staff.pie.guard")
+			new Slice(StaffPieAction.GUARD, new ItemStack(Items.IRON_HELMET), 0xCC5A6E8B, "screen.refugee.staff.pie.guard"),
+			new Slice(StaffPieAction.RELATIONS, new ItemStack(Items.PLAYER_HEAD), 0xCC6E8B5A, "screen.refugee.staff.pie.relations")
 	};
 	private static final Slice[] COMBAT_SLICES = {
 			new Slice(StaffPieAction.FOLLOW_ENTITY, new ItemStack(Items.LEAD), 0xCC3A6EA5, "screen.refugee.staff.pie.follow"),
@@ -76,8 +81,28 @@ public class StaffPieScreen extends Screen {
 			new Slice(StaffPieAction.GUARD_RALLY_ALL, new ItemStack(Items.ENDER_EYE), 0xCC8B5A9E, "screen.refugee.staff.pie.guard_rally_all"),
 			new Slice(StaffPieAction.GUARD_REMOVE, new ItemStack(Items.SHEARS), 0xCC8B3A3A, "screen.refugee.staff.pie.guard_remove")
 	};
+	private static final Slice[] RELATIONS_SLICES = {
+			new Slice(StaffPieAction.ORG_CREATE, new ItemStack(Items.NAME_TAG), 0xCC3D8B4A, "screen.refugee.staff.pie.org_create"),
+			new Slice(StaffPieAction.ORG_INVITE, new ItemStack(Items.WRITABLE_BOOK), 0xCC3A6EA5, "screen.refugee.staff.pie.org_invite"),
+			new Slice(StaffPieAction.ORG_INVITE_MANAGE, new ItemStack(Items.PAPER), 0xCCC4A35A, "screen.refugee.staff.pie.org_invites"),
+			new Slice(StaffPieAction.ORG_MANAGE, new ItemStack(Items.BELL), 0xCC8B5A9E, "screen.refugee.staff.pie.org_manage"),
+			new Slice(StaffPieAction.TERRITORY_MINE, new ItemStack(Items.OAK_SIGN), 0xCC2E8B8B, "screen.refugee.staff.pie.territory_texts"),
+			new Slice(StaffPieAction.RESCUE, new ItemStack(Items.TOTEM_OF_UNDYING), 0xCC8B3A3A, "screen.refugee.staff.pie.rescue"),
+			new Slice(StaffPieAction.RELATIONS_LIST, new ItemStack(Items.BOOK), 0xCC3A6EA5, "screen.refugee.staff.pie.relations_list"),
+			new Slice(StaffPieAction.DECLARE_WAR, new ItemStack(Items.IRON_SWORD), 0xCC8B3A3A, "screen.refugee.staff.pie.declare_war"),
+			new Slice(StaffPieAction.RECONCILE, new ItemStack(Items.WHITE_BANNER), 0xCCE8EEF2, "screen.refugee.staff.pie.reconcile"),
+			new Slice(StaffPieAction.ALLY, new ItemStack(Items.EMERALD), 0xCC3D8B4A, "screen.refugee.staff.pie.ally"),
+			new Slice(StaffPieAction.RECONCILE_INBOX, new ItemStack(Items.PAPER), 0xCCC4A35A, "screen.refugee.staff.pie.reconcile_inbox")
+	};
+	private static final Slice[] ORG_MANAGE_SLICES = {
+			new Slice(StaffPieAction.ORG_INFO, new ItemStack(Items.BOOK), 0xCC3A6EA5, "screen.refugee.staff.pie.org_info"),
+			new Slice(StaffPieAction.ORG_LEAVE, new ItemStack(Items.OAK_DOOR), 0xCC8B5A3A, "screen.refugee.staff.pie.org_leave"),
+			new Slice(StaffPieAction.ORG_KICK, new ItemStack(Items.IRON_BOOTS), 0xCC8B3A3A, "screen.refugee.staff.pie.org_kick"),
+			new Slice(StaffPieAction.ORG_TRANSFER, new ItemStack(Items.GOLDEN_HELMET), 0xCCC4A35A, "screen.refugee.staff.pie.org_transfer")
+	};
 
 	private final StaffPage page;
+	private int slicePage;
 
 	public StaffPieScreen() {
 		this(ClientStaffState.page());
@@ -107,6 +132,12 @@ public class StaffPieScreen extends Screen {
 		if (page == StaffPage.GUARD_PIE) {
 			return Component.translatable("screen.refugee.staff.pie.guard");
 		}
+		if (page == StaffPage.RELATIONS_PIE) {
+			return Component.translatable("screen.refugee.staff.pie.relations");
+		}
+		if (page == StaffPage.ORG_MANAGE_PIE) {
+			return Component.translatable("screen.refugee.staff.pie.org_manage");
+		}
 		return Component.translatable("screen.refugee.staff.pie.title");
 	}
 
@@ -129,7 +160,30 @@ public class StaffPieScreen extends Screen {
 		if (page == StaffPage.GUARD_PIE) {
 			return GUARD_SLICES;
 		}
+		if (page == StaffPage.RELATIONS_PIE) {
+			return RELATIONS_SLICES;
+		}
+		if (page == StaffPage.ORG_MANAGE_PIE) {
+			return ORG_MANAGE_SLICES;
+		}
 		return ROOT_SLICES;
+	}
+
+	private int pageCount() {
+		int count = (slices().length + SLICES_PER_PAGE - 1) / SLICES_PER_PAGE;
+		return Math.max(1, Math.min(MAX_PAGES, count));
+	}
+
+	private Slice[] visibleSlices() {
+		Slice[] all = slices();
+		int pages = pageCount();
+		slicePage = Math.floorMod(slicePage, pages);
+		int start = slicePage * SLICES_PER_PAGE;
+		int end = Math.min(all.length, start + SLICES_PER_PAGE);
+		if (start >= end) {
+			return new Slice[0];
+		}
+		return Arrays.copyOfRange(all, start, end);
 	}
 
 	@Override
@@ -146,7 +200,7 @@ public class StaffPieScreen extends Screen {
 		super.render(graphics, mouseX, mouseY, delta);
 		int cx = width / 2;
 		int cy = height / 2;
-		Slice[] slices = slices();
+		Slice[] slices = visibleSlices();
 		Slice hover = hit(mouseX, mouseY, cx, cy, slices);
 		drawPie(graphics, cx, cy, slices, hover);
 		for (int i = 0; i < slices.length; i++) {
@@ -157,12 +211,33 @@ public class StaffPieScreen extends Screen {
 				? Component.translatable("screen.refugee.staff.pie.hint")
 				: Component.translatable(hover.labelKey);
 		graphics.drawCenteredString(font, hoverName, cx, cy + RADIUS + 12, hover == null ? 0xFFAAAAAA : 0xFFECECEC);
+		int pages = pageCount();
+		if (pages > 1) {
+			graphics.drawCenteredString(
+					font,
+					Component.translatable("screen.refugee.staff.pie.page", slicePage + 1, pages),
+					cx,
+					cy + RADIUS + 24,
+					0xFFAAAAAA
+			);
+		}
+	}
+
+	@Override
+	public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
+		double delta = vertical != 0.0 ? vertical : horizontal;
+		int pages = pageCount();
+		if (delta == 0.0 || pages <= 1) {
+			return super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
+		}
+		slicePage = Math.floorMod(slicePage + (delta > 0.0 ? -1 : 1), pages);
+		return true;
 	}
 
 	@Override
 	public boolean mouseClicked(double mouseX, double mouseY, int button) {
 		if (button == 0) {
-			Slice action = hit(mouseX, mouseY, width / 2.0, height / 2.0, slices());
+			Slice action = hit(mouseX, mouseY, width / 2.0, height / 2.0, visibleSlices());
 			if (action != null) {
 				ClientPlayNetworking.send(new StaffPiePayload(action.action));
 				onClose();

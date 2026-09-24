@@ -23,7 +23,8 @@ public class RefugeePatrolGoal extends Goal {
 
 	@Override
 	public boolean canUse() {
-		if (villager.isBaby() || RefugeeCombat.isBusy(villager) || RefugeeCombat.isEating(villager)) {
+		if (villager.isBaby() || RefugeeCombat.isBusy(villager) || RefugeeCombat.isEating(villager)
+				|| WorkerSleep.yields(villager)) {
 			return false;
 		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);

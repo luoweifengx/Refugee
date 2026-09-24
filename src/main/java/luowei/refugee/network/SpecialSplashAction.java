@@ -10,7 +10,11 @@ public enum SpecialSplashAction {
 	TRADE,
 	INTRO_ADVANCE,
 	INTRO_FINISH,
-	INTRO_INTERRUPT;
+	INTRO_INTERRUPT,
+	CLOSE,
+	DIVINE,
+	BOOK_PAPER,
+	BOOK_LEATHER;
 
 	public static SpecialSplashAction byId(int id) {
 		SpecialSplashAction[] values = values();

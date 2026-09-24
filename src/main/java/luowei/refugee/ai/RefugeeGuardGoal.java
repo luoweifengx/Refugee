@@ -38,6 +38,9 @@ public class RefugeeGuardGoal extends Goal {
 		if (villager.isBaby()) {
 			return false;
 		}
+		if (RefugeeAttachments.get(villager).isHostileFaction()) {
+			return true;
+		}
 		if (!RefugeeRoles.isGuard(villager)) {
 			return RefugeeCombat.mood(villager) == RefugeeCombat.Mood.FLEE;
 		}
@@ -96,6 +99,10 @@ public class RefugeeGuardGoal extends Goal {
 		RefugeeSwim.tick(villager);
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		data.tickCombatCooldowns();
+		if (data.isHostileFaction()) {
+			tickHostileFaction(data);
+			return;
+		}
 		RefugeeCombat.Mood mood = data.combatMood();
 		if (mood.isPanic()) {
 			if (!RefugeeRoles.isGuard(villager)) {
@@ -126,6 +133,39 @@ public class RefugeeGuardGoal extends Goal {
 			return;
 		}
 		tickIdle(data);
+	}
+
+	private void tickHostileFaction(RefugeeVillagerData data) {
+		LivingEntity target = RefugeeCombat.nearestOutsider(villager, villager.position(), RefugeeConfig.guardRadius);
+		if (target == null) {
+			RefugeeCombat.setMood(villager, RefugeeCombat.Mood.IDLE);
+			villager.setTarget(null);
+			tickIdle(data);
+			return;
+		}
+		RefugeeCombat.setMood(villager, RefugeeCombat.Mood.COMBAT);
+		villager.setTarget(target);
+		villager.getLookControl().setLookAt(target, 30.0f, 30.0f);
+		InteractionHand[] hands = RefugeeCombat.combatAttackHands(villager, target);
+		boolean shooting = false;
+		for (InteractionHand hand : hands) {
+			if (RefugeeRoles.isRangedWeapon(RefugeeCombat.stackIn(villager, hand))) {
+				shooting = true;
+				break;
+			}
+		}
+		if (shooting) {
+			villager.getNavigation().stop();
+		} else {
+			villager.getNavigation().moveTo(target, RefugeeConfig.guardWalkSpeed);
+		}
+		if (hands.length == 0) {
+			RefugeeCombat.attackUnarmed(villager, target);
+			return;
+		}
+		for (InteractionHand hand : hands) {
+			RefugeeCombat.attackWith(villager, target, hand);
+		}
 	}
 
 	private void tickPanic(RefugeeCombat.Mood mood) {
@@ -220,7 +260,7 @@ public class RefugeeGuardGoal extends Goal {
 			villager.setTarget(null);
 		}
 		RefugeeCombat.tryEat(villager, 1.0f);
-		if (!RefugeeRoles.isGuard(villager)) {
+		if (!RefugeeRoles.isGuard(villager) && !data.isHostileFaction()) {
 			villager.getNavigation().stop();
 			return;
 		}

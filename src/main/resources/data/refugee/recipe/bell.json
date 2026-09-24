@@ -1,0 +1,19 @@
+{
+	"type": "minecraft:crafting_shaped",
+	"category": "misc",
+	"pattern": [
+		"S S",
+		"SCS",
+		"BIB"
+	],
+	"key": {
+		"S": "minecraft:stick",
+		"C": "minecraft:copper_ingot",
+		"B": "minecraft:copper_block",
+		"I": "minecraft:iron_ingot"
+	},
+	"result": {
+		"id": "minecraft:bell",
+		"count": 1
+	}
+}

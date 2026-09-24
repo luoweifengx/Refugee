@@ -24,14 +24,14 @@ import luowei.refugee.network.RefugeeNetworking;
 import luowei.refugee.talk.RefugeeBubble;
 
 /**
- * 向导开局教程：1 分钟后靠近触发，或提前右键；每人一次；打断续播与沉默一天。
+ * 向导开局教程：1 分钟后靠近触发，或提前右键；每人一次；打断续播，打断过多后沉默 1000 tick。
  * 靠近触发会先抱怨玩家没来找，再续打断句与 intro.0–3。
  */
 public final class GuideTutorialService {
 	public static final int INTRO_LINES = 4;
 	public static final int INTERRUPT_LIMIT = 5;
 	public static final int ELIGIBLE_DELAY_TICKS = 20 * 60;
-	public static final long SILENT_TICKS = 24000L;
+	public static final long SILENT_TICKS = 1000L;
 	public static final double TRIGGER_DISTANCE = 2.75;
 	public static final int TICK_INTERVAL = 10;
 
@@ -256,7 +256,7 @@ public final class GuideTutorialService {
 		}
 	}
 
-	private static void walkAway(ServerPlayer player, Villager villager) {
+	public static void walkAway(ServerPlayer player, Villager villager) {
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		data.stopFollowing();
 		RefugeeAttachments.markDirty(villager, data);

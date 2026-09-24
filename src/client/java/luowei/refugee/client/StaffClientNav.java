@@ -52,7 +52,11 @@ public final class StaffClientNav {
 	public static boolean isStaffScreen(Screen screen) {
 		return screen instanceof StaffPieScreen
 				|| screen instanceof BlueprintSelectScreen
-				|| screen instanceof ImportNameScreen;
+				|| screen instanceof ImportNameScreen
+				|| screen instanceof RelationsListScreen
+				|| screen instanceof RelationsNameScreen
+				|| screen instanceof RelationsInviteScreen
+				|| screen instanceof RelationsTextsScreen;
 	}
 
 	public static boolean shouldInterceptWorldInput() {
@@ -88,6 +92,10 @@ public final class StaffClientNav {
 			} else {
 				ClientBlueprintSelection.nextChannel();
 			}
+			return true;
+		}
+		if (ClientStaffState.page() == StaffPage.IMPORT && keyCode == GLFW.GLFW_KEY_TAB) {
+			sendImportVertex(Screen.hasShiftDown());
 			return true;
 		}
 		if (isAdvance() && keyCode == GLFW.GLFW_KEY_TAB) {
@@ -126,13 +134,17 @@ public final class StaffClientNav {
 		if (!isStaffScreen(screen)) {
 			return false;
 		}
+		if (screen instanceof ImportNameScreen name) {
+			if (!name.isUpload() && keyCode == GLFW.GLFW_KEY_TAB) {
+				sendImportVertex(Screen.hasShiftDown());
+				return true;
+			}
+			return false;
+		}
 		Minecraft client = Minecraft.getInstance();
 		if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
 			resetToRoot();
 			return true;
-		}
-		if (screen instanceof ImportNameScreen) {
-			return false;
 		}
 		if (isInventoryKey(client, keyCode, scanCode)) {
 			resetToRoot();
@@ -213,6 +225,12 @@ public final class StaffClientNav {
 		return lookBlock(client);
 	}
 
+	private static void sendImportVertex(boolean shift) {
+		ClientPlayNetworking.send(new StaffNavPayload(
+				shift ? StaffNavAction.IMPORT_VERTEX_PREV : StaffNavAction.IMPORT_VERTEX_NEXT
+		));
+	}
+
 	private static BlockPos lookBlock(Minecraft client) {
 		if (client == null) {
 			return null;
@@ -249,6 +267,38 @@ public final class StaffClientNav {
 			}
 		}
 		if (page != StaffPage.IMPORT_NAME && screen instanceof ImportNameScreen name && !name.isUpload()) {
+			client.setScreen(null);
+			screen = client.screen;
+		}
+		if (screen instanceof RelationsListScreen list) {
+			boolean keep = switch (list.kind()) {
+				case INVITE -> page == StaffPage.ORG_INVITE;
+				case KICK -> page == StaffPage.ORG_KICK;
+				case TRANSFER -> page == StaffPage.ORG_TRANSFER;
+				case RESCUE -> page == StaffPage.ORG_RESCUE;
+				case RELATIONS, WAR, PEACE, ALLY, PEACE_INBOX -> page == StaffPage.DIPLOMACY;
+			};
+			if (!keep) {
+				client.setScreen(null);
+				screen = client.screen;
+			}
+		}
+		if (screen instanceof RelationsNameScreen nameScreen) {
+			boolean keep = switch (nameScreen.kind()) {
+				case CREATE_ORG -> page == StaffPage.ORG_CREATE;
+				case RENAME_TERRITORY -> page == StaffPage.ORG_RENAME;
+				case RENAME_PERSONAL -> page == StaffPage.TERRITORY_MINE;
+			};
+			if (!keep) {
+				client.setScreen(null);
+				screen = client.screen;
+			}
+		}
+		if (page != StaffPage.ORG_INVITES && screen instanceof RelationsInviteScreen) {
+			client.setScreen(null);
+			screen = client.screen;
+		}
+		if (page != StaffPage.TERRITORY_MINE && screen instanceof RelationsTextsScreen) {
 			client.setScreen(null);
 		}
 	}
