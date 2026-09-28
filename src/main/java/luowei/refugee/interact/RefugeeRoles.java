@@ -235,22 +235,34 @@ public final class RefugeeRoles {
 	}
 
 	/**
-	 * 工人空闲时跑原版 Brain，晚上能睡就交给 Brain。守卫、特殊 NPC，以及正在干活、跟随、巡逻、逃逸时停 Brain。
+	 * 工人、散人和特殊 NPC 空闲时只走动、看向、睡觉。
+	 * 守卫，以及正在干活、跟随、巡逻、逃逸、对话时停 Brain。
 	 */
 	public static boolean overridesBrain(Villager villager) {
 		if (villager == null || villager.isBaby()) {
 			return false;
 		}
-		if (RefugeeSpecialRole.isSpecial(villager) || RefugeeAttachments.get(villager).isHostileFaction()) {
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (data.isHostileFaction()) {
 			return true;
 		}
 		if (isBuilder(villager)) {
+			if (luowei.refugee.special.ClinicService.hasOrder(villager)) {
+				return true;
+			}
 			return !WorkerSleep.yields(villager) && WorkerSleep.isWorking(villager);
 		}
-		if (!matchesRallyCivilian(villager)) {
+		boolean idle = RefugeeSpecialRole.isSpecial(villager) || matchesRallyCivilian(villager);
+		if (!idle) {
 			return true;
 		}
-		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		long now = villager.level().getGameTime();
+		if (data.isLookingAtPlayer(now) || data.holdsBrain(now)) {
+			return true;
+		}
+		if (luowei.refugee.special.ClinicService.hasOrder(villager)) {
+			return true;
+		}
 		return data.isFollowing() || data.isFollowingEntity() || data.isPatrolling()
 				|| data.combatMood().isBusy();
 	}

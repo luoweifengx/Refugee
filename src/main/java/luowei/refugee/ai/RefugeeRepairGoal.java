@@ -22,7 +22,6 @@ import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.interact.RefugeeRoles;
 import luowei.refugee.pbs.PbsAdapter;
 import luowei.refugee.staff.StaffService;
-import luowei.refugee.warehouse.WarehouseService;
 
 /**
  * 修复：不走向目标，无距离限制拆除 PBS 侵蚀方块；侵蚀区块列表空则退出工种。
@@ -45,11 +44,14 @@ public class RefugeeRepairGoal extends Goal {
 		if (villager.isBaby() || !RefugeeRoles.isBuilder(villager) || WorkerSleep.yields(villager)) {
 			return false;
 		}
+		if (luowei.refugee.livability.LivabilityService.isSpent(villager)) {
+			return false;
+		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		if (!data.isRepairerDuty() || data.isFollowing() || data.isFollowingEntity() || data.isPatrolling()) {
 			return false;
 		}
-		if (RefugeeCombat.isEating(villager)) {
+		if (RefugeeCombat.isEating(villager) || WorkerCargo.wantsHaul(villager)) {
 			return false;
 		}
 		return true;
@@ -88,8 +90,10 @@ public class RefugeeRepairGoal extends Goal {
 			target = findTarget(level, subjectId);
 		}
 		if (target == null) {
+			data.setCargoIdle(WorkerCargo.hasDepositable(villager));
 			return;
 		}
+		data.setCargoIdle(false);
 		villager.getLookControl().setLookAt(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
 		tickMineProgress(level, target, level.getBlockState(target), RefugeeRoles.workTool(villager), subjectId);
 	}
@@ -131,8 +135,9 @@ public class RefugeeRepairGoal extends Goal {
 			return;
 		}
 		if (hardness == 0.0f) {
-			breakAndDeposit(level, pos, state, subjectId);
-			finishMining(level, pos);
+			if (breakAndDeposit(level, pos, state, subjectId)) {
+				finishMining(level, pos);
+			}
 			return;
 		}
 		float speed = tool.getDestroySpeed(state);
@@ -142,8 +147,9 @@ public class RefugeeRepairGoal extends Goal {
 		boolean canHarvest = !state.requiresCorrectToolForDrops() || tool.isCorrectToolForDrops(state);
 		float perTick = speed / hardness / (canHarvest ? 30.0f : 100.0f);
 		if (perTick >= 1.0f) {
-			breakAndDeposit(level, pos, state, subjectId);
-			finishMining(level, pos);
+			if (breakAndDeposit(level, pos, state, subjectId)) {
+				finishMining(level, pos);
+			}
 			return;
 		}
 		mineProgress += perTick;
@@ -157,8 +163,9 @@ public class RefugeeRepairGoal extends Goal {
 			playHitSound(level, pos, state);
 		}
 		if (mineProgress >= 1.0f) {
-			breakAndDeposit(level, pos, state, subjectId);
-			finishMining(level, pos);
+			if (breakAndDeposit(level, pos, state, subjectId)) {
+				finishMining(level, pos);
+			}
 		}
 	}
 
@@ -189,10 +196,15 @@ public class RefugeeRepairGoal extends Goal {
 		target = null;
 	}
 
-	private void breakAndDeposit(ServerLevel level, BlockPos pos, BlockState state, UUID subjectId) {
+	private boolean breakAndDeposit(ServerLevel level, BlockPos pos, BlockState state, UUID subjectId) {
 		BlockEntity blockEntity = level.getBlockEntity(pos);
 		List<ItemStack> drops = Block.getDrops(state, level, pos, blockEntity, villager, RefugeeRoles.workTool(villager));
+		if (WorkerCargo.shouldHold(villager, drops)) {
+			return false;
+		}
 		level.destroyBlock(pos, false);
-		WarehouseService.depositLoot(level, villager, subjectId, drops);
+		WorkerCargo.giveDrops(villager, level, drops);
+		luowei.refugee.livability.LivabilityService.noteBlockWork(villager);
+		return true;
 	}
 }

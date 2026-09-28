@@ -11,10 +11,12 @@ import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.level.Level;
 
 import luowei.refugee.ai.EnchanterTableRoamGoal;
+import luowei.refugee.ai.RefugeeAidGoal;
 import luowei.refugee.ai.RefugeeBuildGoal;
 import luowei.refugee.ai.RefugeeFollowGoal;
 import luowei.refugee.ai.RefugeeGuardGoal;
 import luowei.refugee.ai.RefugeeGuardTargetGoal;
+import luowei.refugee.ai.RefugeeHaulGoal;
 import luowei.refugee.ai.RefugeeMineGoal;
 import luowei.refugee.ai.RefugeePatrolGoal;
 import luowei.refugee.ai.RefugeeRepairGoal;
@@ -33,13 +35,15 @@ public abstract class VillagerGoalInitMixin extends AbstractVillager {
 	private void refugee$addGoals(EntityType<? extends Villager> type, Level level, CallbackInfo ci) {
 		Villager self = (Villager) (Object) this;
 		this.targetSelector.addGoal(1, new RefugeeGuardTargetGoal(self));
+		this.goalSelector.addGoal(0, new RefugeeAidGoal(self));
 		this.goalSelector.addGoal(1, new RefugeeFollowGoal(self));
 		this.goalSelector.addGoal(2, new RefugeeGuardGoal(self));
 		this.goalSelector.addGoal(3, new RefugeeBuildGoal(self));
-		this.goalSelector.addGoal(4, new RefugeeRepairGoal(self));
-		this.goalSelector.addGoal(5, new RefugeeSmeltGoal(self));
-		this.goalSelector.addGoal(6, new RefugeeMineGoal(self));
-		this.goalSelector.addGoal(7, new EnchanterTableRoamGoal(self));
-		this.goalSelector.addGoal(8, new RefugeePatrolGoal(self));
+		this.goalSelector.addGoal(4, new RefugeeHaulGoal(self));
+		this.goalSelector.addGoal(5, new RefugeeRepairGoal(self));
+		this.goalSelector.addGoal(6, new RefugeeSmeltGoal(self));
+		this.goalSelector.addGoal(7, new RefugeeMineGoal(self));
+		this.goalSelector.addGoal(8, new EnchanterTableRoamGoal(self));
+		this.goalSelector.addGoal(9, new RefugeePatrolGoal(self));
 	}
 }

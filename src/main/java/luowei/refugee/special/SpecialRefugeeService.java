@@ -50,7 +50,8 @@ public final class SpecialRefugeeService {
 			RefugeeSpecialRole.NURSE,
 			RefugeeSpecialRole.CARTOGRAPHER,
 			RefugeeSpecialRole.ENCHANTER,
-			RefugeeSpecialRole.GUIDE
+			RefugeeSpecialRole.GUIDE,
+			RefugeeSpecialRole.SMITH
 	);
 
 	private SpecialRefugeeService() {
@@ -88,6 +89,15 @@ public final class SpecialRefugeeService {
 				yield GuideTutorialService.handleGuideInteract(player, villager);
 			}
 			case CARTOGRAPHER, ENCHANTER -> {
+				if (!empty) {
+					yield false;
+				}
+				RefugeeBubble.onTalk(villager);
+				lookAtPlayer(villager, player);
+				RefugeeNetworking.openSpecialSplash(player, villager);
+				yield true;
+			}
+			case SMITH -> {
 				if (!empty) {
 					yield false;
 				}
@@ -483,6 +493,7 @@ public final class SpecialRefugeeService {
 					|| PbsAdapter.territoryCounts(level, subjectId).owned() > CARTOGRAPHER_OWNED_THRESHOLD;
 			case ENCHANTER -> isEnchanterEligible(level, members);
 			case GUIDE -> isGuideEligible(level, members);
+			case SMITH -> true;
 		};
 	}
 

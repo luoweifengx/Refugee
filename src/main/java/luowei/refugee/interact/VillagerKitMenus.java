@@ -20,10 +20,18 @@ import net.minecraft.world.inventory.MenuType;
 import luowei.refugee.Refugee;
 
 public final class VillagerKitMenus {
-	public record OpenData(int entityId) {
+	public record OpenData(int entityId, float satiety, float stamina, float comfort, float loyalty) {
 		public static final StreamCodec<RegistryFriendlyByteBuf, OpenData> STREAM_CODEC = StreamCodec.composite(
 				ByteBufCodecs.VAR_INT,
 				OpenData::entityId,
+				ByteBufCodecs.FLOAT,
+				OpenData::satiety,
+				ByteBufCodecs.FLOAT,
+				OpenData::stamina,
+				ByteBufCodecs.FLOAT,
+				OpenData::comfort,
+				ByteBufCodecs.FLOAT,
+				OpenData::loyalty,
 				OpenData::new
 		);
 	}
@@ -48,7 +56,14 @@ public final class VillagerKitMenus {
 		player.openMenu(new ExtendedScreenHandlerFactory<OpenData>() {
 			@Override
 			public OpenData getScreenOpeningData(ServerPlayer opener) {
-				return new OpenData(villager.getId());
+				luowei.refugee.livability.LivabilityData data = luowei.refugee.livability.LivabilityService.get(villager);
+				return new OpenData(
+						villager.getId(),
+						(float) data.satiety(),
+						(float) data.stamina(),
+						(float) data.comfort(),
+						(float) data.loyalty()
+				);
 			}
 
 			@Override

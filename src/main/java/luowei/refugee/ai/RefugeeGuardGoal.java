@@ -99,6 +99,19 @@ public class RefugeeGuardGoal extends Goal {
 		RefugeeSwim.tick(villager);
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		data.tickCombatCooldowns();
+		if (luowei.refugee.livability.LivabilityService.isSpent(villager)) {
+			villager.setTarget(null);
+			RefugeeCombat.stopRangedDraw(villager);
+			RefugeeCombat.tickShield(villager, false);
+			RefugeeCombat.Mood spentMood = data.combatMood();
+			if (spentMood == RefugeeCombat.Mood.COMBAT || spentMood == RefugeeCombat.Mood.LAST_STAND) {
+				RefugeeCombat.setMood(villager, RefugeeCombat.Mood.IDLE);
+			}
+			if (data.isHostileFaction()) {
+				villager.getNavigation().stop();
+				return;
+			}
+		}
 		if (data.isHostileFaction()) {
 			tickHostileFaction(data);
 			return;
@@ -127,7 +140,7 @@ public class RefugeeGuardGoal extends Goal {
 			tickCombat(false);
 			return;
 		}
-		if (hostiles) {
+		if (hostiles && !luowei.refugee.livability.LivabilityService.isSpent(villager)) {
 			RefugeeCombat.setMood(villager, RefugeeCombat.Mood.COMBAT);
 			tickCombat(false);
 			return;
@@ -181,26 +194,35 @@ public class RefugeeGuardGoal extends Goal {
 					+ " food=" + RefugeeRoles.hasFood(villager));
 			RefugeeCombat.setMood(villager, next);
 		}
-		if (next == RefugeeCombat.Mood.FLEE) {
-			RefugeeCombat.tickShield(villager, false);
-			RefugeeCombat.flee(villager, nearby);
-			return;
-		}
+		// if (next == RefugeeCombat.Mood.FLEE) {
+		// 	RefugeeCombat.tickShield(villager, false);
+		// 	RefugeeCombat.flee(villager, nearby);
+		// 	return;
+		// }
 		if (next == RefugeeCombat.Mood.RECOVER) {
 			villager.setTarget(null);
 			villager.getNavigation().stop();
 			RefugeeCombat.tickShield(villager, false);
-			RefugeeCombat.tryEat(villager, (float) RefugeeConfig.recoverHealthRatio);
+			// RefugeeCombat.tryEat(villager);
 			return;
 		}
 		tickCombat(true);
 	}
 
 	private void tickCombat(boolean lastStand) {
+		if (luowei.refugee.livability.LivabilityService.isSpent(villager)) {
+			villager.setTarget(null);
+			villager.getNavigation().stop();
+			RefugeeCombat.stopRangedDraw(villager);
+			RefugeeCombat.tickShield(villager, false);
+			RefugeeCombat.setMood(villager, RefugeeCombat.Mood.IDLE);
+			return;
+		}
 		LivingEntity target = villager.getTarget();
 		Vec3 center = RefugeeCombat.combatCenter(villager);
-		if (target == null || !target.isAlive() || !RefugeeGuardGoal.isWithinGuardRadius(target, center)) {
-			target = RefugeeCombat.nearestHostile(villager, center, RefugeeConfig.guardRadius);
+		if (target == null || !target.isAlive() || !RefugeeGuardGoal.isWithinGuardRadius(target, center)
+				|| (target instanceof Villager other && !RefugeeAttachments.get(other).isHostileFaction())) {
+			target = RefugeeCombat.nearestCombatTarget(villager, center, RefugeeConfig.guardRadius);
 			villager.setTarget(target);
 		}
 		if (target == null || !target.isAlive()) {
@@ -259,7 +281,7 @@ public class RefugeeGuardGoal extends Goal {
 		if (villager.getTarget() != null) {
 			villager.setTarget(null);
 		}
-		RefugeeCombat.tryEat(villager, 1.0f);
+		RefugeeCombat.tryEat(villager);
 		if (!RefugeeRoles.isGuard(villager) && !data.isHostileFaction()) {
 			villager.getNavigation().stop();
 			return;

@@ -7,6 +7,7 @@ public enum SpecialStoryKind {
 	GUIDE_WOOD("guide.wood", RefugeeSpecialRole.GUIDE, 6, false),
 	GUIDE_COPPER("guide.copper", RefugeeSpecialRole.GUIDE, 4, false),
 	GUIDE_IRON("guide.iron", RefugeeSpecialRole.GUIDE, 7, false),
+	GUIDE_NETHER("guide.nether", RefugeeSpecialRole.GUIDE, 4, false),
 	NURSE_INJURY("nurse.injury", RefugeeSpecialRole.NURSE, 4, false),
 	NURSE_DEATH("nurse.death", RefugeeSpecialRole.NURSE, 5, false),
 	NURSE_HEAL("nurse.heal", RefugeeSpecialRole.NURSE, 1, false),

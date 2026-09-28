@@ -285,7 +285,7 @@ public class SpecialSplashScreen extends Screen {
 
 	@Override
 	public boolean shouldCloseOnEsc() {
-		return this.askLevel != AskLevel.ITEMS && this.askLevel != AskLevel.CATEGORIES;
+		return true;
 	}
 
 	@Override
@@ -324,25 +324,25 @@ public class SpecialSplashScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-		if (keyCode == GLFW.GLFW_KEY_ESCAPE && this.askLevel == AskLevel.ITEMS) {
-			if (this.askFromStaff) {
-				enterAskCategories();
-			} else {
-				enterAskGroups();
+		if (isInventoryKey(keyCode, scanCode)) {
+			if (this.askLevel == AskLevel.ITEMS) {
+				if (this.askFromStaff) {
+					enterAskCategories();
+				} else {
+					enterAskGroups();
+				}
+				return true;
 			}
-			return true;
-		}
-		if (keyCode == GLFW.GLFW_KEY_ESCAPE && this.askLevel == AskLevel.CATEGORIES) {
-			enterAskGroups();
+			if (this.askLevel == AskLevel.CATEGORIES) {
+				enterAskGroups();
+				return true;
+			}
+			this.onClose();
 			return true;
 		}
 		if ((this.screenMode == SpecialSplashPayload.MODE_INTRO || this.screenMode == SpecialSplashPayload.MODE_STORY)
 				&& (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_SPACE || keyCode == GLFW.GLFW_KEY_KP_ENTER)) {
 			advanceIntro();
-			return true;
-		}
-		if (isInventoryKey(keyCode, scanCode)) {
-			this.onClose();
 			return true;
 		}
 		if (this.screenMode == SpecialSplashPayload.MODE_INTRO
@@ -484,13 +484,7 @@ public class SpecialSplashScreen extends Screen {
 	}
 
 	private void beginFarewell() {
-		if (this.farewellPending) {
-			this.onClose();
-			return;
-		}
-		this.farewellPending = true;
-		startTalkSwap(Component.translatable(lineKey(this.role, "farewell")));
-		this.farewellCloseAtMs = System.currentTimeMillis() + FAREWELL_HOLD_MS;
+		this.onClose();
 	}
 
 	private void setSelected(int index) {

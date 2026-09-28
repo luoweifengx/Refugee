@@ -54,10 +54,12 @@ public final class PlayerSelectionData {
 	private UUID nurseId;
 	private UUID cartographerId;
 	private UUID enchanterId;
+	private UUID smithId;
 	private boolean hadLapis;
 	private boolean nurseGranted;
 	private boolean cartographerGranted;
 	private boolean enchanterGranted;
+	private boolean smithGranted;
 	private boolean guideIntroDone;
 	private int guideIntroStep;
 	private boolean guideStaffGranted;
@@ -466,6 +468,7 @@ public final class PlayerSelectionData {
 			case NURSE -> nurseGranted;
 			case CARTOGRAPHER -> cartographerGranted;
 			case ENCHANTER -> enchanterGranted;
+			case SMITH -> smithGranted;
 		};
 	}
 
@@ -478,6 +481,7 @@ public final class PlayerSelectionData {
 			case NURSE -> nurseId;
 			case CARTOGRAPHER -> cartographerId;
 			case ENCHANTER -> enchanterId;
+			case SMITH -> smithId;
 		};
 	}
 
@@ -498,6 +502,10 @@ public final class PlayerSelectionData {
 			case ENCHANTER -> {
 				enchanterId = villagerId;
 				enchanterGranted = true;
+			}
+			case SMITH -> {
+				smithId = villagerId;
+				smithGranted = true;
 			}
 		}
 	}
@@ -523,6 +531,10 @@ public final class PlayerSelectionData {
 			enchanterId = null;
 			changed = true;
 		}
+		if (villagerId.equals(smithId)) {
+			smithId = null;
+			changed = true;
+		}
 		return changed;
 	}
 
@@ -539,6 +551,9 @@ public final class PlayerSelectionData {
 		}
 		if (enchanterId != null) {
 			ids.add(enchanterId);
+		}
+		if (smithId != null) {
+			ids.add(smithId);
 		}
 		return ids;
 	}
@@ -562,9 +577,11 @@ public final class PlayerSelectionData {
 		nurseId = keeper.nurseId;
 		cartographerId = keeper.cartographerId;
 		enchanterId = keeper.enchanterId;
+		smithId = keeper.smithId;
 		nurseGranted = nurseGranted || keeper.nurseGranted || keeper.nurseId != null;
 		cartographerGranted = cartographerGranted || keeper.cartographerGranted || keeper.cartographerId != null;
 		enchanterGranted = enchanterGranted || keeper.enchanterGranted || keeper.enchanterId != null;
+		smithGranted = smithGranted || keeper.smithGranted || keeper.smithId != null;
 		hadLapis = hadLapis || keeper.hadLapis;
 	}
 
@@ -582,6 +599,9 @@ public final class PlayerSelectionData {
 		if (enchanterId != null) {
 			n++;
 		}
+		if (smithId != null) {
+			n++;
+		}
 		return n;
 	}
 
@@ -594,6 +614,8 @@ public final class PlayerSelectionData {
 				Optional.empty(),
 				Optional.empty(),
 				Optional.empty(),
+				Optional.empty(),
+				false,
 				false,
 				false,
 				false,
@@ -604,39 +626,47 @@ public final class PlayerSelectionData {
 				UUIDUtil.CODEC.optionalFieldOf("nurse").forGetter(SpecialBindings::nurse),
 				UUIDUtil.CODEC.optionalFieldOf("cartographer").forGetter(SpecialBindings::cartographer),
 				UUIDUtil.CODEC.optionalFieldOf("enchanter").forGetter(SpecialBindings::enchanter),
+				UUIDUtil.CODEC.optionalFieldOf("smith").forGetter(SpecialBindings::smith),
 				Codec.BOOL.optionalFieldOf("had_lapis", false).forGetter(SpecialBindings::hadLapis),
 				Codec.BOOL.optionalFieldOf("nurse_granted", false).forGetter(SpecialBindings::nurseGranted),
 				Codec.BOOL.optionalFieldOf("cartographer_granted", false).forGetter(SpecialBindings::cartographerGranted),
-				Codec.BOOL.optionalFieldOf("enchanter_granted", false).forGetter(SpecialBindings::enchanterGranted)
+				Codec.BOOL.optionalFieldOf("enchanter_granted", false).forGetter(SpecialBindings::enchanterGranted),
+				Codec.BOOL.optionalFieldOf("smith_granted", false).forGetter(SpecialBindings::smithGranted)
 		).apply(instance, SpecialBindings::new));
 
 		private final Optional<UUID> guide;
 		private final Optional<UUID> nurse;
 		private final Optional<UUID> cartographer;
 		private final Optional<UUID> enchanter;
+		private final Optional<UUID> smith;
 		private final boolean hadLapis;
 		private final boolean nurseGranted;
 		private final boolean cartographerGranted;
 		private final boolean enchanterGranted;
+		private final boolean smithGranted;
 
 		private SpecialBindings(
 				Optional<UUID> guide,
 				Optional<UUID> nurse,
 				Optional<UUID> cartographer,
 				Optional<UUID> enchanter,
+				Optional<UUID> smith,
 				boolean hadLapis,
 				boolean nurseGranted,
 				boolean cartographerGranted,
-				boolean enchanterGranted
+				boolean enchanterGranted,
+				boolean smithGranted
 		) {
 			this.guide = guide;
 			this.nurse = nurse;
 			this.cartographer = cartographer;
 			this.enchanter = enchanter;
+			this.smith = smith;
 			this.hadLapis = hadLapis;
 			this.nurseGranted = nurseGranted;
 			this.cartographerGranted = cartographerGranted;
 			this.enchanterGranted = enchanterGranted;
+			this.smithGranted = smithGranted;
 		}
 
 		private static SpecialBindings from(PlayerSelectionData data) {
@@ -645,10 +675,12 @@ public final class PlayerSelectionData {
 					Optional.ofNullable(data.nurseId),
 					Optional.ofNullable(data.cartographerId),
 					Optional.ofNullable(data.enchanterId),
+					Optional.ofNullable(data.smithId),
 					data.hadLapis,
 					data.nurseGranted,
 					data.cartographerGranted,
-					data.enchanterGranted
+					data.enchanterGranted,
+					data.smithGranted
 			);
 		}
 
@@ -657,10 +689,12 @@ public final class PlayerSelectionData {
 			data.nurseId = nurse.orElse(null);
 			data.cartographerId = cartographer.orElse(null);
 			data.enchanterId = enchanter.orElse(null);
+			data.smithId = smith.orElse(null);
 			data.hadLapis = hadLapis;
 			data.nurseGranted = nurseGranted;
 			data.cartographerGranted = cartographerGranted;
 			data.enchanterGranted = enchanterGranted;
+			data.smithGranted = smithGranted;
 		}
 
 		private Optional<UUID> guide() {
@@ -679,6 +713,10 @@ public final class PlayerSelectionData {
 			return enchanter;
 		}
 
+		private Optional<UUID> smith() {
+			return smith;
+		}
+
 		private boolean hadLapis() {
 			return hadLapis;
 		}
@@ -693,6 +731,10 @@ public final class PlayerSelectionData {
 
 		private boolean enchanterGranted() {
 			return enchanterGranted;
+		}
+
+		private boolean smithGranted() {
+			return smithGranted;
 		}
 	}
 

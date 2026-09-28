@@ -59,14 +59,16 @@ public final class RefugeeVillagerData {
 			Codec.BOOL.optionalFieldOf("crusader", false).forGetter(data -> data.crusader),
 			UUIDUtil.CODEC.optionalFieldOf("guard_mark").forGetter(data -> Optional.ofNullable(data.guardMarkPlayerId)),
 			Codec.BOOL.optionalFieldOf("claimable", false).forGetter(data -> data.claimable),
-			Codec.BOOL.optionalFieldOf("hostile_faction", false).forGetter(data -> data.hostileFaction)
-	).apply(instance, (data, lastDepthCurseTick, workerDuty, crusader, guardMark, claimable, hostileFaction) -> {
+			Codec.BOOL.optionalFieldOf("hostile_faction", false).forGetter(data -> data.hostileFaction),
+			ItemStack.OPTIONAL_CODEC.listOf().optionalFieldOf("cargo", List.of()).forGetter(RefugeeVillagerData::storedCargo)
+	).apply(instance, (data, lastDepthCurseTick, workerDuty, crusader, guardMark, claimable, hostileFaction, cargo) -> {
 		data.lastDepthCurseTick = lastDepthCurseTick;
 		data.workerDuty = WorkerDuty.fromId(workerDuty);
 		data.crusader = crusader;
 		data.guardMarkPlayerId = guardMark.orElse(null);
 		data.claimable = claimable;
 		data.hostileFaction = hostileFaction;
+		data.loadCargo(cargo);
 		return data;
 	}));
 
@@ -111,8 +113,24 @@ public final class RefugeeVillagerData {
 	private boolean hostileFaction;
 	/** 当晚开始尝试入睡的游戏时刻；-1 表示没在试。不写入存档。 */
 	private long sleepAttemptStart = -1L;
+	/** 这段时间内不跑 Brain，留给一次性寻路。不写入存档。 */
+	private long brainHoldUntil = -1L;
+	/** 这次跟随是剧情走近玩家，对话开始或结束后要停。不写入存档。 */
+	private boolean storyApproach;
+	/** 有待触发的特殊对话，头顶显示黄色感叹号。不写入存档。 */
+	private boolean storyAlert;
 	private UUID guardMarkPlayerId;
 	private boolean claimable;
+	/** 工作背包，固定 9 格。不占用原版村民背包。 */
+	private final List<ItemStack> cargo = new ArrayList<>();
+	/** 存仓失败后继续干活，等新仓库再试。不写入存档。 */
+	private boolean cargoWaiting;
+	/** 下一次要收的东西放不进背包。不写入存档。 */
+	private boolean cargoBlocked;
+	/** 当前这份活已经没目标，背包里还有要存的东西。不写入存档。 */
+	private boolean cargoIdle;
+	/** 新标了仓库，强制再试一次存仓。不写入存档。 */
+	private boolean cargoWake;
 
 	public RefugeeVillagerData() {
 	}
@@ -438,6 +456,39 @@ public final class RefugeeVillagerData {
 		return lookAtPlayerId != null && gameTime < lookUntilGameTime;
 	}
 
+	public void clearLookAt() {
+		this.lookAtPlayerId = null;
+		this.lookUntilGameTime = 0L;
+	}
+
+	public void holdBrain(long untilGameTime) {
+		this.brainHoldUntil = untilGameTime;
+	}
+
+	public boolean holdsBrain(long gameTime) {
+		return brainHoldUntil >= 0L && gameTime < brainHoldUntil;
+	}
+
+	public void markStoryApproach() {
+		this.storyApproach = true;
+	}
+
+	public boolean isStoryApproach() {
+		return storyApproach;
+	}
+
+	public void clearStoryApproach() {
+		this.storyApproach = false;
+	}
+
+	public void setStoryAlert(boolean storyAlert) {
+		this.storyAlert = storyAlert;
+	}
+
+	public boolean isStoryAlert() {
+		return storyAlert;
+	}
+
 	public void startLove(long untilGameTime) {
 		this.loveUntilGameTime = untilGameTime;
 		this.sweatUntilGameTime = 0L;
@@ -653,6 +704,75 @@ public final class RefugeeVillagerData {
 
 	public void setOffAttackCooldown(int offAttackCooldown) {
 		this.offAttackCooldown = Math.max(0, offAttackCooldown);
+	}
+
+	public static final int CARGO_SLOTS = 9;
+
+	public List<ItemStack> cargoSlots() {
+		while (cargo.size() < CARGO_SLOTS) {
+			cargo.add(ItemStack.EMPTY);
+		}
+		while (cargo.size() > CARGO_SLOTS) {
+			cargo.remove(cargo.size() - 1);
+		}
+		return cargo;
+	}
+
+	public List<ItemStack> storedCargo() {
+		List<ItemStack> stored = new ArrayList<>();
+		for (ItemStack stack : cargo) {
+			if (stack != null && !stack.isEmpty()) {
+				stored.add(stack.copy());
+			}
+		}
+		return stored;
+	}
+
+	public void loadCargo(List<ItemStack> stacks) {
+		cargo.clear();
+		if (stacks != null) {
+			for (ItemStack stack : stacks) {
+				if (cargo.size() >= CARGO_SLOTS) {
+					break;
+				}
+				if (stack != null && !stack.isEmpty()) {
+					cargo.add(stack.copy());
+				}
+			}
+		}
+		cargoSlots();
+	}
+
+	public boolean cargoWaiting() {
+		return cargoWaiting;
+	}
+
+	public void setCargoWaiting(boolean cargoWaiting) {
+		this.cargoWaiting = cargoWaiting;
+	}
+
+	public boolean cargoBlocked() {
+		return cargoBlocked;
+	}
+
+	public void setCargoBlocked(boolean cargoBlocked) {
+		this.cargoBlocked = cargoBlocked;
+	}
+
+	public boolean cargoIdle() {
+		return cargoIdle;
+	}
+
+	public void setCargoIdle(boolean cargoIdle) {
+		this.cargoIdle = cargoIdle;
+	}
+
+	public boolean cargoWake() {
+		return cargoWake;
+	}
+
+	public void setCargoWake(boolean cargoWake) {
+		this.cargoWake = cargoWake;
 	}
 
 	public void tickCombatCooldowns() {

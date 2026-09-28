@@ -8,13 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.EnumMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -25,20 +19,15 @@ import com.google.gson.JsonParser;
 
 import net.fabricmc.loader.api.FabricLoader;
 
-import net.minecraft.core.Holder;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.effect.MobEffect;
 
 import luowei.refugee.Refugee;
-import luowei.refugee.ai.RefugeeBuffState;
+import luowei.refugee.livability.LivabilityRules;
 import luowei.refugee.warehouse.MaterialCategory;
 
 /**
- * {@code config/refugee.json}：入境（每天 daytime 4000 必触发一波，档位人数再乘难度）、号角/钟、守卫、安顿、干活距离、仓库合并、村民 buff 与全灭。缺文件时写出默认值。
+ * {@code config/refugee.json}：入境（每天 daytime 4000 必触发一波，档位人数再乘难度）、号角/钟、守卫、安顿、干活距离、仓库合并与全灭。缺文件时写出默认值。
  */
 public final class RefugeeConfig {
 	public static final String FILE_NAME = "refugee.json";
@@ -48,13 +37,6 @@ public final class RefugeeConfig {
 
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
-	private static final List<BuffSpec> DEFAULT_IDLE_BUFFS = List.of(new BuffSpec("minecraft:regeneration", 0));
-	private static final List<BuffSpec> DEFAULT_RANGED_BUFFS = List.of(new BuffSpec("minecraft:regeneration", 0));
-	private static final List<BuffSpec> DEFAULT_MELEE_BUFFS = List.of(
-			new BuffSpec("minecraft:regeneration", 1),
-			new BuffSpec("minecraft:resistance", 0)
-	);
-	private static final List<BuffSpec> DEFAULT_BUILDER_BUFFS = List.of(new BuffSpec("minecraft:regeneration", 0));
 	private static final List<ResourceLocation> DEFAULT_IMMIGRATION_DIMENSIONS = List.of(
 			ResourceLocation.parse("minecraft:overworld")
 	);
@@ -120,20 +102,10 @@ public final class RefugeeConfig {
 	public static boolean warehouseMergeQuartz = true;
 	/** true：发光方块大类可互换取料并按类整理。 */
 	public static boolean warehouseMergeLight = true;
-	/** true：按职业给村民常驻 buff；false：不施加并清掉本模组管理的效果。 */
-	public static boolean villagerBuffsEnabled = false;
 	/** true：禁止村民被僵尸打死时转化成僵尸村民（按死亡掉落）；false：沿用原版转化。 */
 	public static boolean blockVillagerZombieConversion = true;
 	/** 名册清空：旁观失败，或继续游戏。 */
 	public static EmptyRosterMode emptyRosterMode = EmptyRosterMode.SPECTATOR;
-
-	public static List<BuffSpec> idleBuffs = DEFAULT_IDLE_BUFFS;
-	public static List<BuffSpec> rangedBuffs = DEFAULT_RANGED_BUFFS;
-	public static List<BuffSpec> meleeBuffs = DEFAULT_MELEE_BUFFS;
-	public static List<BuffSpec> builderBuffs = DEFAULT_BUILDER_BUFFS;
-
-	private static final Map<RefugeeBuffState, List<ResolvedBuff>> resolvedBuffs = new EnumMap<>(RefugeeBuffState.class);
-	private static Set<Holder<MobEffect>> managedEffects = Set.of();
 
 	private RefugeeConfig() {
 	}
@@ -157,16 +129,6 @@ public final class RefugeeConfig {
 		} catch (Exception exception) {
 			Refugee.LOGGER.warn("Failed to load {}; using defaults", FILE_NAME, exception);
 		}
-		resolveBuffs();
-	}
-
-	public static List<ResolvedBuff> resolvedBuffs(RefugeeBuffState state) {
-		List<ResolvedBuff> buffs = resolvedBuffs.get(state);
-		return buffs == null ? List.of() : buffs;
-	}
-
-	public static boolean isManagedEffect(Holder<MobEffect> effect) {
-		return managedEffects.contains(effect);
 	}
 
 	public static boolean isImmigrationDimension(ServerLevel level) {
@@ -274,10 +236,9 @@ public final class RefugeeConfig {
 		warehouseMergeGlass = readBoolean(json, "warehouseMergeGlass", legacyMerge);
 		warehouseMergeQuartz = readBoolean(json, "warehouseMergeQuartz", legacyMerge);
 		warehouseMergeLight = readBoolean(json, "warehouseMergeLight", legacyMerge);
-		villagerBuffsEnabled = readBoolean(json, "villagerBuffsEnabled", villagerBuffsEnabled);
 		blockVillagerZombieConversion = readBoolean(json, "blockVillagerZombieConversion", blockVillagerZombieConversion);
 		emptyRosterMode = EmptyRosterMode.parse(readString(json, "emptyRosterMode", emptyRosterMode.id()), emptyRosterMode);
-		applyBuffs(json);
+		LivabilityRules.CURRENT.copyFrom(json);
 	}
 
 	private static void write(Path path) throws IOException {
@@ -322,15 +283,9 @@ public final class RefugeeConfig {
 		json.addProperty("warehouseMergeGlass", warehouseMergeGlass);
 		json.addProperty("warehouseMergeQuartz", warehouseMergeQuartz);
 		json.addProperty("warehouseMergeLight", warehouseMergeLight);
-		json.addProperty("villagerBuffsEnabled", villagerBuffsEnabled);
 		json.addProperty("blockVillagerZombieConversion", blockVillagerZombieConversion);
 		json.addProperty("emptyRosterMode", emptyRosterMode.id());
-		JsonObject villagerBuffs = new JsonObject();
-		villagerBuffs.add("idle", writeBuffList(idleBuffs));
-		villagerBuffs.add("ranged", writeBuffList(rangedBuffs));
-		villagerBuffs.add("melee", writeBuffList(meleeBuffs));
-		villagerBuffs.add("builder", writeBuffList(builderBuffs));
-		json.add("villagerBuffs", villagerBuffs);
+		json.add("livability", LivabilityRules.CURRENT.write());
 		try (Writer writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
 			GSON.toJson(json, writer);
 			writer.write(System.lineSeparator());
@@ -454,91 +409,6 @@ public final class RefugeeConfig {
 		return array;
 	}
 
-	private static void applyBuffs(JsonObject json) {
-		JsonObject buffs = json.has("villagerBuffs") && json.get("villagerBuffs").isJsonObject()
-				? json.getAsJsonObject("villagerBuffs")
-				: null;
-		idleBuffs = readBuffList(buffs, "idle", DEFAULT_IDLE_BUFFS);
-		rangedBuffs = readBuffList(buffs, "ranged", DEFAULT_RANGED_BUFFS);
-		meleeBuffs = readBuffList(buffs, "melee", DEFAULT_MELEE_BUFFS);
-		builderBuffs = readBuffList(buffs, "builder", DEFAULT_BUILDER_BUFFS);
-	}
-
-	private static List<BuffSpec> readBuffList(JsonObject buffs, String key, List<BuffSpec> fallback) {
-		if (buffs == null || !buffs.has(key) || !buffs.get(key).isJsonArray()) {
-			return fallback;
-		}
-		List<BuffSpec> result = new ArrayList<>();
-		for (JsonElement element : buffs.getAsJsonArray(key)) {
-			if (!element.isJsonObject()) {
-				Refugee.LOGGER.warn("villagerBuffs.{} skipped non-object entry", key);
-				continue;
-			}
-			JsonObject obj = element.getAsJsonObject();
-			if (!obj.has("effect") || !obj.get("effect").isJsonPrimitive() || !obj.get("effect").getAsJsonPrimitive().isString()) {
-				Refugee.LOGGER.warn("villagerBuffs.{} skipped entry without effect id", key);
-				continue;
-			}
-			String effect = obj.get("effect").getAsString();
-			if (effect == null || effect.isBlank()) {
-				Refugee.LOGGER.warn("villagerBuffs.{} skipped blank effect id", key);
-				continue;
-			}
-			int amplifier = 0;
-			if (obj.has("amplifier") && obj.get("amplifier").isJsonPrimitive() && obj.get("amplifier").getAsJsonPrimitive().isNumber()) {
-				amplifier = Math.max(0, obj.get("amplifier").getAsInt());
-			}
-			result.add(new BuffSpec(effect, amplifier));
-		}
-		return List.copyOf(result);
-	}
-
-	private static JsonArray writeBuffList(List<BuffSpec> specs) {
-		JsonArray array = new JsonArray();
-		for (BuffSpec spec : specs) {
-			JsonObject obj = new JsonObject();
-			obj.addProperty("effect", spec.effect());
-			obj.addProperty("amplifier", spec.amplifier());
-			array.add(obj);
-		}
-		return array;
-	}
-
-	private static void resolveBuffs() {
-		resolvedBuffs.put(RefugeeBuffState.IDLE, resolve(idleBuffs, "idle"));
-		resolvedBuffs.put(RefugeeBuffState.RANGED, resolve(rangedBuffs, "ranged"));
-		resolvedBuffs.put(RefugeeBuffState.MELEE, resolve(meleeBuffs, "melee"));
-		resolvedBuffs.put(RefugeeBuffState.BUILDER, resolve(builderBuffs, "builder"));
-		Set<Holder<MobEffect>> managed = new HashSet<>();
-		for (List<ResolvedBuff> list : resolvedBuffs.values()) {
-			for (ResolvedBuff buff : list) {
-				managed.add(buff.effect());
-			}
-		}
-		managedEffects = Set.copyOf(managed);
-	}
-
-	private static List<ResolvedBuff> resolve(List<BuffSpec> specs, String typeKey) {
-		LinkedHashMap<Holder<MobEffect>, Integer> map = new LinkedHashMap<>();
-		for (BuffSpec spec : specs) {
-			ResourceLocation id = ResourceLocation.tryParse(spec.effect());
-			if (id == null) {
-				Refugee.LOGGER.warn("villagerBuffs.{} skipped invalid effect id {}", typeKey, spec.effect());
-				continue;
-			}
-			ResourceKey<MobEffect> key = ResourceKey.create(Registries.MOB_EFFECT, id);
-			Optional<Holder.Reference<MobEffect>> holder = BuiltInRegistries.MOB_EFFECT.get(key);
-			if (holder.isEmpty()) {
-				Refugee.LOGGER.warn("villagerBuffs.{} skipped unknown effect {}", typeKey, id);
-				continue;
-			}
-			map.put(holder.get(), spec.amplifier());
-		}
-		List<ResolvedBuff> result = new ArrayList<>(map.size());
-		map.forEach((effect, amplifier) -> result.add(new ResolvedBuff(effect, amplifier)));
-		return List.copyOf(result);
-	}
-
 	/**
 	 * 持有区块上限（含）、每次间隔抽中率、抽中后的人数区间（简单基准）。缺 {@code maxOwned} 表示无上限（最后一档）。
 	 */
@@ -573,11 +443,5 @@ public final class RefugeeConfig {
 			Refugee.LOGGER.warn("emptyRosterMode {} is not spectator or disableKeepInventory; using {}", raw, fallback.id());
 			return fallback;
 		}
-	}
-
-	public record BuffSpec(String effect, int amplifier) {
-	}
-
-	public record ResolvedBuff(Holder<MobEffect> effect, int amplifier) {
 	}
 }

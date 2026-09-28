@@ -6,7 +6,6 @@ import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.ai.targeting.TargetingConditions;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.npc.Villager;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import luowei.refugee.config.RefugeeConfig;
@@ -32,21 +31,11 @@ public class RefugeeGuardTargetGoal extends NearestAttackableTargetGoal<Monster>
 	@Override
 	protected void findTarget() {
 		this.target = null;
-		Vec3 center = villager.position();
-		if (!(villager.level() instanceof ServerLevel level)) {
-			return;
+		LivingEntity enemy = RefugeeCombat.nearestCombatTarget(villager, villager.position(), getFollowDistance());
+		if (enemy instanceof Monster monster) {
+			this.target = monster;
 		}
-		double radius = getFollowDistance();
-		AABB box = new AABB(center, center).inflate(radius);
-		this.target = level.getNearestEntity(
-				level.getEntitiesOfClass(Monster.class, box, monster ->
-						monster.isAlive() && RefugeeGuardGoal.isWithinGuardRadius(monster, center)),
-				this.targetConditions.range(-1.0),
-				villager,
-				villager.getX(),
-				villager.getEyeY(),
-				villager.getZ()
-		);
+		villager.setTarget(enemy);
 	}
 
 	@Override
@@ -69,11 +58,20 @@ public class RefugeeGuardTargetGoal extends NearestAttackableTargetGoal<Monster>
 		if (villager.isBaby() || !RefugeeCombat.mood(villager).canAcquireTarget()) {
 			return false;
 		}
+		if (luowei.refugee.livability.LivabilityService.isSpent(villager)) {
+			return false;
+		}
 		if (!RefugeeRoles.isGuard(villager)) {
 			return false;
 		}
-		this.targetConditions.range(-1.0);
-		return super.canUse();
+		findTarget();
+		return this.target != null || isHostileFactionTarget(villager.getTarget());
+	}
+
+	private static boolean isHostileFactionTarget(LivingEntity target) {
+		return target instanceof Villager other
+				&& other.isAlive()
+				&& luowei.refugee.attachment.RefugeeAttachments.get(other).isHostileFaction();
 	}
 
 	@Override
@@ -86,7 +84,10 @@ public class RefugeeGuardTargetGoal extends NearestAttackableTargetGoal<Monster>
 		if (current == null) {
 			current = this.targetMob;
 		}
-		if (current == null || !current.isAlive() || !villager.canAttack(current)) {
+		if (current == null || !current.isAlive()) {
+			return false;
+		}
+		if (!isHostileFactionTarget(current) && !villager.canAttack(current)) {
 			return false;
 		}
 		if (!RefugeeGuardGoal.isWithinGuardRadius(current, center)) {

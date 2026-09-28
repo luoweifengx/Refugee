@@ -29,8 +29,10 @@ import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.config.RefugeeConfig;
 import luowei.refugee.interact.RefugeeRoles;
+import luowei.refugee.livability.LivabilityData;
+import luowei.refugee.livability.LivabilityRules;
+import luowei.refugee.livability.LivabilityService;
 import luowei.refugee.talk.RefugeeBubble;
-import luowei.refugee.warehouse.MaterialCategory;
 import luowei.refugee.warehouse.WarehouseService;
 
 /**
@@ -181,7 +183,7 @@ public final class RefugeeCombat {
 	}
 
 	/**
-	 * 血量已回到恢复线（进食或玩家治疗）则退出恐慌。
+	 * 血量已回到恢复线则退出恐慌。
 	 * 守卫若自身战斗圈内仍有敌对进 COMBAT，其余回 IDLE。
 	 */
 	public static boolean leavePanicIfHealthy(Villager villager) {
@@ -202,16 +204,17 @@ public final class RefugeeCombat {
 	}
 
 	/**
-	 * 守卫残血：近处有敌且没食物则 LAST_STAND，否则 FLEE；没敌则 RECOVER。
+	 * 守卫残血：近处有敌且没食物则 LAST_STAND，否则 RECOVER。
+	 * 逃跑分支先停用。
 	 */
 	public static Mood panicMoodWhenHurt(Villager villager, Monster nearby) {
 		boolean hasFood = RefugeeRoles.hasFood(villager);
-		if (nearby != null) {
-			if (!hasFood && RefugeeRoles.isGuard(villager)) {
-				return Mood.LAST_STAND;
-			}
-			return Mood.FLEE;
+		if (nearby != null && !hasFood && RefugeeRoles.isGuard(villager)) {
+			return Mood.LAST_STAND;
 		}
+		// if (nearby != null) {
+		// 	return Mood.FLEE;
+		// }
 		return Mood.RECOVER;
 	}
 
@@ -222,7 +225,8 @@ public final class RefugeeCombat {
 
 	public static boolean hasHostilesInGuardRadius(Villager villager) {
 		Vec3 center = combatCenter(villager);
-		return hasHostilesAround(villager, center, RefugeeConfig.guardRadius);
+		return hasHostilesAround(villager, center, RefugeeConfig.guardRadius)
+				|| nearestHostileFaction(villager, center, RefugeeConfig.guardRadius) != null;
 	}
 
 	public static boolean hasHostilesAround(Villager villager, Vec3 center, double radius) {
@@ -263,6 +267,9 @@ public final class RefugeeCombat {
 	}
 
 	public static void attackUnarmed(Villager villager, LivingEntity target) {
+		if (LivabilityService.isSpent(villager)) {
+			return;
+		}
 		if (villager == null || target == null || !target.isAlive() || villager.distanceTo(target) >= 2.2) {
 			return;
 		}
@@ -272,6 +279,41 @@ public final class RefugeeCombat {
 		}
 		melee(villager, target, InteractionHand.MAIN_HAND);
 		setHandCooldown(villager, data, InteractionHand.MAIN_HAND, RefugeeConfig.meleeAttackIntervalTicks);
+	}
+
+	/** 守卫要打的最近目标：怪物，或敌对阵营居民。 */
+	public static LivingEntity nearestCombatTarget(Villager villager, Vec3 center, double radius) {
+		LivingEntity best = nearestHostile(villager, center, radius);
+		Villager faction = nearestHostileFaction(villager, center, radius);
+		if (faction == null) {
+			return best;
+		}
+		if (best == null || faction.distanceToSqr(center) < best.distanceToSqr(center)) {
+			return faction;
+		}
+		return best;
+	}
+
+	public static Villager nearestHostileFaction(Villager villager, Vec3 center, double radius) {
+		if (!(villager.level() instanceof ServerLevel level) || center == null) {
+			return null;
+		}
+		AABB box = new AABB(center, center).inflate(radius);
+		Villager best = null;
+		double bestDist = Double.MAX_VALUE;
+		for (Villager other : level.getEntitiesOfClass(Villager.class, box, candidate ->
+				candidate != villager
+						&& candidate.isAlive()
+						&& RefugeeAttachments.get(candidate).isHostileFaction()
+						&& candidate.distanceToSqr(center) <= radius * radius
+		)) {
+			double dist = other.distanceToSqr(center);
+			if (dist < bestDist) {
+				bestDist = dist;
+				best = other;
+			}
+		}
+		return best;
 	}
 
 	public static Monster nearestHostile(Villager villager, Vec3 center, double radius) {
@@ -409,7 +451,7 @@ public final class RefugeeCombat {
 		RefugeeAttachments.markDirty(villager, data);
 	}
 
-	public static boolean tryEat(Villager villager, float untilRatio) {
+	public static boolean tryEat(Villager villager) {
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		if (data.isEating()) {
 			return true;
@@ -421,23 +463,38 @@ public final class RefugeeCombat {
 		if (data.eatCooldown() > 0) {
 			return false;
 		}
-		float max = villager.getMaxHealth();
-		if (max <= 0.0f || villager.getHealth() / max >= untilRatio) {
+		if (!RefugeeAttachments.isRefugee(villager)) {
+			return false;
+		}
+		LivabilityRules rules = LivabilityRules.CURRENT;
+		LivabilityData live = LivabilityService.get(villager);
+		double missing = rules.statMax - live.satiety();
+		if (missing <= 0.0) {
 			return false;
 		}
 		ItemStack food = data.resourceItem();
-		if (!isEatableFood(food) && villager.level() instanceof ServerLevel level && data.subjectId() != null) {
-			ItemStack taken = WarehouseService.takeOneFood(level, data.subjectId());
-			if (!taken.isEmpty()) {
-				data.setResourceItem(taken);
-				food = taken;
+		if (!RefugeeRoles.isFood(food)) {
+			ItemStack kept = WorkerCargo.takeKeptFood(villager);
+			if (RefugeeRoles.isFood(kept)) {
+				data.setResourceItem(kept);
+				food = kept;
+			} else if (villager.level() instanceof ServerLevel level && data.subjectId() != null) {
+				ItemStack taken = WarehouseService.takeOneFood(level, data.subjectId());
+				if (!taken.isEmpty()) {
+					data.setResourceItem(taken);
+					food = taken;
+				}
 			}
 		}
-		if (!isEatableFood(food)) {
+		if (!RefugeeRoles.isFood(food)) {
 			return false;
 		}
 		FoodProperties properties = food.get(DataComponents.FOOD);
 		if (properties == null) {
+			return false;
+		}
+		if (missing < properties.nutrition()) {
+			RefugeeAttachments.markDirty(villager, data);
 			return false;
 		}
 		int duration = food.getUseDuration(villager);
@@ -459,10 +516,6 @@ public final class RefugeeCombat {
 		return true;
 	}
 
-	private static boolean isEatableFood(ItemStack stack) {
-		return RefugeeRoles.isFood(stack) && MaterialCategory.of(stack) != MaterialCategory.SEED;
-	}
-
 	private static void restoreEatHand(Villager villager, RefugeeVillagerData data) {
 		if (!data.isEating()) {
 			return;
@@ -479,10 +532,7 @@ public final class RefugeeCombat {
 	}
 
 	private static void healFromFood(Villager villager, RefugeeVillagerData data, FoodProperties properties) {
-		float heal = properties.nutrition() * (float) RefugeeConfig.foodHealFraction;
-		if (heal > 0.0f) {
-			villager.heal(heal);
-		}
+		LivabilityService.noteFood(villager, properties);
 		data.setEatCooldown(RefugeeConfig.eatIntervalTicks);
 		RefugeeAttachments.markDirty(villager, data);
 		RefugeeBubble.startFull(villager);
@@ -603,6 +653,9 @@ public final class RefugeeCombat {
 	}
 
 	public static void attackWith(Villager villager, LivingEntity target, InteractionHand hand) {
+		if (LivabilityService.isSpent(villager)) {
+			return;
+		}
 		ItemStack weapon = stackIn(villager, hand);
 		if (!RefugeeRoles.isWeapon(weapon) || target == null || !target.isAlive()) {
 			return;
@@ -623,6 +676,7 @@ public final class RefugeeCombat {
 			return;
 		}
 		melee(villager, target, hand);
+		LivabilityService.noteAttack(villager);
 		setHandCooldown(villager, data, hand, RefugeeConfig.meleeAttackIntervalTicks);
 	}
 
@@ -662,6 +716,7 @@ public final class RefugeeCombat {
 			return;
 		}
 		shoot(villager, target, weapon);
+		LivabilityService.noteAttack(villager);
 		villager.stopUsingItem();
 		setHandCooldown(villager, data, hand, RefugeeConfig.rangedAttackIntervalTicks);
 	}

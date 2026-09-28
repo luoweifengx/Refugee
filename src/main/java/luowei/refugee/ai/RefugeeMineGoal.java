@@ -45,7 +45,7 @@ import luowei.refugee.zone.AreaBox;
 import luowei.refugee.zone.WorkZone;
 
 /**
- * 镐采石、斧伐木、铲挖泥沙、锄按收获→播种→犁地→催熟维护农田。掉落先入村民背包再漏斗入仓。
+ * 镐采石、斧伐木、铲挖泥沙、锄按收获→播种→犁地→催熟维护农田。掉落先进入 9 格工作背包。
  * 镐/斧/铲按玩家破坏公式按 tick 累加进度，并用 {@code destroyBlockProgress} 向客户端同步裂纹。
  */
 public class RefugeeMineGoal extends Goal {
@@ -62,6 +62,8 @@ public class RefugeeMineGoal extends Goal {
 	private int lastCrack = -1;
 	/** 锄头动作冷却，犁地/种地/催熟后等待，避免瞬间扫完工作区。 */
 	private int hoeCooldown;
+	/** 两块之间的空档。基础 10 刻，再按劳动效率拉长。 */
+	private int blockGap;
 
 	public RefugeeMineGoal(Villager villager) {
 		this.villager = villager;
@@ -73,12 +75,16 @@ public class RefugeeMineGoal extends Goal {
 		if (villager.isBaby() || !RefugeeRoles.isBuilder(villager) || WorkerSleep.yields(villager)) {
 			return false;
 		}
+		if (luowei.refugee.livability.LivabilityService.isRebelling(villager)
+				|| luowei.refugee.livability.LivabilityService.isSpent(villager)) {
+			return false;
+		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		if (data.isBuilding() || data.workerDuty().isAssigned()
 				|| data.isFollowing() || data.isFollowingEntity() || data.isPatrolling() || zone() == null) {
 			return false;
 		}
-		if (RefugeeCombat.isEating(villager)) {
+		if (RefugeeCombat.isEating(villager) || WorkerCargo.wantsHaul(villager)) {
 			return false;
 		}
 		return true;
@@ -100,6 +106,7 @@ public class RefugeeMineGoal extends Goal {
 		target = null;
 		scanCursor = 0;
 		hoeCooldown = 0;
+		blockGap = 0;
 		villager.getNavigation().stop();
 	}
 
@@ -115,6 +122,10 @@ public class RefugeeMineGoal extends Goal {
 		}
 		if (!level.dimension().location().equals(zone.dimension())) {
 			abortMining(level);
+			return;
+		}
+		if (target == null && blockGap > 0) {
+			blockGap--;
 			return;
 		}
 		AreaBox box = zone.box();
@@ -143,8 +154,10 @@ public class RefugeeMineGoal extends Goal {
 			}
 		}
 		if (target == null) {
+			RefugeeAttachments.get(villager).setCargoIdle(WorkerCargo.hasDepositable(villager));
 			return;
 		}
+		RefugeeAttachments.get(villager).setCargoIdle(false);
 		villager.getLookControl().setLookAt(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
 		ItemStack tool = RefugeeRoles.workTool(villager);
 		WorkMove.moveToward(villager, target);
@@ -439,7 +452,9 @@ public class RefugeeMineGoal extends Goal {
 		if (isHarvestable(state)) {
 			boolean fruit = isPumpkinOrMelon(state);
 			BlockState soil = level.getBlockState(pos.below());
-			breakAndDepositFarm(level, pos, state);
+			if (!breakAndDepositFarm(level, pos, state)) {
+				return true;
+			}
 			if (!fruit) {
 				tryPlant(level, pos, soil);
 			}
@@ -456,6 +471,7 @@ public class RefugeeMineGoal extends Goal {
 		if (isTillable(state)) {
 			level.setBlock(pos, Blocks.FARMLAND.defaultBlockState(), 3);
 			level.levelEvent(2001, pos, Block.getId(state));
+			luowei.refugee.livability.LivabilityService.noteBlockWork(villager);
 			startHoeCooldown();
 			return true;
 		}
@@ -492,7 +508,7 @@ public class RefugeeMineGoal extends Goal {
 	}
 
 	private void startHoeCooldown() {
-		hoeCooldown = RefugeeConfig.hoeActionIntervalTicks;
+		hoeCooldown = luowei.refugee.livability.LivabilityService.workInterval(villager, RefugeeConfig.hoeActionIntervalTicks);
 	}
 
 	/** 假骨粉：挥锄播粒子，按配置概率催熟，不消耗物品。 */
@@ -505,6 +521,7 @@ public class RefugeeMineGoal extends Goal {
 		}
 		villager.swing(RefugeeRoles.workHand(villager));
 		level.levelEvent(1505, pos, 15);
+		luowei.refugee.livability.LivabilityService.noteFertilize(villager);
 		if (level.random.nextFloat() < RefugeeConfig.hoeBonemealChance
 				&& growable.isBonemealSuccess(level, level.random, pos, state)) {
 			growable.performBonemeal(level, level.random, pos, state);
@@ -520,18 +537,29 @@ public class RefugeeMineGoal extends Goal {
 		if (subjectId == null) {
 			return false;
 		}
-		ItemStack seed = WarehouseService.takeOneSeed(level, subjectId);
+		boolean fromCargo = false;
+		ItemStack seed = WorkerCargo.takeOneSeed(villager);
+		if (!seed.isEmpty()) {
+			fromCargo = true;
+		} else {
+			seed = WarehouseService.takeOneSeed(level, subjectId);
+		}
 		if (seed.isEmpty()) {
 			return false;
 		}
 		BlockState crop = cropStateForSeed(seed.getItem());
 		if (crop == null || !canPlantOn(soil, seed.getItem())) {
-			WarehouseService.depositFarm(level, subjectId, seed);
+			if (fromCargo) {
+				WorkerCargo.insert(villager, seed);
+			} else {
+				WarehouseService.depositFarm(level, subjectId, seed);
+			}
 			return false;
 		}
 		level.setBlock(cropPos, crop, 3);
 		level.levelEvent(2001, cropPos, Block.getId(crop));
 		villager.swing(RefugeeRoles.workHand(villager));
+		luowei.refugee.livability.LivabilityService.noteBlockWork(villager);
 		return true;
 	}
 
@@ -546,8 +574,9 @@ public class RefugeeMineGoal extends Goal {
 			return;
 		}
 		if (hardness == 0.0f) {
-			breakAndDeposit(level, pos, state);
-			finishMining(level, pos);
+			if (breakAndDeposit(level, pos, state)) {
+				finishMining(level, pos);
+			}
 			return;
 		}
 		float speed = tool.getDestroySpeed(state);
@@ -557,8 +586,9 @@ public class RefugeeMineGoal extends Goal {
 		boolean canHarvest = !state.requiresCorrectToolForDrops() || tool.isCorrectToolForDrops(state);
 		float perTick = speed / hardness / (canHarvest ? 30.0f : 100.0f);
 		if (perTick >= 1.0f) {
-			breakAndDeposit(level, pos, state);
-			finishMining(level, pos);
+			if (breakAndDeposit(level, pos, state)) {
+				finishMining(level, pos);
+			}
 			return;
 		}
 		mineProgress += perTick;
@@ -572,8 +602,9 @@ public class RefugeeMineGoal extends Goal {
 			playHitSound(level, pos, state);
 		}
 		if (mineProgress >= 1.0f) {
-			breakAndDeposit(level, pos, state);
-			finishMining(level, pos);
+			if (breakAndDeposit(level, pos, state)) {
+				finishMining(level, pos);
+			}
 		}
 	}
 
@@ -612,24 +643,31 @@ public class RefugeeMineGoal extends Goal {
 			}
 		}
 		target = null;
+		blockGap = luowei.refugee.livability.LivabilityService.workInterval(villager, 10);
 	}
 
-	private void breakAndDeposit(ServerLevel level, BlockPos pos, BlockState state) {
-		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		UUID subjectId = data.subjectId();
+	private boolean breakAndDeposit(ServerLevel level, BlockPos pos, BlockState state) {
 		BlockEntity blockEntity = level.getBlockEntity(pos);
 		List<ItemStack> drops = Block.getDrops(state, level, pos, blockEntity, villager, RefugeeRoles.workTool(villager));
+		if (WorkerCargo.shouldHold(villager, drops)) {
+			return false;
+		}
 		level.destroyBlock(pos, false);
-		WarehouseService.depositLoot(level, villager, subjectId, drops);
+		WorkerCargo.giveDrops(villager, level, drops);
+		luowei.refugee.livability.LivabilityService.noteBlockWork(villager);
+		return true;
 	}
 
-	private void breakAndDepositFarm(ServerLevel level, BlockPos pos, BlockState state) {
-		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		UUID subjectId = data.subjectId();
+	private boolean breakAndDepositFarm(ServerLevel level, BlockPos pos, BlockState state) {
 		BlockEntity blockEntity = level.getBlockEntity(pos);
 		List<ItemStack> drops = Block.getDrops(state, level, pos, blockEntity, villager, RefugeeRoles.workTool(villager));
+		if (WorkerCargo.shouldHold(villager, drops)) {
+			return false;
+		}
 		level.destroyBlock(pos, false);
-		WarehouseService.depositFarmLoot(level, villager, subjectId, drops);
+		WorkerCargo.giveDrops(villager, level, drops);
+		luowei.refugee.livability.LivabilityService.noteBlockWork(villager);
+		return true;
 	}
 
 	private static boolean isPlantableSpot(Villager villager, ServerLevel level, BlockPos pos) {
@@ -637,7 +675,8 @@ public class RefugeeMineGoal extends Goal {
 			return false;
 		}
 		UUID subjectId = RefugeeAttachments.get(villager).subjectId();
-		return subjectId != null && WarehouseService.countFarmSeeds(level, subjectId) > 0;
+		return subjectId != null
+				&& (WorkerCargo.countSeeds(villager) > 0 || WarehouseService.countFarmSeeds(level, subjectId) > 0);
 	}
 
 	private static boolean isGrowable(ServerLevel level, BlockPos pos, BlockState state) {

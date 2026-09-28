@@ -1,9 +1,11 @@
 package luowei.refugee.special;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -13,6 +15,7 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -24,6 +27,7 @@ import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.WrittenBookContent;
+import net.minecraft.world.level.Level;
 
 import luowei.refugee.attachment.PlayerSelectionData;
 import luowei.refugee.attachment.RefugeeAttachments;
@@ -33,13 +37,11 @@ import luowei.refugee.block.ModBlocks;
 import luowei.refugee.compat.GloryCompat;
 import luowei.refugee.network.RefugeeNetworking;
 import luowei.refugee.pbs.PbsAdapter;
-import luowei.refugee.talk.RefugeeBubble;
 
 /**
- * 特殊 NPC 主动剧情：对话锁、寻路开屏、组织聊天、制图师往返与终局。
+ * 特殊 NPC 主动剧情：对话锁、头顶感叹号、组织聊天、制图师往返与终局。
  */
 public final class SpecialStoryService {
-	public static final double TRIGGER_DISTANCE = 2.75;
 	public static final int TICK_INTERVAL = 10;
 	public static final long CARTOGRAPHER_LEAVE_TIME = 1000L;
 	public static final long ENCHANTER_SILENT_TICKS = 30L * 20L;
@@ -50,6 +52,8 @@ public final class SpecialStoryService {
 	public static final String CARTO_INTERRUPT_KEY = "screen.refugee.splash.story.interrupt.cartographer";
 	public static final String ENCHANTER_INTERRUPT_KEY = "screen.refugee.splash.story.interrupt.enchanter";
 	private static final Map<UUID, DialogueLock> LOCKS = new ConcurrentHashMap<>();
+	private static final Set<UUID> STORY_ALERTS = ConcurrentHashMap.newKeySet();
+	private static final Map<String, Set<UUID>> ANNOUNCED = new ConcurrentHashMap<>();
 
 	private record DialogueLock(int entityId, SpecialStoryKind story, int step) {
 	}
@@ -316,6 +320,7 @@ public final class SpecialStoryService {
 		story.setResumeStep(kind, lock.step());
 		int count = story.bumpInterrupt(kind);
 		Villager villager = villagerOf(player, entityId);
+		releaseStoryApproach(villager);
 		RefugeeSpecialRole role = kind.role() != null ? kind.role() : RefugeeSpecialRole.of(villager);
 		long now = player.level() instanceof ServerLevel level ? level.getGameTime() : 0L;
 		if (role == RefugeeSpecialRole.NURSE) {
@@ -356,14 +361,11 @@ public final class SpecialStoryService {
 		}
 		SpecialStoryData.SubjectStory story = progress(player);
 		long now = player.level() instanceof ServerLevel level ? level.getGameTime() : 0L;
-		if (role == RefugeeSpecialRole.ENCHANTER && now < story.enchanterSilentUntil) {
+		SpecialStoryKind kind = story.nextPending();
+		if (kind == null || isStorySilent(story, kind, now)) {
 			return false;
 		}
-		if (role == RefugeeSpecialRole.GUIDE && now < story.guideSilentUntil) {
-			return false;
-		}
-		SpecialStoryKind kind = pendingForRole(story, role);
-		if (kind == null) {
+		if (roleFor(player, kind, story) != role) {
 			return false;
 		}
 		if (role == RefugeeSpecialRole.CARTOGRAPHER) {
@@ -375,6 +377,11 @@ public final class SpecialStoryService {
 	}
 
 	public static void onSplashClose(ServerPlayer player, int entityId) {
+		Villager talking = villagerOf(player, entityId);
+		if (talking != null) {
+			RefugeeAttachments.get(talking).clearLookAt();
+			releaseStoryApproach(talking);
+		}
 		DialogueLock lock = player == null ? null : LOCKS.get(player.getUUID());
 		if (lock != null && lock.story() != null && lock.story().loop() && lock.story() == SpecialStoryKind.DRAGON_GLORY) {
 			finishStory(player, villagerOf(player, entityId), lock.story());
@@ -431,12 +438,26 @@ public final class SpecialStoryService {
 		tickGlory(server);
 		tickCartographerLeave(server);
 		tickFinale(server);
+		Set<UUID> nextAlerts = new HashSet<>();
+		Set<String> activeNotices = new HashSet<>();
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-			tickPlayer(player);
+			tickPlayer(player, nextAlerts, activeNotices);
 		}
+		for (UUID id : STORY_ALERTS) {
+			if (nextAlerts.contains(id)) {
+				continue;
+			}
+			Villager villager = findVillager(server, id);
+			if (villager != null) {
+				RefugeeAttachments.get(villager).setStoryAlert(false);
+			}
+		}
+		STORY_ALERTS.clear();
+		STORY_ALERTS.addAll(nextAlerts);
+		ANNOUNCED.keySet().retainAll(activeNotices);
 	}
 
-	private static void tickPlayer(ServerPlayer player) {
+	private static void tickPlayer(ServerPlayer player, Set<UUID> nextAlerts, Set<String> activeNotices) {
 		if (player == null || player.isSpectator() || player.getServer() == null) {
 			return;
 		}
@@ -456,9 +477,9 @@ public final class SpecialStoryService {
 		}
 		if (isLocked(player)) {
 			keepLook(player);
-			return;
+			holdDialogueAlert(player, nextAlerts);
 		}
-		tryOpenNext(player, story, data);
+		holdHeadNotice(player, story, nextAlerts, activeNotices, !isLocked(player));
 	}
 
 	private static void scanInventory(ServerPlayer player, SpecialStoryData.SubjectStory story, SpecialStoryData data) {
@@ -468,6 +489,7 @@ public final class SpecialStoryService {
 		}
 		boolean logs = false;
 		boolean copper = false;
+		boolean nether = false;
 		for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
 			ItemStack stack = player.getInventory().getItem(i);
 			if (stack.isEmpty()) {
@@ -479,6 +501,9 @@ public final class SpecialStoryService {
 			if (stack.is(Items.COPPER_INGOT) || stack.is(Items.COPPER_BLOCK) || stack.is(Items.RAW_COPPER)) {
 				copper = true;
 			}
+			if (stack.is(Items.OBSIDIAN) || stack.is(Items.FLINT_AND_STEEL)) {
+				nether = true;
+			}
 		}
 		boolean changed = false;
 		if (logs && !story.woodTalked) {
@@ -489,29 +514,101 @@ public final class SpecialStoryService {
 			story.queue(SpecialStoryKind.GUIDE_COPPER);
 			changed = true;
 		}
+		if (nether && !story.netherTalked) {
+			story.queue(SpecialStoryKind.GUIDE_NETHER);
+			changed = true;
+		}
 		if (changed) {
 			data.setDirty();
 		}
 	}
 
-	private static void tryOpenNext(ServerPlayer player, SpecialStoryData.SubjectStory story, SpecialStoryData data) {
-		SpecialStoryKind kind = nextKindFor(player, story);
+	private static void holdHeadNotice(
+			ServerPlayer player,
+			SpecialStoryData.SubjectStory story,
+			Set<UUID> nextAlerts,
+			Set<String> activeNotices,
+			boolean announce
+	) {
+		SpecialStoryKind kind = story.nextPending();
 		if (kind == null) {
 			return;
 		}
+		UUID subjectId = PbsAdapter.resolveSubject(player);
+		String prefix = noticePrefix(subjectId, kind);
 		RefugeeSpecialRole role = roleFor(player, kind, story);
-		if (role == null) {
+		Villager villager = role == null ? null : findSpecial(player, role);
+		if (villager == null) {
+			retainNotice(prefix, activeNotices);
 			return;
 		}
-		Villager villager = findSpecial(player, role);
+		releaseStoryApproach(villager);
+		RefugeeAttachments.get(villager).setStoryAlert(true);
+		nextAlerts.add(villager.getUUID());
+		String key = prefix + villager.getUUID();
+		activeNotices.add(key);
+		if (announce) {
+			announcePending(player, villager, role, key);
+		}
+	}
+
+	private static void holdDialogueAlert(ServerPlayer player, Set<UUID> nextAlerts) {
+		DialogueLock lock = LOCKS.get(player.getUUID());
+		if (lock == null || lock.story() == null) {
+			return;
+		}
+		Villager villager = villagerOf(player, lock.entityId());
 		if (villager == null) {
 			return;
 		}
-		approach(villager, player);
-		if (villager.distanceTo(player) > TRIGGER_DISTANCE) {
+		releaseStoryApproach(villager);
+		RefugeeAttachments.get(villager).setStoryAlert(true);
+		nextAlerts.add(villager.getUUID());
+	}
+
+	private static void retainNotice(String prefix, Set<String> activeNotices) {
+		for (String key : ANNOUNCED.keySet()) {
+			if (key.startsWith(prefix)) {
+				activeNotices.add(key);
+			}
+		}
+	}
+
+	private static String noticePrefix(UUID subjectId, SpecialStoryKind kind) {
+		return subjectId + "\0" + kind.id() + "\0";
+	}
+
+	private static void announcePending(ServerPlayer player, Villager villager, RefugeeSpecialRole role, String key) {
+		if (player == null || player.getServer() == null || villager == null || role == null || key == null) {
 			return;
 		}
-		openPendingStory(player, villager, kind, story, data);
+		Set<UUID> told = ANNOUNCED.computeIfAbsent(key, ignored -> ConcurrentHashMap.newKeySet());
+		Component message = Component.translatable(
+				"chat.refugee.story.pending",
+				whereText(villager),
+				Component.translatable("role.refugee." + role.id())
+		);
+		for (ServerPlayer member : playersOf(player.getServer(), PbsAdapter.resolveSubject(player))) {
+			if (told.add(member.getUUID())) {
+				member.sendSystemMessage(message);
+			}
+		}
+	}
+
+	private static Component whereText(Villager villager) {
+		BlockPos pos = villager.blockPosition();
+		ResourceKey<Level> dimension = villager.level().dimension();
+		if (Level.NETHER.equals(dimension)) {
+			return Component.translatable("chat.refugee.story.where.nether", pos.getX(), pos.getY(), pos.getZ());
+		}
+		if (Level.END.equals(dimension)) {
+			return Component.translatable("chat.refugee.story.where.end", pos.getX(), pos.getY(), pos.getZ());
+		}
+		if (Level.OVERWORLD.equals(dimension)) {
+			return Component.translatable("chat.refugee.story.where.overworld", pos.getX(), pos.getY(), pos.getZ());
+		}
+		String name = dimension == null ? "" : dimension.location().toString();
+		return Component.literal(name + " " + pos.getX() + " " + pos.getY() + " " + pos.getZ());
 	}
 
 	private static void openPendingStory(
@@ -524,7 +621,6 @@ public final class SpecialStoryService {
 		if (!tryLock(player, villager, kind)) {
 			return;
 		}
-		RefugeeBubble.onTalk(villager);
 		if (kind == SpecialStoryKind.NURSE_INJURY || kind == SpecialStoryKind.NURSE_DEATH || kind == SpecialStoryKind.NURSE_HEAL) {
 			NurseService.heal(player, villager, true);
 			story.pendingNurseHeal = false;
@@ -571,34 +667,6 @@ public final class SpecialStoryService {
 		return kind.lineKey(step);
 	}
 
-	private static SpecialStoryKind pendingForRole(SpecialStoryData.SubjectStory story, RefugeeSpecialRole role) {
-		if (role == null) {
-			return null;
-		}
-		for (String id : story.pending) {
-			SpecialStoryKind kind = SpecialStoryKind.byId(id);
-			if (kind != null && kind.role() == role) {
-				return kind;
-			}
-		}
-		return null;
-	}
-
-	private static SpecialStoryKind nextKindFor(ServerPlayer player, SpecialStoryData.SubjectStory story) {
-		if (story.hasPending(SpecialStoryKind.DRAGON_GLORY)) {
-			return SpecialStoryKind.DRAGON_GLORY;
-		}
-		long now = player.level() instanceof ServerLevel level ? level.getGameTime() : 0L;
-		SpecialStoryKind pending = story.nextPending();
-		if (pending == SpecialStoryKind.DRAGON_VANILLA) {
-			return nextVanillaRole(player, story) == null ? null : pending;
-		}
-		if (isStorySilent(story, pending, now)) {
-			return skipUntilNext(story, pending, now);
-		}
-		return pending;
-	}
-
 	private static boolean isStorySilent(SpecialStoryData.SubjectStory story, SpecialStoryKind kind, long now) {
 		if (kind == null || kind.role() == null) {
 			return false;
@@ -610,20 +678,6 @@ public final class SpecialStoryService {
 			return now < story.guideSilentUntil;
 		}
 		return false;
-	}
-
-	private static SpecialStoryKind skipUntilNext(SpecialStoryData.SubjectStory story, SpecialStoryKind blocked, long now) {
-		for (String id : story.pending) {
-			SpecialStoryKind kind = SpecialStoryKind.byId(id);
-			if (kind == null || kind == blocked || story.skipProactive(kind) || isStorySilent(story, kind, now)) {
-				continue;
-			}
-			if (kind.role() == RefugeeSpecialRole.CARTOGRAPHER && story.cartoPaused) {
-				continue;
-			}
-			return kind;
-		}
-		return null;
 	}
 
 	private static RefugeeSpecialRole roleFor(ServerPlayer player, SpecialStoryKind kind, SpecialStoryData.SubjectStory story) {
@@ -658,6 +712,7 @@ public final class SpecialStoryService {
 	}
 
 	private static void openStory(ServerPlayer player, Villager villager, SpecialStoryKind kind, int step, String prepend) {
+		releaseStoryApproach(villager);
 		SpecialRefugeeService.lookAtPlayer(villager, player);
 		LOCKS.put(player.getUUID(), new DialogueLock(villager.getId(), kind, step));
 		RefugeeNetworking.openStorySplash(player, villager, kind, step, lineAt(player, kind, step), prepend);
@@ -676,6 +731,7 @@ public final class SpecialStoryService {
 	}
 
 	private static void finishStory(ServerPlayer player, Villager villager, SpecialStoryKind kind) {
+		releaseStoryApproach(villager);
 		if (player == null || player.getServer() == null) {
 			unlock(player);
 			return;
@@ -924,14 +980,18 @@ public final class SpecialStoryService {
 		player.sendSystemMessage(message);
 	}
 
-	private static void approach(Villager villager, ServerPlayer player) {
-		SpecialRefugeeService.lookAtPlayer(villager, player);
-		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		if (!player.getUUID().equals(data.followPlayerId())) {
-			data.startFollowing(player.getUUID());
-			RefugeeAttachments.markDirty(villager, data);
+	private static void releaseStoryApproach(Villager villager) {
+		if (villager == null) {
+			return;
 		}
-		villager.getNavigation().moveTo(player, 0.7);
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (!data.isStoryApproach()) {
+			return;
+		}
+		data.clearStoryApproach();
+		data.stopFollowing();
+		villager.getNavigation().stop();
+		RefugeeAttachments.markDirty(villager, data);
 	}
 
 	private static void keepLook(ServerPlayer player) {
@@ -951,6 +1011,19 @@ public final class SpecialStoryService {
 		}
 		Entity entity = level.getEntity(entityId);
 		return entity instanceof Villager villager ? villager : null;
+	}
+
+	private static Villager findVillager(MinecraftServer server, UUID id) {
+		if (server == null || id == null) {
+			return null;
+		}
+		for (ServerLevel level : server.getAllLevels()) {
+			Entity entity = level.getEntity(id);
+			if (entity instanceof Villager villager && villager.isAlive()) {
+				return villager;
+			}
+		}
+		return null;
 	}
 
 	private static Villager findSpecial(ServerPlayer player, RefugeeSpecialRole role) {

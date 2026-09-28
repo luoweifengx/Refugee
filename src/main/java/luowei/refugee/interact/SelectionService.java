@@ -33,7 +33,7 @@ public final class SelectionService {
 	}
 
 	/**
-	 * 仅所属玩家或同组织成员可指挥。普通无主不可接管；刷怪蛋 / 村庄村民可认领。
+	 * 所属玩家或同组织成员可指挥。结盟组织可以指挥对方的士兵。普通无主不可接管；刷怪蛋 / 村庄村民可认领。
 	 */
 	public static boolean canCommand(ServerPlayer player, Villager villager) {
 		if (player == null || villager == null) {
@@ -47,7 +47,13 @@ public final class SelectionService {
 		if (subjectId == null) {
 			return data.isClaimable();
 		}
-		return subjectId.equals(player.getUUID()) || subjectId.equals(PbsAdapter.resolveSubject(player));
+		UUID self = PbsAdapter.resolveSubject(player);
+		if (subjectId.equals(player.getUUID()) || subjectId.equals(self)) {
+			return true;
+		}
+		return RefugeeRoles.isGuard(villager)
+				&& !data.isHostileFaction()
+				&& luowei.refugee.staff.DiplomacyService.areAllied(player.getServer(), self, subjectId);
 	}
 
 	/**

@@ -94,6 +94,7 @@ public final class SpecialStoryData extends SavedData {
 		boolean woodTalked;
 		boolean copperTalked;
 		boolean ironTalked;
+		boolean netherTalked;
 		boolean nurseInjuryTalked;
 		boolean nurseDeathTalked;
 		boolean pendingNurseHeal;
@@ -169,6 +170,7 @@ public final class SpecialStoryData extends SavedData {
 				case GUIDE_WOOD -> woodTalked;
 				case GUIDE_COPPER -> copperTalked;
 				case GUIDE_IRON -> ironTalked;
+				case GUIDE_NETHER -> netherTalked;
 				case NURSE_INJURY -> nurseInjuryTalked;
 				case NURSE_DEATH -> nurseDeathTalked;
 				case NURSE_HEAL -> false;
@@ -190,6 +192,7 @@ public final class SpecialStoryData extends SavedData {
 				case GUIDE_WOOD -> woodTalked = true;
 				case GUIDE_COPPER -> copperTalked = true;
 				case GUIDE_IRON -> ironTalked = true;
+				case GUIDE_NETHER -> netherTalked = true;
 				case NURSE_INJURY -> nurseInjuryTalked = true;
 				case NURSE_DEATH -> nurseDeathTalked = true;
 				case NURSE_HEAL -> {
@@ -223,13 +226,9 @@ public final class SpecialStoryData extends SavedData {
 		public SpecialStoryKind nextPending() {
 			for (String id : pending) {
 				SpecialStoryKind kind = SpecialStoryKind.byId(id);
-				if (kind == null || skipProactive(kind)) {
-					continue;
+				if (kind != null) {
+					return kind;
 				}
-				if (kind.role() == RefugeeSpecialRole.CARTOGRAPHER && cartoPaused) {
-					continue;
-				}
-				return kind;
 			}
 			return null;
 		}
@@ -291,15 +290,17 @@ public final class SpecialStoryData extends SavedData {
 				boolean wood,
 				boolean copper,
 				boolean iron,
+				boolean nether,
 				boolean enchArrival,
 				boolean enchBook,
 				boolean pendingDivine
 		) {
-			static final GuideFlags EMPTY = new GuideFlags(false, false, false, false, false, false);
+			static final GuideFlags EMPTY = new GuideFlags(false, false, false, false, false, false, false);
 			static final Codec<GuideFlags> CODEC = RecordCodecBuilder.create(instance -> instance.group(
 					Codec.BOOL.optionalFieldOf("wood", false).forGetter(GuideFlags::wood),
 					Codec.BOOL.optionalFieldOf("copper", false).forGetter(GuideFlags::copper),
 					Codec.BOOL.optionalFieldOf("iron", false).forGetter(GuideFlags::iron),
+					Codec.BOOL.optionalFieldOf("nether", false).forGetter(GuideFlags::nether),
 					Codec.BOOL.optionalFieldOf("ench_arrival", false).forGetter(GuideFlags::enchArrival),
 					Codec.BOOL.optionalFieldOf("ench_book", false).forGetter(GuideFlags::enchBook),
 					Codec.BOOL.optionalFieldOf("pending_divine", false).forGetter(GuideFlags::pendingDivine)
@@ -310,6 +311,7 @@ public final class SpecialStoryData extends SavedData {
 						story.woodTalked,
 						story.copperTalked,
 						story.ironTalked,
+						story.netherTalked,
 						story.enchanterArrivalTalked,
 						story.enchanterBookTalked,
 						story.pendingDivine
@@ -320,6 +322,7 @@ public final class SpecialStoryData extends SavedData {
 				story.woodTalked = wood;
 				story.copperTalked = copper;
 				story.ironTalked = iron;
+				story.netherTalked = nether;
 				story.enchanterArrivalTalked = enchArrival;
 				story.enchanterBookTalked = enchBook;
 				story.pendingDivine = pendingDivine;

@@ -1,11 +1,11 @@
 package luowei.refugee.interact;
 
 /**
- * 村民装具窗像素布局：上排 7 格装具，下排原版背包。不使用箱子 9×3 底图。
+ * 村民装具窗像素布局：上排 7 格装具，中间 9 格工作背包，下排玩家背包。不使用箱子 9×3 底图。
  */
 public final class VillagerKitLayout {
 	public static final int WIDTH = 176;
-	public static final int HEIGHT = 196;
+	public static final int HEIGHT = 236;
 	public static final int TITLE_X = 8;
 	public static final int TITLE_Y = 6;
 	public static final int ARMOR_LABEL_X = 26;
@@ -29,13 +29,21 @@ public final class VillagerKitLayout {
 	public static final int FOOD_X = 116;
 	public static final int FOOD_Y = 46;
 	public static final int HEALTH_X = 80;
-	public static final int HEALTH_Y = 88;
+	/** 独自一行，落在饱食、体力、舒适、忠诚之下，避免和舒适叠字。 */
+	public static final int HEALTH_Y = 100;
+	public static final int STAT_X = 108;
+	public static final int STAT_Y = 64;
+	public static final int STAT_STEP = 9;
+	public static final int CARGO_LABEL_X = 8;
+	public static final int CARGO_LABEL_Y = 112;
+	public static final int CARGO_X = 8;
+	public static final int CARGO_Y = 122;
 	public static final int INV_LABEL_X = 8;
-	public static final int INV_LABEL_Y = 106;
+	public static final int INV_LABEL_Y = 144;
 	public static final int INV_X = 8;
-	public static final int INV_Y = 114;
+	public static final int INV_Y = 154;
 	public static final int HOTBAR_X = 8;
-	public static final int HOTBAR_Y = 172;
+	public static final int HOTBAR_Y = 212;
 	public static final int SLOT = 18;
 	/** 槽底图 18px 含 1px 边，物品/高亮从内沿起算。 */
 	public static final int SLOT_PAD = 1;

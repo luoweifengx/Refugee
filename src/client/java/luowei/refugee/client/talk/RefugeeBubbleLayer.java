@@ -14,14 +14,11 @@ import net.minecraft.resources.ResourceLocation;
 import luowei.refugee.talk.RefugeeBubbleIcon;
 
 /**
- * 村民头顶气泡：在实体世界坐标（脚底原点、Y 朝上）绘制，始终朝向镜头。
+ * 村民头顶表情：在实体世界坐标（脚底原点、Y 朝上）绘制，始终朝向镜头。
  * 不能挂在 {@code RenderLayer} 里画：生物渲染会先 {@code scale(-1,-1,1)}，+Y 指向脚底。
  */
 public final class RefugeeBubbleLayer {
-	private static final float BUBBLE_WIDTH = 0.72F;
-	private static final float BUBBLE_HEIGHT = 0.36F;
 	private static final float ICON_SIZE = 0.20F;
-	private static final float ICON_Y = 0.035F;
 	private static final float HEAD_GAP = 0.42F;
 	private static final double MAX_DISTANCE_SQ = 48.0 * 48.0;
 
@@ -40,8 +37,7 @@ public final class RefugeeBubbleLayer {
 		poseStack.pushPose();
 		poseStack.translate(0.0F, state.boundingBoxHeight + HEAD_GAP, 0.0F);
 		poseStack.mulPose(Minecraft.getInstance().getEntityRenderDispatcher().cameraOrientation());
-		blit(poseStack, buffer, RefugeeBubbleIcon.BUBBLE_TEXTURE, BUBBLE_WIDTH, BUBBLE_HEIGHT, 0.0F, 0.0F, light);
-		blit(poseStack, buffer, icon.iconTexture(), ICON_SIZE, ICON_SIZE, ICON_Y, 0.01F, light);
+		blit(poseStack, buffer, icon.iconTexture(), ICON_SIZE, ICON_SIZE, 0.0F, 0.0F, light);
 		poseStack.popPose();
 	}
 

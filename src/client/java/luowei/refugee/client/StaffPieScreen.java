@@ -40,7 +40,8 @@ public class StaffPieScreen extends Screen {
 			new Slice(StaffPieAction.COMBAT, new ItemStack(Items.IRON_SWORD), 0xCC8B3A3A, "screen.refugee.staff.pie.combat"),
 			new Slice(StaffPieAction.RALLY, new ItemStack(Items.GOAT_HORN), 0xCCC4A35A, "screen.refugee.staff.pie.rally"),
 			new Slice(StaffPieAction.GUARD, new ItemStack(Items.IRON_HELMET), 0xCC5A6E8B, "screen.refugee.staff.pie.guard"),
-			new Slice(StaffPieAction.RELATIONS, new ItemStack(Items.PLAYER_HEAD), 0xCC6E8B5A, "screen.refugee.staff.pie.relations")
+			new Slice(StaffPieAction.RELATIONS, new ItemStack(Items.PLAYER_HEAD), 0xCC6E8B5A, "screen.refugee.staff.pie.relations"),
+			new Slice(StaffPieAction.DIPLOMACY, new ItemStack(Items.WHITE_BANNER), 0xCC5A7A9E, "screen.refugee.staff.pie.diplomacy")
 	};
 	private static final Slice[] COMBAT_SLICES = {
 			new Slice(StaffPieAction.FOLLOW_ENTITY, new ItemStack(Items.LEAD), 0xCC3A6EA5, "screen.refugee.staff.pie.follow"),
@@ -87,7 +88,9 @@ public class StaffPieScreen extends Screen {
 			new Slice(StaffPieAction.ORG_INVITE_MANAGE, new ItemStack(Items.PAPER), 0xCCC4A35A, "screen.refugee.staff.pie.org_invites"),
 			new Slice(StaffPieAction.ORG_MANAGE, new ItemStack(Items.BELL), 0xCC8B5A9E, "screen.refugee.staff.pie.org_manage"),
 			new Slice(StaffPieAction.TERRITORY_MINE, new ItemStack(Items.OAK_SIGN), 0xCC2E8B8B, "screen.refugee.staff.pie.territory_texts"),
-			new Slice(StaffPieAction.RESCUE, new ItemStack(Items.TOTEM_OF_UNDYING), 0xCC8B3A3A, "screen.refugee.staff.pie.rescue"),
+			new Slice(StaffPieAction.RESCUE, new ItemStack(Items.TOTEM_OF_UNDYING), 0xCC8B3A3A, "screen.refugee.staff.pie.rescue")
+	};
+	private static final Slice[] DIPLOMACY_SLICES = {
 			new Slice(StaffPieAction.RELATIONS_LIST, new ItemStack(Items.BOOK), 0xCC3A6EA5, "screen.refugee.staff.pie.relations_list"),
 			new Slice(StaffPieAction.DECLARE_WAR, new ItemStack(Items.IRON_SWORD), 0xCC8B3A3A, "screen.refugee.staff.pie.declare_war"),
 			new Slice(StaffPieAction.RECONCILE, new ItemStack(Items.WHITE_BANNER), 0xCCE8EEF2, "screen.refugee.staff.pie.reconcile"),
@@ -135,6 +138,9 @@ public class StaffPieScreen extends Screen {
 		if (page == StaffPage.RELATIONS_PIE) {
 			return Component.translatable("screen.refugee.staff.pie.relations");
 		}
+		if (page == StaffPage.DIPLOMACY_PIE) {
+			return Component.translatable("screen.refugee.staff.pie.diplomacy");
+		}
 		if (page == StaffPage.ORG_MANAGE_PIE) {
 			return Component.translatable("screen.refugee.staff.pie.org_manage");
 		}
@@ -162,6 +168,9 @@ public class StaffPieScreen extends Screen {
 		}
 		if (page == StaffPage.RELATIONS_PIE) {
 			return RELATIONS_SLICES;
+		}
+		if (page == StaffPage.DIPLOMACY_PIE) {
+			return DIPLOMACY_SLICES;
 		}
 		if (page == StaffPage.ORG_MANAGE_PIE) {
 			return ORG_MANAGE_SLICES;

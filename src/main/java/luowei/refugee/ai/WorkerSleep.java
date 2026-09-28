@@ -17,7 +17,7 @@ import luowei.refugee.interact.RefugeeRoles;
 import luowei.refugee.logistics.OrgLogisticsData;
 
 /**
- * 工人空闲时交给原版 Brain。晚上有空床就让 Brain 去睡；没有床，或一段时间仍没睡着，就继续干活。
+ * 工人空闲时交给精简 Brain：走动、看向、睡觉。晚上有空床就去睡；没有床，或一段时间仍没睡着，就继续干活。
  */
 public final class WorkerSleep {
 	public static final int REST_START = 12000;

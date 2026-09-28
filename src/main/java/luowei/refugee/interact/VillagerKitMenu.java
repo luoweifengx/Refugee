@@ -11,17 +11,49 @@ import net.minecraft.world.item.ItemStack;
 
 public class VillagerKitMenu extends AbstractContainerMenu {
 	private static final int KIT_SLOTS = VillagerKitContainer.SIZE;
+	private static final int CARGO_SLOTS = VillagerCargoContainer.SIZE;
+	private static final int TOP_SLOTS = KIT_SLOTS + CARGO_SLOTS;
 	private final Villager villager;
 	private final Container kit;
+	private final Container cargo;
+	private final float satiety;
+	private final float stamina;
+	private final float comfort;
+	private final float loyalty;
 
 	public VillagerKitMenu(int syncId, Inventory playerInv, VillagerKitMenus.OpenData data) {
-		this(syncId, playerInv, VillagerKitMenus.findVillager(playerInv.player, data.entityId()));
+		this(
+				syncId,
+				playerInv,
+				VillagerKitMenus.findVillager(playerInv.player, data.entityId()),
+				data.satiety(),
+				data.stamina(),
+				data.comfort(),
+				data.loyalty()
+		);
 	}
 
 	public VillagerKitMenu(int syncId, Inventory playerInv, Villager villager) {
+		this(syncId, playerInv, villager, 0.0f, 0.0f, 0.0f, 0.0f);
+	}
+
+	private VillagerKitMenu(
+			int syncId,
+			Inventory playerInv,
+			Villager villager,
+			float satiety,
+			float stamina,
+			float comfort,
+			float loyalty
+	) {
 		super(VillagerKitMenus.KIT, syncId);
 		this.villager = villager;
 		this.kit = villager == null ? new SimpleContainer(KIT_SLOTS) : new VillagerKitContainer(villager);
+		this.cargo = villager == null ? new SimpleContainer(CARGO_SLOTS) : new VillagerCargoContainer(villager);
+		this.satiety = satiety;
+		this.stamina = stamina;
+		this.comfort = comfort;
+		this.loyalty = loyalty;
 		addSlot(kitSlot(
 				VillagerKitContainer.HEAD,
 				VillagerKitLayout.slotX(VillagerKitLayout.HEAD_X),
@@ -57,6 +89,14 @@ public class VillagerKitMenu extends AbstractContainerMenu {
 				VillagerKitLayout.slotX(VillagerKitLayout.FOOD_X),
 				VillagerKitLayout.slotY(VillagerKitLayout.FOOD_Y)
 		));
+		for (int col = 0; col < CARGO_SLOTS; col++) {
+			addSlot(new Slot(
+					cargo,
+					col,
+					VillagerKitLayout.slotX(VillagerKitLayout.CARGO_X + col * VillagerKitLayout.SLOT),
+					VillagerKitLayout.slotY(VillagerKitLayout.CARGO_Y)
+			));
+		}
 		for (int row = 0; row < 3; row++) {
 			for (int col = 0; col < 9; col++) {
 				addSlot(new Slot(
@@ -79,6 +119,22 @@ public class VillagerKitMenu extends AbstractContainerMenu {
 
 	public Villager villager() {
 		return villager;
+	}
+
+	public float satiety() {
+		return satiety;
+	}
+
+	public float stamina() {
+		return stamina;
+	}
+
+	public float comfort() {
+		return comfort;
+	}
+
+	public float loyalty() {
+		return loyalty;
 	}
 
 	private Slot kitSlot(int index, int x, int y) {
@@ -104,8 +160,8 @@ public class VillagerKitMenu extends AbstractContainerMenu {
 		}
 		ItemStack stack = slot.getItem();
 		result = stack.copy();
-		if (index < KIT_SLOTS) {
-			if (!moveItemStackTo(stack, KIT_SLOTS, this.slots.size(), true)) {
+		if (index < TOP_SLOTS) {
+			if (!moveItemStackTo(stack, TOP_SLOTS, this.slots.size(), true)) {
 				return ItemStack.EMPTY;
 			}
 		} else if (!moveItemStackTo(stack, 0, KIT_SLOTS, false)) {

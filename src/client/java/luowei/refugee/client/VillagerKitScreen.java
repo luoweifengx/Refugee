@@ -12,7 +12,7 @@ import luowei.refugee.interact.VillagerKitLayout;
 import luowei.refugee.interact.VillagerKitMenu;
 
 /**
- * 自绘装具窗：左甲、中主副手、右食物，下为玩家背包。不用原版箱子底图。
+ * 自绘装具窗：左甲、中主副手、右食物，中间一行工作背包，下为玩家背包。不用原版箱子底图。
  */
 public class VillagerKitScreen extends AbstractContainerScreen<VillagerKitMenu> {
 	private static final ResourceLocation SLOT_SPRITE =
@@ -45,6 +45,13 @@ public class VillagerKitScreen extends AbstractContainerScreen<VillagerKitMenu> 
 		blitSlot(graphics, x + VillagerKitLayout.MAIN_X, y + VillagerKitLayout.MAIN_Y);
 		blitSlot(graphics, x + VillagerKitLayout.OFF_X, y + VillagerKitLayout.OFF_Y);
 		blitSlot(graphics, x + VillagerKitLayout.FOOD_X, y + VillagerKitLayout.FOOD_Y);
+		for (int col = 0; col < 9; col++) {
+			blitSlot(
+					graphics,
+					x + VillagerKitLayout.CARGO_X + col * VillagerKitLayout.SLOT,
+					y + VillagerKitLayout.CARGO_Y
+			);
+		}
 		for (int row = 0; row < 3; row++) {
 			for (int col = 0; col < 9; col++) {
 				blitSlot(
@@ -90,6 +97,14 @@ public class VillagerKitScreen extends AbstractContainerScreen<VillagerKitMenu> 
 				LABEL,
 				false
 		);
+		graphics.drawString(
+				font,
+				Component.translatable("screen.refugee.kit.cargo"),
+				VillagerKitLayout.CARGO_LABEL_X,
+				VillagerKitLayout.CARGO_LABEL_Y,
+				LABEL,
+				false
+		);
 		graphics.drawString(font, playerInventoryTitle, inventoryLabelX, inventoryLabelY, LABEL, false);
 		Villager villager = menu.villager();
 		if (villager != null) {
@@ -100,12 +115,48 @@ public class VillagerKitScreen extends AbstractContainerScreen<VillagerKitMenu> 
 			);
 			graphics.drawString(font, health, VillagerKitLayout.HEALTH_X, VillagerKitLayout.HEALTH_Y, LABEL, false);
 		}
+		graphics.drawString(
+				font,
+				Component.translatable("screen.refugee.kit.satiety", formatStat(menu.satiety())),
+				VillagerKitLayout.STAT_X,
+				VillagerKitLayout.STAT_Y,
+				LABEL,
+				false
+		);
+		graphics.drawString(
+				font,
+				Component.translatable("screen.refugee.kit.stamina", formatStat(menu.stamina())),
+				VillagerKitLayout.STAT_X,
+				VillagerKitLayout.STAT_Y + VillagerKitLayout.STAT_STEP,
+				LABEL,
+				false
+		);
+		graphics.drawString(
+				font,
+				Component.translatable("screen.refugee.kit.comfort", formatStat(menu.comfort())),
+				VillagerKitLayout.STAT_X,
+				VillagerKitLayout.STAT_Y + VillagerKitLayout.STAT_STEP * 2,
+				LABEL,
+				false
+		);
+		graphics.drawString(
+				font,
+				Component.translatable("screen.refugee.kit.loyalty", formatStat(menu.loyalty())),
+				VillagerKitLayout.STAT_X,
+				VillagerKitLayout.STAT_Y + VillagerKitLayout.STAT_STEP * 3,
+				LABEL,
+				false
+		);
 	}
 
 	@Override
 	public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
 		super.render(graphics, mouseX, mouseY, delta);
 		renderTooltip(graphics, mouseX, mouseY);
+	}
+
+	private static String formatStat(float value) {
+		return String.format(java.util.Locale.ROOT, "%.1f", value);
 	}
 
 	private static void blitPanel(GuiGraphics graphics, int x, int y, int width, int height) {

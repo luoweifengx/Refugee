@@ -61,6 +61,8 @@ public class Refugee implements ModInitializer {
 		luowei.refugee.special.SpecialStoryService.register();
 		luowei.refugee.pbs.OrgMergeService.register();
 		RefugeeImmigration.register();
+		luowei.refugee.livability.LivabilityService.register();
+		luowei.refugee.special.ClinicService.register();
 		luowei.refugee.crusader.CrusaderService.register();
 		RefugeeCommands.register();
 		ServerLivingEntityEvents.AFTER_DAMAGE.register((entity, source, base, taken, blocked) -> {

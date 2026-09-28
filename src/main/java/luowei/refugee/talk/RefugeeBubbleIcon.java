@@ -5,7 +5,7 @@ import net.minecraft.resources.ResourceLocation;
 import luowei.refugee.Refugee;
 
 /**
- * 村民头顶气泡内显示的表情。{@code NONE} 不渲染气泡。
+ * 村民头顶显示的表情。{@code NONE} 不渲染。
  */
 public enum RefugeeBubbleIcon {
 	NONE((byte) 0, null),
@@ -19,11 +19,10 @@ public enum RefugeeBubbleIcon {
 	FULL((byte) 8, Refugee.id("textures/talk/icon_full.png")),
 	CRYING((byte) 9, Refugee.id("textures/talk/face_crying.png")),
 	HAPPY((byte) 10, Refugee.id("textures/talk/face_happy.png")),
-	WORRIED((byte) 11, Refugee.id("textures/talk/face_worried.png"));
+	WORRIED((byte) 11, Refugee.id("textures/talk/face_worried.png")),
+	EXCLAIM((byte) 12, Refugee.id("textures/talk/icon_exclaim.png"));
 
 	public static final RefugeeBubbleIcon[] SELECT_FACES = {LOVE, ANGRY, CRYING, HAPPY, WORRIED};
-
-	public static final ResourceLocation BUBBLE_TEXTURE = Refugee.id("textures/talk/bubble.png");
 
 	private static final RefugeeBubbleIcon[] BY_ID = values();
 

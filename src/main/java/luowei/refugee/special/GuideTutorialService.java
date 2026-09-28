@@ -273,6 +273,9 @@ public final class GuideTutorialService {
 			dir = new Vec3(1.0, 0.0, 0.0);
 		}
 		Vec3 dest = villager.position().add(dir.normalize().scale(12.0));
+		if (villager.level() instanceof ServerLevel level) {
+			data.holdBrain(level.getGameTime() + 200L);
+		}
 		villager.getNavigation().moveTo(dest.x, dest.y, dest.z, 0.7);
 	}
 

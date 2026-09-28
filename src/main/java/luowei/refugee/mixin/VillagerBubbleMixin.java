@@ -5,20 +5,28 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.npc.Villager;
 
-import luowei.refugee.ai.RefugeeBuffMachine;
+import luowei.refugee.livability.LivabilityRegen;
 import luowei.refugee.ai.RefugeeCombat;
 import luowei.refugee.ai.RefugeeDepthCurse;
 import luowei.refugee.ai.RefugeeSwim;
+import luowei.refugee.ai.WorkerCargo;
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.interact.RefugeeRoles;
+import luowei.refugee.livability.LivabilityService;
 import luowei.refugee.talk.RefugeeBreeding;
 import luowei.refugee.talk.RefugeeBubble;
 
 @Mixin(Villager.class)
 public abstract class VillagerBubbleMixin {
+	@Inject(method = "startSleeping", at = @At("HEAD"))
+	private void refugee$markSlept(BlockPos pos, CallbackInfo ci) {
+		LivabilityService.noteSlept((Villager) (Object) this);
+	}
+
 	@Inject(method = "customServerAiStep", at = @At("HEAD"))
 	private void refugee$tickHungerAndCurse(ServerLevel level, CallbackInfo ci) {
 		Villager villager = (Villager) (Object) this;
@@ -27,7 +35,7 @@ public abstract class VillagerBubbleMixin {
 		}
 		RefugeeDepthCurse.tick(villager);
 		if (RefugeeAttachments.isRefugee(villager) || RefugeeRoles.overridesBrain(villager)) {
-			RefugeeCombat.tryEat(villager, 1.0f);
+			RefugeeCombat.tryEat(villager);
 		}
 	}
 
@@ -42,7 +50,8 @@ public abstract class VillagerBubbleMixin {
 		}
 		RefugeeBreeding.tickLook(villager);
 		RefugeeBubble.tick(villager);
-		RefugeeBuffMachine.tick(villager);
+		LivabilityRegen.tick(villager);
+		WorkerCargo.absorbNearby(villager);
 		luowei.refugee.staff.GuardService.tickLocation(villager);
 		RefugeeCombat.tickEat(villager);
 		RefugeeCombat.tickEncounterReset(villager);

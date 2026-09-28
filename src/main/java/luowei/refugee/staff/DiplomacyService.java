@@ -29,6 +29,14 @@ public final class DiplomacyService {
 	private DiplomacyService() {
 	}
 
+	public static boolean areAllied(MinecraftServer server, UUID left, UUID right) {
+		if (server == null || left == null || right == null || left.equals(right)) {
+			return false;
+		}
+		Bond bond = DiplomacyData.get(server).find(left, right);
+		return bond != null && bond.stance() == STANCE_ALLIED;
+	}
+
 	public static void openList(ServerPlayer player) {
 		open(player, RelationsListKind.RELATIONS, targets(player, false));
 	}
@@ -89,7 +97,7 @@ public final class DiplomacyService {
 	}
 
 	private static void open(ServerPlayer player, RelationsListKind kind, List<RelationsPlayerRow> rows) {
-		StaffService.showRelations(player, StaffPage.RELATIONS_PIE, StaffPage.DIPLOMACY);
+		StaffService.showRelations(player, StaffPage.DIPLOMACY_PIE, StaffPage.DIPLOMACY);
 		RefugeeNetworking.openRelationsList(player, kind, rows);
 	}
 

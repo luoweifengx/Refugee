@@ -47,7 +47,8 @@ import luowei.refugee.special.SpecialRefugeeService;
 import luowei.refugee.special.SpecialStoryService;
 
 /**
- * 玩家难民名册、按原版难度发放开局难民、死亡扣一人延迟击杀、空名册旁观。
+ * 玩家难民名册、按原版难度发放开局难民、死亡扣一人延迟击杀。
+ * 只有玩家死亡时名册里已经没有可替死的居民，才判负。居民自己死光不会判负。
  */
 public final class RosterService {
 	private static final Map<UUID, Integer> pendingStarters = new ConcurrentHashMap<>();
@@ -127,9 +128,6 @@ public final class RosterService {
 			if (changed) {
 				RefugeeAttachments.markDirty(player, data);
 			}
-			if (lostRoster) {
-				afterRosterLoss(player, data);
-			}
 		}
 	}
 
@@ -183,7 +181,6 @@ public final class RosterService {
 		SelectionService.collectBannersIfEmpty(player);
 		queuedKills.add(sacrificed.villagerId());
 		player.sendSystemMessage(Component.translatable("message.refugee.death.sacrifice", data.rosterSize()));
-		afterRosterLoss(player, data);
 	}
 
 	/**
@@ -208,7 +205,6 @@ public final class RosterService {
 		RefugeeAttachments.markDirty(player, data);
 		SelectionService.collectBannersIfEmpty(player);
 		queuedKills.add(sacrificed.villagerId());
-		afterRosterLoss(player, data);
 		return data.rosterSize();
 	}
 
@@ -473,9 +469,6 @@ public final class RosterService {
 			if (changed) {
 				RefugeeAttachments.markDirty(player, data);
 			}
-			if (lostRoster) {
-				afterRosterLoss(player, data);
-			}
 		}
 	}
 
@@ -487,15 +480,6 @@ public final class RosterService {
 			}
 		}
 		return null;
-	}
-
-	private static void afterRosterLoss(ServerPlayer player, PlayerSelectionData data) {
-		if (player == null || data == null || data.isDefeated()) {
-			return;
-		}
-		if (data.isRosterEmpty() && data.isStarterGranted()) {
-			applyEmptyRoster(player, data);
-		}
 	}
 
 	private static void applyEmptyRoster(ServerPlayer player, PlayerSelectionData data) {

@@ -12,7 +12,7 @@ import luowei.refugee.ai.RefugeeCombat;
 import luowei.refugee.interact.RefugeeRoles;
 
 /**
- * 服务端计算并同步头顶气泡表情：愤怒锁 &gt; 战斗/低血 &gt; 工作 &gt; 繁殖爱恋/流汗 &gt; 对话/选中 &gt; 无。
+ * 服务端计算并同步头顶表情：待说的特殊对话 &gt; 愤怒锁 &gt; 战斗/低血 &gt; 工作 &gt; 繁殖爱恋/流汗 &gt; 对话/选中 &gt; 无。
  */
 public final class RefugeeBubble {
 	public static final int TALK_DURATION_TICKS = 100;
@@ -112,6 +112,9 @@ public final class RefugeeBubble {
 	private static RefugeeBubbleIcon compute(Villager villager) {
 		long gameTime = villager.level().getGameTime();
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (data.isStoryAlert()) {
+			return RefugeeBubbleIcon.EXCLAIM;
+		}
 		RefugeeCombat.Mood mood = data.combatMood();
 		if (mood == RefugeeCombat.Mood.FLEE) {
 			return RefugeeBubbleIcon.WORRIED;

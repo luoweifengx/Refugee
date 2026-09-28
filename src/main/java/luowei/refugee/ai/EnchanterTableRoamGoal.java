@@ -16,7 +16,7 @@ import luowei.refugee.settle.StandableFinder;
 import luowei.refugee.special.RefugeeSpecialRole;
 
 /**
- * 附魔师在附近已放置的附魔台周围走动；跟随或交易时让路。
+ * 附魔师白天在附近已放置的附魔台周围走动。晚上、睡觉、跟随、对话时让路给 Brain。
  */
 public class EnchanterTableRoamGoal extends Goal {
 	private static final int SEARCH_RADIUS = 24;
@@ -46,6 +46,10 @@ public class EnchanterTableRoamGoal extends Goal {
 		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		if (data.isFollowing() || data.isFollowingEntity() || data.isPatrolling() || villager.getTradingPlayer() != null) {
+			return false;
+		}
+		if (villager.isSleeping() || data.isLookingAtPlayer(villager.level().getGameTime())
+				|| Math.floorMod(villager.level().getDayTime(), 24000L) >= WorkerSleep.REST_START) {
 			return false;
 		}
 		if (RefugeeCombat.isEating(villager)) {

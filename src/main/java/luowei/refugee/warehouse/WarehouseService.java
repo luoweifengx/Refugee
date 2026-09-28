@@ -31,6 +31,7 @@ import net.minecraft.world.level.block.entity.BaseContainerBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
+import luowei.refugee.ai.WorkerCargo;
 import luowei.refugee.block.AltarBlockEntity;
 import luowei.refugee.config.RefugeeConfig;
 import luowei.refugee.logistics.OrgLogisticsData;
@@ -70,6 +71,7 @@ public final class WarehouseService {
 		ContainerRef ref = new ContainerRef(dimension, pos.immutable());
 		retainChunk(level, ref);
 		organize(level, pos);
+		WorkerCargo.wake(level.getServer(), subjectId);
 		return true;
 	}
 
@@ -104,6 +106,7 @@ public final class WarehouseService {
 		ContainerRef ref = new ContainerRef(dimension, pos.immutable());
 		retainChunk(level, ref);
 		organize(level, pos);
+		WorkerCargo.wake(level.getServer(), subjectId);
 		return true;
 	}
 
@@ -179,6 +182,7 @@ public final class WarehouseService {
 			return false;
 		}
 		retainChunk(level, new ContainerRef(dimension, pos.immutable()));
+		WorkerCargo.wake(level.getServer(), subjectId);
 		return true;
 	}
 
@@ -298,9 +302,6 @@ public final class WarehouseService {
 				if (remaining[0].isEmpty()) {
 					break;
 				}
-				if (isOccupied(ref)) {
-					continue;
-				}
 				Container container = containerAt(level.getServer(), ref);
 				if (container == null) {
 					continue;
@@ -318,7 +319,7 @@ public final class WarehouseService {
 	}
 
 	/**
-	 * 掉落物直接按仓库列表顺序漏斗式入箱，不经过村民背包；矿石进熔炼仓，其余进物块仓；仍放不下则掉在村民脚下。
+	 * 掉落物直接按仓库列表顺序漏斗式入箱。工人掉落改走背包，这里留给仍要直接入仓的调用。
 	 */
 	public static void depositLoot(ServerLevel level, Villager villager, UUID subjectId, List<ItemStack> drops) {
 		depositLootInto(level, villager, subjectId, drops, false);
@@ -372,7 +373,7 @@ public final class WarehouseService {
 		if (level == null || subjectId == null || category == null || !category.isWarehouseCategory()) {
 			return ItemStack.EMPTY;
 		}
-		return takeFirst(level, subjectId, category, null);
+		return takeFirst(level, subjectId, category, null, ref -> false);
 	}
 
 	/**
@@ -409,9 +410,6 @@ public final class WarehouseService {
 			return;
 		}
 		for (ContainerRef ref : refs) {
-			if (isOccupied(ref)) {
-				continue;
-			}
 			Container container = containerAt(level.getServer(), ref);
 			if (container == null) {
 				continue;
@@ -428,7 +426,7 @@ public final class WarehouseService {
 	 * 从指定槽取出一件真实堆（含组件）。开箱中的容器不取。
 	 */
 	public static ItemStack takeAt(ServerLevel level, UUID subjectId, ContainerRef ref, int slot) {
-		if (level == null || subjectId == null || ref == null || slot < 0 || isOccupied(ref)) {
+		if (level == null || subjectId == null || ref == null || slot < 0) {
 			return ItemStack.EMPTY;
 		}
 		Container container = containerAt(level.getServer(), ref);
@@ -454,7 +452,7 @@ public final class WarehouseService {
 	 * 从指定槽取出整堆。开箱中的容器不取。
 	 */
 	public static ItemStack takeStackAt(ServerLevel level, UUID subjectId, ContainerRef ref, int slot) {
-		if (level == null || subjectId == null || ref == null || slot < 0 || isOccupied(ref)) {
+		if (level == null || subjectId == null || ref == null || slot < 0) {
 			return ItemStack.EMPTY;
 		}
 		Container container = containerAt(level.getServer(), ref);
@@ -490,9 +488,6 @@ public final class WarehouseService {
 		}
 		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
 		for (ContainerRef ref : data.foodWarehouses(subjectId)) {
-			if (isOccupied(ref)) {
-				continue;
-			}
 			Container container = containerAt(level.getServer(), ref);
 			if (container == null) {
 				continue;
@@ -512,9 +507,6 @@ public final class WarehouseService {
 		}
 		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
 		for (ContainerRef ref : data.farmWarehouses(subjectId)) {
-			if (isOccupied(ref)) {
-				continue;
-			}
 			Container container = containerAt(level.getServer(), ref);
 			if (container == null) {
 				continue;
@@ -540,9 +532,6 @@ public final class WarehouseService {
 		int total = 0;
 		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
 		for (ContainerRef ref : data.farmWarehouses(subjectId)) {
-			if (isOccupied(ref)) {
-				continue;
-			}
 			Container container = containerAt(level.getServer(), ref);
 			if (container == null) {
 				continue;
@@ -562,6 +551,50 @@ public final class WarehouseService {
 			return false;
 		}
 		return consumeFirst(level, subjectId, null, item);
+	}
+
+	/** 只在给出的箱子里数某种物品。用于矿物仓库里的绿宝石。 */
+	public static int countIn(MinecraftServer server, java.util.List<luowei.refugee.logistics.OrgLogisticsData.ContainerRef> refs, Item item) {
+		if (server == null || refs == null || item == null) {
+			return 0;
+		}
+		int total = 0;
+		for (luowei.refugee.logistics.OrgLogisticsData.ContainerRef ref : refs) {
+			Container container = containerAt(server, ref);
+			if (container == null) {
+				continue;
+			}
+			for (int slot = 0; slot < container.getContainerSize(); slot++) {
+				ItemStack stack = container.getItem(slot);
+				if (!stack.isEmpty() && stack.is(item)) {
+					total += stack.getCount();
+				}
+			}
+		}
+		return total;
+	}
+
+	/** 从给出的箱子里扣掉最多 {@code amount} 个。返回实际扣掉的数量。 */
+	public static int consumeIn(
+			MinecraftServer server,
+			UUID subjectId,
+			java.util.List<luowei.refugee.logistics.OrgLogisticsData.ContainerRef> refs,
+			Item item,
+			int amount
+	) {
+		if (server == null || subjectId == null || refs == null || item == null || amount <= 0) {
+			return 0;
+		}
+		java.util.Set<luowei.refugee.logistics.OrgLogisticsData.ContainerRef> allowed = new java.util.HashSet<>(refs);
+		int taken = 0;
+		ServerLevel level = server.overworld();
+		while (taken < amount) {
+			if (level == null || takeFirst(level, subjectId, null, item, ref -> !allowed.contains(ref)).isEmpty()) {
+				break;
+			}
+			taken++;
+		}
+		return taken;
 	}
 
 	/**
@@ -885,17 +918,23 @@ public final class WarehouseService {
 	}
 
 	private static boolean consumeFirst(ServerLevel level, UUID subjectId, MaterialCategory category, Item exact) {
-		return !takeFirst(level, subjectId, category, exact).isEmpty();
+		return !takeFirst(level, subjectId, category, exact, ref -> false).isEmpty();
 	}
 
-	private static ItemStack takeFirst(ServerLevel level, UUID subjectId, MaterialCategory category, Item exact) {
+	private static ItemStack takeFirst(
+			ServerLevel level,
+			UUID subjectId,
+			MaterialCategory category,
+			Item exact,
+			java.util.function.Predicate<luowei.refugee.logistics.OrgLogisticsData.ContainerRef> skip
+	) {
 		OrgLogisticsData data = OrgLogisticsData.get(level.getServer());
 		WarehouseLedger ledger = WarehouseLedger.instance();
 		int guard = 0;
 		while (guard++ < 256) {
 			SlotLoc loc = category != null
-					? ledger.first(subjectId, category, exact, WarehouseService::isOccupied)
-					: ledger.firstExact(subjectId, exact, WarehouseService::isOccupied);
+					? ledger.first(subjectId, category, exact, skip)
+					: ledger.firstExact(subjectId, exact, skip);
 			if (loc == null) {
 				return ItemStack.EMPTY;
 			}
@@ -921,6 +960,44 @@ public final class WarehouseService {
 			return taken;
 		}
 		return ItemStack.EMPTY;
+	}
+
+	public static Container peekLoaded(ServerLevel level, ContainerRef ref) {
+		if (level == null || ref == null || !level.dimension().location().equals(ref.dimension())) {
+			return null;
+		}
+		if (!level.isLoaded(ref.pos())) {
+			return null;
+		}
+		BlockEntity entity = level.getBlockEntity(ref.pos());
+		return entity instanceof Container container ? container : null;
+	}
+
+	/** 往一只已经加载的仓库容器里漏斗放入，并更新账本。玩家开着界面时也写入。 */
+	public static ItemStack insertAt(ServerLevel level, UUID subjectId, ContainerRef ref, ItemStack stack) {
+		if (level == null || subjectId == null || ref == null || stack == null || stack.isEmpty()) {
+			return stack == null ? ItemStack.EMPTY : stack;
+		}
+		Container container = peekLoaded(level, ref);
+		if (container == null) {
+			return stack;
+		}
+		List<Integer> changed = new ArrayList<>();
+		ItemStack[] remaining = { stack.copy() };
+		runSilent(() -> {
+			remaining[0] = hopperInsert(container, remaining[0], changed);
+			if (!changed.isEmpty()) {
+				container.setChanged();
+			}
+		});
+		WarehouseLedger ledger = WarehouseLedger.instance();
+		for (int slot : changed) {
+			ledger.updateSlot(subjectId, ref, slot, container.getItem(slot));
+		}
+		if (!changed.isEmpty()) {
+			OrgLogisticsData.get(level.getServer()).setDirty();
+		}
+		return remaining[0].isEmpty() ? ItemStack.EMPTY : remaining[0];
 	}
 
 	private static Container containerAt(MinecraftServer server, ContainerRef ref) {

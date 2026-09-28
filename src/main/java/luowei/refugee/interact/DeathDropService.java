@@ -1,5 +1,7 @@
 package luowei.refugee.interact;
 
+import java.util.List;
+
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -41,6 +43,12 @@ public final class DeathDropService {
 				inventory.setItem(i, ItemStack.EMPTY);
 			}
 		}
+		for (ItemStack stack : RefugeeAttachments.get(villager).cargoSlots()) {
+			if (!stack.isEmpty()) {
+				villager.spawnAtLocation(level, stack.copy());
+			}
+		}
+		RefugeeAttachments.get(villager).loadCargo(List.of());
 		ItemStack resource = data.resourceItem();
 		if (!resource.isEmpty()) {
 			villager.spawnAtLocation(level, resource.copy());
@@ -65,6 +73,7 @@ public final class DeathDropService {
 		for (int i = 0; i < inventory.getContainerSize(); i++) {
 			inventory.setItem(i, ItemStack.EMPTY);
 		}
+		data.loadCargo(List.of());
 		if (!data.resourceItem().isEmpty()) {
 			data.setResourceItem(ItemStack.EMPTY);
 			RefugeeAttachments.markDirty(villager, data);

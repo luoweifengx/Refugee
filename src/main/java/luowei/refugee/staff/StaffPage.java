@@ -31,9 +31,11 @@ package luowei.refugee.staff;
  *     GUARD → GUARD_PIE
  *       添加 / 范围召集 / 全部召集 / 除名
  *     RELATIONS → RELATIONS_PIE
- *       创建组织 / 邀请 / 邀请管理 / 组织管理 / 人员救助
+ *       创建组织 / 邀请 / 邀请管理 / 组织管理 / 领地文字 / 人员救助
  *       ORG_MANAGE → ORG_MANAGE_PIE
  *         信息 / 离开 / 踢人 / 移交 / 改领地名
+ *     DIPLOMACY → DIPLOMACY_PIE
+ *       关系列表 / 宣战 / 和解 / 结盟 / 和解处理
  * </pre>
  *
  * {@link #BUILD_HUB} 已弃用，保留以免网络 ordinal 错位。新页只追加。
@@ -75,7 +77,8 @@ public enum StaffPage {
 	ORG_RENAME,
 	ORG_RESCUE,
 	TERRITORY_MINE,
-	DIPLOMACY;
+	DIPLOMACY,
+	DIPLOMACY_PIE;
 
 	public static StaffPage byOrdinal(int ordinal) {
 		StaffPage[] values = values();
@@ -110,7 +113,7 @@ public enum StaffPage {
 	public boolean isPie() {
 		return this == PIE || this == COMBAT_PIE || this == WAREHOUSE_PIE || this == ZONE_PIE
 				|| this == RALLY_PIE || this == GUARD_PIE || this == BUILD_PIE
-				|| this == RELATIONS_PIE || this == ORG_MANAGE_PIE;
+				|| this == RELATIONS_PIE || this == ORG_MANAGE_PIE || this == DIPLOMACY_PIE;
 	}
 
 	public boolean isWorld() {

@@ -54,7 +54,8 @@ public enum StaffPieAction {
 	DECLARE_WAR,
 	RECONCILE,
 	ALLY,
-	RECONCILE_INBOX;
+	RECONCILE_INBOX,
+	DIPLOMACY;
 
 	public static StaffPieAction byOrdinal(int ordinal) {
 		StaffPieAction[] values = values();

@@ -8,6 +8,7 @@
 		"ContainerStopOpenMixin",
 		"LevelBreedParticleMixin",
 		"WarehouseReplaceMixin",
+		"PlayerKeepInventoryMixin",
 		"ServerPlayerKeepInventoryMixin",
 		"SettlementBannerPlaceMixin",
 		"SinglePoolElementAccessor",

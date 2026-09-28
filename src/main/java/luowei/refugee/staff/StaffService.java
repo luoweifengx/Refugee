@@ -259,6 +259,11 @@ public final class StaffService {
 				sync(player);
 				RefugeeNetworking.openStaffPie(player, StaffPage.RELATIONS_PIE);
 			}
+			case DIPLOMACY -> {
+				session(player).setPages(StaffPage.DIPLOMACY_PIE);
+				sync(player);
+				RefugeeNetworking.openStaffPie(player, StaffPage.DIPLOMACY_PIE);
+			}
 			case ORG_CREATE -> RelationsService.openCreate(player);
 			case ORG_INVITE -> RelationsService.openInvite(player);
 			case ORG_INVITE_MANAGE -> RelationsService.openInviteManage(player);

@@ -12,12 +12,20 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.npc.Villager;
 
 import luowei.refugee.Refugee;
+import luowei.refugee.livability.LivabilityData;
 import luowei.refugee.special.RefugeeSpecialRole;
 
 /**
  * 村民所属主体与玩家选定信息，随实体 NBT 存盘（与旅商模组 Attachment 写法一致）。
  */
 public final class RefugeeAttachments {
+	public static final AttachmentType<LivabilityData> LIVABILITY = AttachmentRegistry.create(
+			Refugee.id("livability"),
+			builder -> builder
+					.initializer(LivabilityData::new)
+					.persistent(LivabilityData.CODEC)
+	);
+
 	public static final AttachmentType<RefugeeVillagerData> VILLAGER = AttachmentRegistry.create(
 			Refugee.id("villager_data"),
 			builder -> builder

@@ -35,7 +35,7 @@ import luowei.refugee.staff.StaffService;
 import luowei.refugee.warehouse.WarehouseService;
 
 /**
- * 建筑：不靠近箱子，从组织仓库取料，按组织级任务的共享光标放置。
+ * 建筑：背包里有当前要放的方块时先从背包扣，否则从组织仓库取料。
  */
 public class RefugeeBuildGoal extends Goal {
 	private static final int SWING_INTERVAL = 6;
@@ -57,11 +57,15 @@ public class RefugeeBuildGoal extends Goal {
 		if (villager.isBaby() || !RefugeeRoles.isBuilder(villager) || WorkerSleep.yields(villager)) {
 			return false;
 		}
+		if (luowei.refugee.livability.LivabilityService.isRebelling(villager)
+				|| luowei.refugee.livability.LivabilityService.isSpent(villager)) {
+			return false;
+		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		if (data.isFollowing() || data.isFollowingEntity() || data.isPatrolling()) {
 			return false;
 		}
-		if (RefugeeCombat.isEating(villager)) {
+		if (RefugeeCombat.isEating(villager) || WorkerCargo.wantsHaul(villager)) {
 			return false;
 		}
 		return data.isBuilderDuty();
@@ -102,9 +106,12 @@ public class RefugeeBuildGoal extends Goal {
 			abortMining(level);
 			job = StaffService.claimBuildJob(level, villager);
 			if (job == null) {
+				abortMining(level);
+				RefugeeAttachments.get(villager).setCargoIdle(WorkerCargo.hasDepositable(villager));
 				return;
 			}
 		}
+		data.setCargoIdle(false);
 		List<StructureTemplate.StructureBlockInfo> blocks = BuildHealth.loadBlocks(level, job);
 		if (blocks.isEmpty()) {
 			abortMining(level);
@@ -182,10 +189,11 @@ public class RefugeeBuildGoal extends Goal {
 				continue;
 			}
 			UUID subjectId = data.subjectId();
-			if (subjectId == null || !WarehouseService.hasForBuild(level, subjectId, material)) {
+			boolean fromCargo = WorkerCargo.hasForBuild(villager, material);
+			if (!fromCargo && (subjectId == null || !WarehouseService.hasForBuild(level, subjectId, material))) {
 				abortMining(level);
 				notifyShortage(level, subjectId, material);
-				placeCooldown = RefugeeConfig.buildPlaceIntervalTicks;
+				placeCooldown = luowei.refugee.livability.LivabilityService.workInterval(villager, RefugeeConfig.buildPlaceIntervalTicks);
 				return;
 			}
 			if (needsBreak(current)) {
@@ -207,17 +215,25 @@ public class RefugeeBuildGoal extends Goal {
 					index++;
 					job.setNextIndex(index);
 					OrgLogisticsData.get(level.getServer()).setDirty();
-					placeCooldown = RefugeeConfig.buildPlaceIntervalTicks;
+					placeCooldown = luowei.refugee.livability.LivabilityService.workInterval(villager, RefugeeConfig.buildPlaceIntervalTicks);
 					return;
 				}
 			}
-			if (!WarehouseService.tryConsumeForBuild(level, subjectId, material)) {
+			if (fromCargo) {
+				if (!WorkerCargo.tryConsumeForBuild(villager, material)) {
+					notifyShortage(level, subjectId, material);
+					placeCooldown = luowei.refugee.livability.LivabilityService.workInterval(villager, RefugeeConfig.buildPlaceIntervalTicks);
+					return;
+				}
+			} else if (!WarehouseService.tryConsumeForBuild(level, subjectId, material)) {
 				notifyShortage(level, subjectId, material);
-				placeCooldown = RefugeeConfig.buildPlaceIntervalTicks;
+				placeCooldown = luowei.refugee.livability.LivabilityService.workInterval(villager, RefugeeConfig.buildPlaceIntervalTicks);
 				return;
 			}
 			shortageNotice = null;
 			BuildHealth.suppressDirty(() -> level.setBlock(dest, target, 3));
+			playPlaceSound(level, dest, level.getBlockState(dest));
+			luowei.refugee.livability.LivabilityService.noteBlockWork(villager);
 			if (info.nbt() != null) {
 				BlockEntity blockEntity = level.getBlockEntity(dest);
 				if (blockEntity != null) {
@@ -230,7 +246,7 @@ public class RefugeeBuildGoal extends Goal {
 			index++;
 			job.setNextIndex(index);
 			OrgLogisticsData.get(level.getServer()).setDirty();
-			placeCooldown = RefugeeConfig.buildPlaceIntervalTicks;
+			placeCooldown = luowei.refugee.livability.LivabilityService.workInterval(villager, RefugeeConfig.buildPlaceIntervalTicks);
 			return;
 		}
 		abortMining(level);
@@ -280,7 +296,9 @@ public class RefugeeBuildGoal extends Goal {
 			return false;
 		}
 		if (hardness == 0.0f) {
-			breakAndDeposit(level, pos, state, subjectId);
+			if (!breakAndDeposit(level, pos, state)) {
+				return false;
+			}
 			finishClear(level, pos);
 			return true;
 		}
@@ -291,7 +309,9 @@ public class RefugeeBuildGoal extends Goal {
 		boolean canHarvest = !state.requiresCorrectToolForDrops() || tool.isCorrectToolForDrops(state);
 		float perTick = speed / hardness / (canHarvest ? 30.0f : 100.0f);
 		if (perTick >= 1.0f) {
-			breakAndDeposit(level, pos, state, subjectId);
+			if (!breakAndDeposit(level, pos, state)) {
+				return false;
+			}
 			finishClear(level, pos);
 			return true;
 		}
@@ -306,11 +326,26 @@ public class RefugeeBuildGoal extends Goal {
 			playHitSound(level, pos, state);
 		}
 		if (mineProgress >= 1.0f) {
-			breakAndDeposit(level, pos, state, subjectId);
+			if (!breakAndDeposit(level, pos, state)) {
+				return false;
+			}
 			finishClear(level, pos);
 			return true;
 		}
 		return false;
+	}
+
+	/** 与原版玩家放置方块同公式，落块时广播给附近玩家。 */
+	private static void playPlaceSound(ServerLevel level, BlockPos pos, BlockState state) {
+		SoundType sound = state.getSoundType();
+		level.playSound(
+				null,
+				pos,
+				sound.getPlaceSound(),
+				SoundSource.BLOCKS,
+				(sound.getVolume() + 1.0F) / 2.0F,
+				sound.getPitch() * 0.8F
+		);
 	}
 
 	/** 与原版玩家挖掘击打声同公式，挥镐时广播给附近玩家。 */
@@ -342,7 +377,7 @@ public class RefugeeBuildGoal extends Goal {
 		minePos = null;
 	}
 
-	private void breakAndDeposit(ServerLevel level, BlockPos dest, BlockState current, UUID subjectId) {
+	private boolean breakAndDeposit(ServerLevel level, BlockPos dest, BlockState current) {
 		BlockEntity blockEntity = level.getBlockEntity(dest);
 		List<ItemStack> drops = Block.getDrops(
 				current,
@@ -352,8 +387,13 @@ public class RefugeeBuildGoal extends Goal {
 				villager,
 				RefugeeRoles.workTool(villager)
 		);
+		if (WorkerCargo.shouldHold(villager, drops)) {
+			return false;
+		}
 		BuildHealth.suppressDirty(() -> level.destroyBlock(dest, false));
-		WarehouseService.depositLoot(level, villager, subjectId, drops);
+		WorkerCargo.giveDrops(villager, level, drops);
+		luowei.refugee.livability.LivabilityService.noteBlockWork(villager);
+		return true;
 	}
 
 	private static boolean shouldSkip(StructureTemplate.StructureBlockInfo info) {

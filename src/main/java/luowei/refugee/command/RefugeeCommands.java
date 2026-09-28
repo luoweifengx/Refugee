@@ -1,5 +1,8 @@
 package luowei.refugee.command;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 import com.mojang.brigadier.Command;
@@ -20,8 +23,12 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.npc.Villager;
 
 import luowei.refugee.attachment.PlayerSelectionData;
+import luowei.refugee.attachment.RefugeeVillagerData;
+import luowei.refugee.livability.LivabilityService;
 import luowei.refugee.attachment.PlayerSelectionData.RosterEntry;
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.blueprint.BlueprintRegistry;
@@ -59,11 +66,18 @@ public final class RefugeeCommands {
 										.then(specialRole("guide", RefugeeSpecialRole.GUIDE))
 										.then(specialRole("nurse", RefugeeSpecialRole.NURSE))
 										.then(specialRole("cartographer", RefugeeSpecialRole.CARTOGRAPHER))
-										.then(specialRole("enchanter", RefugeeSpecialRole.ENCHANTER))))
+										.then(specialRole("enchanter", RefugeeSpecialRole.ENCHANTER))
+										.then(specialRole("smith", RefugeeSpecialRole.SMITH))))
 						.then(Commands.literal("blueprint")
 								.requires(source -> source.hasPermission(Commands.LEVEL_GAMEMASTERS))
 								.then(Commands.literal("reload")
 										.executes(RefugeeCommands::reloadBlueprints)))
+						.then(Commands.literal("debug")
+								.requires(source -> source.hasPermission(Commands.LEVEL_GAMEMASTERS))
+								.then(Commands.literal("rebel")
+										.executes(RefugeeCommands::rebelForce)
+										.then(Commands.literal("try")
+												.executes(RefugeeCommands::rebelTry))))
 		);
 	}
 
@@ -142,6 +156,108 @@ public final class RefugeeCommands {
 			}
 		}
 		return null;
+	}
+
+	private static int rebelForce(CommandContext<CommandSourceStack> context) {
+		ServerPlayer player = context.getSource().getPlayer();
+		if (player == null) {
+			context.getSource().sendFailure(Component.translatable("message.refugee.roster.no_player"));
+			return 0;
+		}
+		List<Villager> followers = following(player);
+		if (followers.isEmpty()) {
+			context.getSource().sendFailure(Component.translatable("message.refugee.debug.rebel.none"));
+			return 0;
+		}
+		for (Villager villager : followers) {
+			LivabilityService.forceRebel(villager);
+		}
+		int count = followers.size();
+		context.getSource().sendSuccess(
+				() -> Component.translatable("message.refugee.debug.rebel.force", count),
+				true
+		);
+		return count;
+	}
+
+	private static int rebelTry(CommandContext<CommandSourceStack> context) {
+		ServerPlayer player = context.getSource().getPlayer();
+		if (player == null) {
+			context.getSource().sendFailure(Component.translatable("message.refugee.roster.no_player"));
+			return 0;
+		}
+		List<Villager> followers = following(player);
+		if (followers.isEmpty()) {
+			context.getSource().sendFailure(Component.translatable("message.refugee.debug.rebel.none"));
+			return 0;
+		}
+		int rebelled = 0;
+		int stayed = 0;
+		int already = 0;
+		CommandSourceStack source = context.getSource();
+		for (Villager villager : followers) {
+			boolean wasRebelling = LivabilityService.isRebelling(villager);
+			String chance = String.format(Locale.ROOT, "%.1f%%", LivabilityService.rebellionChance(villager) * 100.0);
+			Component name = villager.getDisplayName();
+			if (wasRebelling) {
+				already++;
+				source.sendSuccess(
+						() -> Component.translatable(
+								"message.refugee.debug.rebel.try.line",
+								name,
+								chance,
+								Component.translatable("message.refugee.debug.rebel.try.already")
+						),
+						false
+				);
+				continue;
+			}
+			boolean hit = LivabilityService.tryRebelOnce(villager);
+			if (hit) {
+				rebelled++;
+			} else {
+				stayed++;
+			}
+			Component result = Component.translatable(
+					hit ? "message.refugee.debug.rebel.try.rebelled" : "message.refugee.debug.rebel.try.stayed"
+			);
+			source.sendSuccess(
+					() -> Component.translatable("message.refugee.debug.rebel.try.line", name, chance, result),
+					false
+			);
+		}
+		int total = followers.size();
+		int rebelledCount = rebelled;
+		int stayedCount = stayed;
+		int alreadyCount = already;
+		source.sendSuccess(
+				() -> Component.translatable(
+						"message.refugee.debug.rebel.try.summary",
+						total,
+						rebelledCount,
+						stayedCount,
+						alreadyCount
+				),
+				true
+		);
+		return rebelled;
+	}
+
+	private static List<Villager> following(ServerPlayer player) {
+		List<Villager> found = new ArrayList<>();
+		UUID playerId = player.getUUID();
+		for (ServerLevel level : player.getServer().getAllLevels()) {
+			for (Villager villager : level.getEntities(EntityType.VILLAGER, Entity::isAlive)) {
+				if (!RefugeeAttachments.isRefugee(villager)) {
+					continue;
+				}
+				RefugeeVillagerData data = RefugeeAttachments.get(villager);
+				if (data.isFollowing() && playerId.equals(data.followPlayerId())) {
+					found.add(villager);
+				}
+			}
+		}
+		return found;
 	}
 
 	private static int reloadBlueprints(CommandContext<CommandSourceStack> context) {

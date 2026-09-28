@@ -8,13 +8,15 @@ import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 
 /**
- * 四个特殊难民角色：外观用对应原版职业村民模型，逻辑用自定义字段，不走原版工作 AI。
+ * 特殊难民角色：外观用对应原版职业村民模型，逻辑用自定义字段。
+ * 空闲时只走动、看向、睡觉；跟随、对话和一次性走开时停 Brain。
  */
 public enum RefugeeSpecialRole {
 	GUIDE("guide", VillagerProfession.NITWIT),
 	NURSE("nurse", VillagerProfession.CLERIC),
 	CARTOGRAPHER("cartographer", VillagerProfession.CARTOGRAPHER),
-	ENCHANTER("enchanter", VillagerProfession.LIBRARIAN);
+	ENCHANTER("enchanter", VillagerProfession.LIBRARIAN),
+	SMITH("smith", VillagerProfession.TOOLSMITH);
 
 	private final String id;
 	private final ResourceKey<VillagerProfession> profession;
