@@ -7,6 +7,7 @@
 		"KeyboardHandlerMixin",
 		"LivingEntityRendererMixin",
 		"MouseHandlerMixin",
+		"RelationDeskHotbarMixin",
 		"VillagerRendererMixin",
 		"VillagerRenderStateMixin"
 	],

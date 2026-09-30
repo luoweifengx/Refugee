@@ -57,8 +57,7 @@ public class RefugeeBuildGoal extends Goal {
 		if (villager.isBaby() || !RefugeeRoles.isBuilder(villager) || WorkerSleep.yields(villager)) {
 			return false;
 		}
-		if (luowei.refugee.livability.LivabilityService.isRebelling(villager)
-				|| luowei.refugee.livability.LivabilityService.isSpent(villager)) {
+		if (luowei.refugee.livability.LivabilityService.isRebelling(villager)) {
 			return false;
 		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
@@ -306,6 +305,7 @@ public class RefugeeBuildGoal extends Goal {
 		if (speed > 1.0f && villager.getAttributes().hasAttribute(Attributes.MINING_EFFICIENCY)) {
 			speed += (float) villager.getAttributeValue(Attributes.MINING_EFFICIENCY);
 		}
+		speed = luowei.refugee.livability.LivabilityExhaustion.scaleBreakSpeed(villager, speed);
 		boolean canHarvest = !state.requiresCorrectToolForDrops() || tool.isCorrectToolForDrops(state);
 		float perTick = speed / hardness / (canHarvest ? 30.0f : 100.0f);
 		if (perTick >= 1.0f) {

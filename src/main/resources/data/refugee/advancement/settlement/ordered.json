@@ -1,0 +1,22 @@
+{
+	"parent": "minecraft:adventure/root",
+	"display": {
+		"icon": {
+			"id": "minecraft:bell"
+		},
+		"title": {
+			"translate": "advancements.refugee.ordered.title"
+		},
+		"description": {
+			"translate": "advancements.refugee.ordered.description"
+		},
+		"frame": "goal",
+		"show_toast": true,
+		"announce_to_chat": true
+	},
+	"criteria": {
+		"settle": {
+			"trigger": "minecraft:impossible"
+		}
+	}
+}

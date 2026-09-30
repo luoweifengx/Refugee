@@ -65,9 +65,13 @@ public class Refugee implements ModInitializer {
 		luowei.refugee.special.ClinicService.register();
 		luowei.refugee.crusader.CrusaderService.register();
 		RefugeeCommands.register();
+		luowei.refugee.ai.BedMarks.register();
+		luowei.refugee.effect.ModEffects.register();
+		luowei.refugee.livability.MutualAidService.register();
 		ServerLivingEntityEvents.AFTER_DAMAGE.register((entity, source, base, taken, blocked) -> {
 			if (entity instanceof Villager villager) {
 				RefugeeCombat.onDamaged(villager, source);
+				luowei.refugee.livability.LivabilityService.noteHurt(villager, taken);
 			}
 			if (entity instanceof net.minecraft.server.level.ServerPlayer player && taken > 0.0f) {
 				luowei.refugee.special.SpecialStoryService.onPlayerHurt(player);
@@ -78,6 +82,7 @@ public class Refugee implements ModInitializer {
 				luowei.refugee.special.SpecialStoryService.onDragonKilled(entity.level().getServer());
 			}
 			if (entity instanceof Villager villager && entity.level() instanceof ServerLevel level) {
+				luowei.refugee.livability.ExecutionService.onVillagerRemoved(villager);
 				if (RefugeeSpecialRole.isSpecial(villager)) {
 					SpecialRefugeeService.markSpecialGone(level.getServer(), villager.getUUID());
 				}

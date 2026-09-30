@@ -49,6 +49,13 @@ public final class StaffClientNav {
 		return ClientStaffState.page() == StaffPage.ZONE_ADVANCE;
 	}
 
+	private static boolean isRelationForm(Screen screen) {
+		return screen instanceof RelationsListScreen
+				|| screen instanceof RelationsNameScreen
+				|| screen instanceof RelationsInviteScreen
+				|| screen instanceof RelationsTextsScreen;
+	}
+
 	public static boolean isStaffScreen(Screen screen) {
 		return screen instanceof StaffPieScreen
 				|| screen instanceof BlueprintSelectScreen
@@ -142,7 +149,14 @@ public final class StaffClientNav {
 			return false;
 		}
 		Minecraft client = Minecraft.getInstance();
+		if (isRelationForm(screen) && isInventoryKey(client, keyCode, scanCode)) {
+			RelationDeskNav.returnHere();
+			return true;
+		}
 		if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+			if (isRelationForm(screen)) {
+				RelationDeskNav.closed();
+			}
 			resetToRoot();
 			return true;
 		}
@@ -242,6 +256,14 @@ public final class StaffClientNav {
 		return null;
 	}
 
+	private static void leaveRelationForm(Minecraft client) {
+		if (RelationDeskNav.using()) {
+			client.setScreen(new RelationDeskScreen(RelationDeskNav.section()));
+			return;
+		}
+		client.setScreen(null);
+	}
+
 	public static void closeStaffScreens() {
 		Minecraft client = Minecraft.getInstance();
 		if (isStaffScreen(client.screen)) {
@@ -279,7 +301,7 @@ public final class StaffClientNav {
 				case RELATIONS, WAR, PEACE, ALLY, PEACE_INBOX -> page == StaffPage.DIPLOMACY;
 			};
 			if (!keep) {
-				client.setScreen(null);
+				leaveRelationForm(client);
 				screen = client.screen;
 			}
 		}
@@ -290,16 +312,16 @@ public final class StaffClientNav {
 				case RENAME_PERSONAL -> page == StaffPage.TERRITORY_MINE;
 			};
 			if (!keep) {
-				client.setScreen(null);
+				leaveRelationForm(client);
 				screen = client.screen;
 			}
 		}
 		if (page != StaffPage.ORG_INVITES && screen instanceof RelationsInviteScreen) {
-			client.setScreen(null);
+			leaveRelationForm(client);
 			screen = client.screen;
 		}
 		if (page != StaffPage.TERRITORY_MINE && screen instanceof RelationsTextsScreen) {
-			client.setScreen(null);
+			leaveRelationForm(client);
 		}
 	}
 }

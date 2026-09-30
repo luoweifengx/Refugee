@@ -20,7 +20,10 @@ public final class LivabilityData {
 			Codec.DOUBLE.optionalFieldOf("heal", 0.5).forGetter(data -> data.healEfficiency),
 			Codec.DOUBLE.optionalFieldOf("loyalty", 0.0).forGetter(data -> data.loyalty),
 			Codec.INT.optionalFieldOf("labor_points", 0).forGetter(data -> data.laborPoints),
-			Codec.INT.optionalFieldOf("attack_points", 0).forGetter(data -> data.attackPoints)
+			Codec.INT.optionalFieldOf("attack_points", 0).forGetter(data -> data.attackPoints),
+			Codec.LONG.optionalFieldOf("metabolism_at", -1L).forGetter(data -> data.metabolismAt),
+			Codec.LONG.optionalFieldOf("sleep_started", -1L).forGetter(data -> data.sleepStarted),
+			Codec.INT.optionalFieldOf("sleep_ticks", 0).forGetter(data -> data.sleepTicks)
 	).apply(instance, LivabilityData::new));
 
 	private double satiety;
@@ -36,6 +39,13 @@ public final class LivabilityData {
 	private double loyalty;
 	private int laborPoints;
 	private int attackPoints;
+	private long metabolismAt = -1L;
+	private long sleepStarted = -1L;
+	private int sleepTicks;
+	/** 上次写进组织忠诚总和的值。只在这次加载里有效，重新加载时按当前忠诚重新对齐。 */
+	private double censusLoyalty;
+	private boolean censusBound;
+	private int moodOffset;
 
 	public LivabilityData() {
 		LivabilityRules rules = LivabilityRules.CURRENT;
@@ -59,7 +69,10 @@ public final class LivabilityData {
 			double healEfficiency,
 			double loyalty,
 			int laborPoints,
-			int attackPoints
+			int attackPoints,
+			long metabolismAt,
+			long sleepStarted,
+			int sleepTicks
 	) {
 		this.satiety = satiety;
 		this.stamina = stamina;
@@ -74,6 +87,9 @@ public final class LivabilityData {
 		this.loyalty = loyalty;
 		this.laborPoints = Math.max(0, laborPoints);
 		this.attackPoints = Math.max(0, attackPoints);
+		this.metabolismAt = metabolismAt;
+		this.sleepStarted = sleepStarted;
+		this.sleepTicks = Math.max(0, sleepTicks);
 	}
 
 	public double satiety() {
@@ -86,6 +102,39 @@ public final class LivabilityData {
 
 	public double comfort() {
 		return comfort;
+	}
+
+	/** 存着的舒适加上死气沉沉或振奋，再夹到状态上下限。清晨结算仍读 {@link #comfort()}。 */
+	public double effectiveComfort() {
+		LivabilityRules rules = LivabilityRules.CURRENT;
+		return LivabilityMath.clampStat(comfort + moodOffset, rules.statMin, rules.statMax);
+	}
+
+	public int moodOffset() {
+		return moodOffset;
+	}
+
+	/** @return 偏移变了，忠诚已重算 */
+	public boolean setMoodOffset(int moodOffset) {
+		if (this.moodOffset == moodOffset) {
+			return false;
+		}
+		this.moodOffset = moodOffset;
+		refreshEffects();
+		return true;
+	}
+
+	public double censusLoyalty() {
+		return censusLoyalty;
+	}
+
+	public void setCensusLoyalty(double censusLoyalty) {
+		this.censusLoyalty = censusLoyalty;
+		this.censusBound = true;
+	}
+
+	public boolean censusBound() {
+		return censusBound;
 	}
 
 	public double breads() {
@@ -136,6 +185,12 @@ public final class LivabilityData {
 		refreshEffects();
 	}
 
+	public void addComfort(double amount) {
+		LivabilityRules rules = LivabilityRules.CURRENT;
+		comfort = LivabilityMath.clampStat(comfort + amount, rules.statMin, rules.statMax);
+		refreshEffects();
+	}
+
 	/** 挖、放或催熟记 1，共用一条计数。满阈值立刻扣 1 点体力和一笔饱食，余数留下。 */
 	public void noteBlockWork() {
 		worked = true;
@@ -174,6 +229,48 @@ public final class LivabilityData {
 		slept = true;
 	}
 
+	public void beginSleep(long now) {
+		slept = true;
+		if (sleepStarted < 0L) {
+			sleepStarted = now;
+		}
+	}
+
+	public void endSleep(long now) {
+		if (sleepStarted >= 0L) {
+			addSleepElapsed(now - sleepStarted);
+			sleepStarted = -1L;
+		}
+		slept = true;
+	}
+
+	/** 把到现在为止的睡眠并进累计，然后交出累计值。人还在睡就把起点改到现在。 */
+	public int consumeSleep(long now, boolean stillSleeping) {
+		if (sleepStarted >= 0L) {
+			addSleepElapsed(now - sleepStarted);
+			sleepStarted = stillSleeping ? now : -1L;
+		}
+		int taken = Math.max(0, sleepTicks);
+		sleepTicks = 0;
+		return taken;
+	}
+
+	public long metabolismAt() {
+		return metabolismAt;
+	}
+
+	public void setMetabolismAt(long metabolismAt) {
+		this.metabolismAt = metabolismAt;
+	}
+
+	private void addSleepElapsed(long elapsed) {
+		if (elapsed <= 0L) {
+			return;
+		}
+		long sum = (long) sleepTicks + elapsed;
+		sleepTicks = (int) Math.min(sum, Integer.MAX_VALUE);
+	}
+
 	public void applyDay(double nextSatiety, double nextStamina, double nextComfort, long day, boolean rebelling) {
 		this.satiety = nextSatiety;
 		this.stamina = nextStamina;
@@ -183,6 +280,7 @@ public final class LivabilityData {
 		this.breads = 0.0;
 		this.worked = false;
 		this.slept = false;
+		this.sleepTicks = 0;
 		refreshEffects();
 	}
 
@@ -190,6 +288,6 @@ public final class LivabilityData {
 		LivabilityRules rules = LivabilityRules.CURRENT;
 		laborEfficiency = LivabilityMath.laborEfficiency(stamina, satiety, comfort, rules);
 		healEfficiency = LivabilityMath.healEfficiency(stamina, satiety, comfort, rules);
-		loyalty = LivabilityMath.loyalty(satiety, stamina, comfort, rules);
+		loyalty = LivabilityMath.loyalty(satiety, stamina, effectiveComfort(), rules);
 	}
 }

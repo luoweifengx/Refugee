@@ -96,6 +96,7 @@ public final class OrgMergeService {
 		if (server == null || fromSubject == null || orgId == null || fromSubject.equals(orgId)) {
 			return;
 		}
+		luowei.refugee.livability.CensusService.merge(server, fromSubject, orgId);
 		remapVillagerSubjects(server, fromSubject, orgId);
 		OrgLogisticsData.get(server).mergeFrom(fromSubject, orgId);
 		reindexWarehouses(server, orgId);

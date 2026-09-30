@@ -969,6 +969,7 @@ public class SpecialSplashScreen extends Screen {
 			case "blocks" -> {
 				list.add(item("special", "banner"));
 				list.add(item("special", "altar"));
+				list.add(item("special", "relation_desk"));
 				list.add(item("blocks", "bed"));
 				list.add(item("blocks", "bell"));
 				list.add(item("blocks", "kit"));

@@ -2,8 +2,7 @@ package luowei.refugee.livability;
 
 /**
  * 宜居度纯计算。饥饿值与饱食度是同一个 0–20 的数：越高越饱。
- * 居住舒适度 = 基准 + 床间隔变化 + 连片床数变化，再夹到 0–20。
- * 没有床时居住舒适度为 0。
+ * 居住分 = 间距分 + 密度分，再夹到 0–20。没有床时为 0。
  */
 public final class LivabilityMath {
 	private LivabilityMath() {
@@ -109,13 +108,37 @@ public final class LivabilityMath {
 		return clampStat(current + staminaDelta(satiety, worked, slept, rules), rules.statMin, rules.statMax);
 	}
 
-	/** 没有床时返回 0。有床时为基准加两项变化量。 */
-	public static double livingComfort(boolean hasBed, int gap, int clusterSize, LivabilityRules rules) {
+	/** 没有床时返回 0。有床时为间距分加密度分。 */
+	public static double livingComfort(boolean hasBed, int gap, int density, LivabilityRules rules) {
 		if (!hasBed) {
 			return 0.0;
 		}
-		double value = rules.comfortBase + bedGapDelta(gap, rules) + bedClusterDelta(clusterSize, rules);
+		double value = bedGapDelta(gap, rules) + bedDensityDelta(density, rules);
 		return clampStat(value, rules.statMin, rules.statMax);
+	}
+
+	/** 当晚睡过时，居住分改为睡觉时长乘系数再乘原来的居住分。 */
+	public static double sleptLiving(double living, int sleepTicks, LivabilityRules rules) {
+		if (sleepTicks <= 0 || living <= 0.0) {
+			return living;
+		}
+		return clampStat(sleepTicks * rules.sleepLivingScale * living, rules.statMin, rules.statMax);
+	}
+
+	/** 用结算前的饱食。n = 舒适 × 系数。 */
+	public static double metabolizedSatiety(double satiety, double comfort, LivabilityRules rules) {
+		double n = metabolismFactor(comfort, rules);
+		return clampStat((1.0 - n) * satiety - 1.0, rules.statMin, rules.statMax);
+	}
+
+	/** 体力加上 (0.05 + n) × 结算前饱食。 */
+	public static double metabolizedStamina(double stamina, double satiety, double comfort, LivabilityRules rules) {
+		double n = metabolismFactor(comfort, rules);
+		return clampStat(stamina + (rules.staminaFromSatiety + n) * satiety, rules.statMin, rules.statMax);
+	}
+
+	private static double metabolismFactor(double comfort, LivabilityRules rules) {
+		return clampStat(rules.comfortMetabolism * comfort, 0.0, 1.0);
 	}
 
 	public static double bedGapDelta(int gap, LivabilityRules rules) {
@@ -131,30 +154,24 @@ public final class LivabilityMath {
 		return rules.gapFar;
 	}
 
-	public static double bedClusterDelta(int size, LivabilityRules rules) {
+	public static double bedDensityDelta(int size, LivabilityRules rules) {
 		int count = Math.max(1, size);
-		if (count <= 1) {
-			return rules.cluster1;
+		if (count <= 2) {
+			return rules.density2;
 		}
-		if (count == 2) {
-			return rules.cluster2;
+		if (count <= 5) {
+			return rules.density5;
 		}
-		if (count <= 4) {
-			return rules.cluster4;
+		if (count <= 10) {
+			return rules.density10;
 		}
-		if (count <= 8) {
-			return rules.cluster8;
+		if (count <= 30) {
+			return rules.density30;
 		}
-		if (count <= 16) {
-			return rules.cluster16;
+		if (count <= 80) {
+			return rules.density80;
 		}
-		if (count <= 32) {
-			return rules.cluster32;
-		}
-		if (count <= 64) {
-			return rules.cluster64;
-		}
-		return rules.cluster65;
+		return rules.density81;
 	}
 
 	public static double nextComfort(double current, double living, LivabilityRules rules) {
@@ -183,24 +200,33 @@ public final class LivabilityMath {
 		return Math.max(0.0, raw);
 	}
 
+	/** 饱食、体力、舒适里最低的两项取平均。 */
 	public static double loyalty(double satiety, double stamina, double comfort, LivabilityRules rules) {
-		return capPositive(satiety - rules.loyaltySatietyOrigin, rules.loyaltyCap)
-				+ capPositive(stamina - rules.loyaltyStaminaOrigin, rules.loyaltyCap)
-				+ capPositive(comfort - rules.loyaltyComfortOrigin, rules.loyaltyCap);
+		double lowest = Math.min(satiety, Math.min(stamina, comfort));
+		double highest = Math.max(satiety, Math.max(stamina, comfort));
+		double middle = satiety + stamina + comfort - lowest - highest;
+		return clampStat((lowest + middle) / 2.0, rules.statMin, rules.statMax);
 	}
 
-	private static double capPositive(double value, double cap) {
-		return Math.min(cap, value);
-	}
-
-	/** 忠诚度 ≥ 0 时为 0。接近下限时按幂次升到 1。 */
+	/**
+	 * 不超过 {@code rebellionCertainLoyalty} 时为 1。
+	 * 到 {@code rebellionMidLoyalty} 降到 {@code rebellionMidChance}，之后每高 1 点乘 {@code rebellionDecay}。
+	 */
 	public static double rebellionChance(double loyalty, LivabilityRules rules) {
-		if (loyalty >= 0.0) {
-			return 0.0;
+		double certain = rules.rebellionCertainLoyalty;
+		if (loyalty <= certain) {
+			return 1.0;
 		}
-		double span = Math.max(0.0001, rules.loyaltyFloorMagnitude);
-		double t = clampStat(-loyalty / span, 0.0, 1.0);
-		return Math.pow(t, Math.max(0.01, rules.rebellionExponent));
+		double midChance = clampStat(rules.rebellionMidChance, 0.0, 1.0);
+		double decay = clampStat(rules.rebellionDecay, 0.0, 1.0);
+		double mid = rules.rebellionMidLoyalty;
+		if (mid <= certain) {
+			return midChance * Math.pow(decay, loyalty - certain);
+		}
+		if (loyalty <= mid) {
+			return Math.pow(midChance, (loyalty - certain) / (mid - certain));
+		}
+		return midChance * Math.pow(decay, loyalty - mid);
 	}
 
 	public static int scaledInterval(int baseTicks, double efficiency) {

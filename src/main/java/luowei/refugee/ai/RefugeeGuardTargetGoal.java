@@ -8,11 +8,10 @@ import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.phys.Vec3;
 
-import luowei.refugee.config.RefugeeConfig;
 import luowei.refugee.interact.RefugeeRoles;
 
 /**
- * 守卫索敌：以村民自身为圆心，{@link RefugeeConfig#guardRadius} 内的敌对生物。
+ * 守卫索敌：以床或守卫中心为圆心，50 格内的敌对生物。
  */
 public class RefugeeGuardTargetGoal extends NearestAttackableTargetGoal<Monster> {
 	private final Villager villager;
@@ -25,13 +24,13 @@ public class RefugeeGuardTargetGoal extends NearestAttackableTargetGoal<Monster>
 
 	@Override
 	protected double getFollowDistance() {
-		return RefugeeConfig.guardRadius;
+		return RefugeeGuardGoal.WATCH_RADIUS;
 	}
 
 	@Override
 	protected void findTarget() {
 		this.target = null;
-		LivingEntity enemy = RefugeeCombat.nearestCombatTarget(villager, villager.position(), getFollowDistance());
+		LivingEntity enemy = RefugeeCombat.nearestCombatTarget(villager, RefugeeGuardGoal.watchCenter(villager), getFollowDistance());
 		if (enemy instanceof Monster monster) {
 			this.target = monster;
 		}
@@ -43,7 +42,7 @@ public class RefugeeGuardTargetGoal extends NearestAttackableTargetGoal<Monster>
 		if (target == null || !target.isAlive()) {
 			return false;
 		}
-		Vec3 center = villager.position();
+		Vec3 center = RefugeeGuardGoal.watchCenter(villager);
 		if (!RefugeeGuardGoal.isWithinGuardRadius(target, center)) {
 			return false;
 		}
@@ -56,9 +55,6 @@ public class RefugeeGuardTargetGoal extends NearestAttackableTargetGoal<Monster>
 	@Override
 	public boolean canUse() {
 		if (villager.isBaby() || !RefugeeCombat.mood(villager).canAcquireTarget()) {
-			return false;
-		}
-		if (luowei.refugee.livability.LivabilityService.isSpent(villager)) {
 			return false;
 		}
 		if (!RefugeeRoles.isGuard(villager)) {
@@ -79,7 +75,7 @@ public class RefugeeGuardTargetGoal extends NearestAttackableTargetGoal<Monster>
 		if (!RefugeeCombat.mood(villager).canAcquireTarget() || !RefugeeRoles.isGuard(villager)) {
 			return false;
 		}
-		Vec3 center = villager.position();
+		Vec3 center = RefugeeGuardGoal.watchCenter(villager);
 		LivingEntity current = villager.getTarget();
 		if (current == null) {
 			current = this.targetMob;

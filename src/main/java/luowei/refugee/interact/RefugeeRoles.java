@@ -235,8 +235,9 @@ public final class RefugeeRoles {
 	}
 
 	/**
-	 * 工人、散人和特殊 NPC 空闲时只走动、看向、睡觉。
-	 * 守卫，以及正在干活、跟随、巡逻、逃逸、对话时停 Brain。
+	 * 工人正在干活时停 Brain。守卫除了晚上找床也停。
+	 * 散人、空闲工人和特殊 NPC 跑去掉找职业的日程。
+	 * 跟随、巡逻、逃逸、对话时停 Brain。
 	 */
 	public static boolean overridesBrain(Villager villager) {
 		if (villager == null || villager.isBaby()) {
@@ -254,7 +255,7 @@ public final class RefugeeRoles {
 		}
 		boolean idle = RefugeeSpecialRole.isSpecial(villager) || matchesRallyCivilian(villager);
 		if (!idle) {
-			return true;
+			return !WorkerSleep.seeksBed(villager);
 		}
 		long now = villager.level().getGameTime();
 		if (data.isLookingAtPlayer(now) || data.holdsBrain(now)) {

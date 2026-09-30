@@ -21,7 +21,9 @@ import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 import luowei.refugee.Refugee;
@@ -224,9 +226,21 @@ public final class RefugeeCombat {
 	}
 
 	public static boolean hasHostilesInGuardRadius(Villager villager) {
-		Vec3 center = combatCenter(villager);
-		return hasHostilesAround(villager, center, RefugeeConfig.guardRadius)
-				|| nearestHostileFaction(villager, center, RefugeeConfig.guardRadius) != null;
+		Vec3 center = RefugeeRoles.isGuard(villager) ? RefugeeGuardGoal.watchCenter(villager) : combatCenter(villager);
+		double radius = RefugeeRoles.isGuard(villager) ? RefugeeGuardGoal.WATCH_RADIUS : RefugeeConfig.guardRadius;
+		return hasHostilesAround(villager, center, radius)
+				|| nearestHostileFaction(villager, center, radius) != null;
+	}
+
+	/** 睡着的守卫，警戒圈里出现敌人就起来。 */
+	public static void wakeGuardIfThreatened(Villager villager) {
+		if (villager == null || !villager.isSleeping() || !RefugeeRoles.isGuard(villager)) {
+			return;
+		}
+		if (!hasHostilesInGuardRadius(villager)) {
+			return;
+		}
+		villager.stopSleeping();
 	}
 
 	public static boolean hasHostilesAround(Villager villager, Vec3 center, double radius) {
@@ -267,9 +281,6 @@ public final class RefugeeCombat {
 	}
 
 	public static void attackUnarmed(Villager villager, LivingEntity target) {
-		if (LivabilityService.isSpent(villager)) {
-			return;
-		}
 		if (villager == null || target == null || !target.isAlive() || villager.distanceTo(target) >= 2.2) {
 			return;
 		}
@@ -599,7 +610,7 @@ public final class RefugeeCombat {
 
 	/**
 	 * 把当前应当使用的武器换到主手：仅副手有武器则换上；
-	 * 一手远程一手近战则按距离选择。双手近战不换。
+	 * 一手远程一手近战则按距离选择，远距还要视线通畅。双手近战不换。
 	 */
 	public static void preferCombatMainHand(Villager villager, LivingEntity target) {
 		ItemStack main = villager.getMainHandItem();
@@ -622,11 +633,42 @@ public final class RefugeeCombat {
 		}
 		double distance = target == null ? Double.MAX_VALUE : villager.distanceTo(target);
 		boolean wantRanged = distance > RefugeeConfig.combatRangedDistance;
+		if (wantRanged && target != null) {
+			wantRanged = rangedShotAllowed(villager, target);
+		}
 		if (wantRanged && offRanged && !mainRanged) {
 			swapHands(villager);
 		} else if (!wantRanged && offMelee && !mainMelee) {
 			swapHands(villager);
 		}
+	}
+
+	/** 远距射击要眼睛到目标躯干没有方块挡住。同一目标每 5 tick 查一次。 */
+	private static boolean rangedShotAllowed(Villager villager, LivingEntity target) {
+		if (target == null) {
+			return false;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		int tickCount = villager.tickCount;
+		if (!data.rangedLosDue(target.getUUID(), tickCount)) {
+			return data.rangedLosCanShoot();
+		}
+		return data.applyRangedLos(target.getUUID(), tickCount, rangedShotClear(villager, target));
+	}
+
+	private static boolean rangedShotClear(Villager villager, LivingEntity target) {
+		Vec3 from = villager.getEyePosition();
+		Vec3 to = target.getBoundingBox().getCenter();
+		if (from.distanceToSqr(to) < 1.0E-7) {
+			return true;
+		}
+		return villager.level().clip(new ClipContext(
+				from,
+				to,
+				ClipContext.Block.COLLIDER,
+				ClipContext.Fluid.NONE,
+				villager
+		)).getType() == HitResult.Type.MISS;
 	}
 
 	/** 主手没有武器、副手有时，把武器换到主手。 */
@@ -653,9 +695,6 @@ public final class RefugeeCombat {
 	}
 
 	public static void attackWith(Villager villager, LivingEntity target, InteractionHand hand) {
-		if (LivabilityService.isSpent(villager)) {
-			return;
-		}
 		ItemStack weapon = stackIn(villager, hand);
 		if (!RefugeeRoles.isWeapon(weapon) || target == null || !target.isAlive()) {
 			return;

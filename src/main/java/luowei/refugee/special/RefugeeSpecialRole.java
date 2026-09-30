@@ -9,7 +9,7 @@ import luowei.refugee.attachment.RefugeeVillagerData;
 
 /**
  * 特殊难民角色：外观用对应原版职业村民模型，逻辑用自定义字段。
- * 空闲时只走动、看向、睡觉；跟随、对话和一次性走开时停 Brain。
+ * 空闲时跑去掉找职业的村民日程；跟随、对话和一次性走开时停 Brain。
  */
 public enum RefugeeSpecialRole {
 	GUIDE("guide", VillagerProfession.NITWIT),

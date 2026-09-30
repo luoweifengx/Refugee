@@ -44,22 +44,28 @@ public final class LivabilityRules {
 	public double staminaSleptScale = 5.0;
 	public double staminaAwakeScale = 7.0;
 	public double comfortBase = 10.0;
-	public double comfortKeep = 0.9;
-	public double comfortBlend = 0.1;
-	public double gap0 = -3.0;
-	public double gap1 = 0.0;
-	public double gap2 = 2.0;
-	public double gapFar = 3.0;
-	public double cluster1 = 7.0;
-	public double cluster2 = 5.0;
-	public double cluster4 = 3.0;
-	public double cluster8 = 1.0;
-	public double cluster16 = -1.0;
-	public double cluster32 = -3.0;
-	public double cluster64 = -5.0;
-	public double cluster65 = -7.0;
-	/** 绑床与连片共用的切比雪夫半径。 */
+	public double comfortKeep = 0.6;
+	public double comfortBlend = 0.4;
+	/** 每次实际掉血，舒适减去掉血量乘这个数。 */
+	public double hurtComfortScale = 0.01;
+	/** 间距 0 / 1 / 2 / 3 及以上。 */
+	public double gap0 = 0.0;
+	public double gap1 = 2.0;
+	public double gap2 = 3.0;
+	public double gapFar = 4.0;
+	/** 密度按张数：1–2、3–5、6–10、11–30、31–80、81 及以上。 */
+	public double density2 = 7.0;
+	public double density5 = 5.0;
+	public double density10 = 3.0;
+	public double density30 = 2.0;
+	public double density80 = 1.0;
+	public double density81 = 0.0;
+	/** 放床、拆床时统计周围床的切比雪夫半径。 */
 	public int bedLinkRadius = 7;
+	public int metabolismInterval = 3000;
+	public double comfortMetabolism = 0.01;
+	public double staminaFromSatiety = 0.05;
+	public double sleepLivingScale = 0.0005;
 	public double effectBase = 1.0;
 	public double effectDivisor = 2.0;
 	public double laborStaminaOrigin = 10.0;
@@ -74,12 +80,13 @@ public final class LivabilityRules {
 	public double healSatietyWeight = 0.08;
 	public double healComfortOrigin = 10.0;
 	public double healComfortWeight = 0.12;
-	public double loyaltyCap = 2.0;
-	public double loyaltySatietyOrigin = 5.0;
-	public double loyaltyStaminaOrigin = 3.0;
-	public double loyaltyComfortOrigin = 3.0;
-	public double loyaltyFloorMagnitude = 11.0;
-	public double rebellionExponent = 2.0;
+	/** 忠诚度不超过这里时，叛乱概率为 1。 */
+	public double rebellionCertainLoyalty = 1.5;
+	/** 忠诚度到这里时，叛乱概率为 {@link #rebellionMidChance}。 */
+	public double rebellionMidLoyalty = 3.0;
+	public double rebellionMidChance = 0.25;
+	/** 超过中间点之后，忠诚度每高 1，概率乘上这个数。 */
+	public double rebellionDecay = 0.04;
 	public double initialSatiety = 10.0;
 	public double initialStamina = 10.0;
 	public double initialComfort = 10.0;
@@ -116,19 +123,22 @@ public final class LivabilityRules {
 		comfortBase = num(node, "comfortBase", comfortBase);
 		comfortKeep = num(node, "comfortKeep", comfortKeep);
 		comfortBlend = num(node, "comfortBlend", comfortBlend);
+		hurtComfortScale = 0.01;
 		gap0 = num(node, "gap0", gap0);
 		gap1 = num(node, "gap1", gap1);
 		gap2 = num(node, "gap2", gap2);
 		gapFar = num(node, "gapFar", gapFar);
-		cluster1 = num(node, "cluster1", cluster1);
-		cluster2 = num(node, "cluster2", cluster2);
-		cluster4 = num(node, "cluster4", cluster4);
-		cluster8 = num(node, "cluster8", cluster8);
-		cluster16 = num(node, "cluster16", cluster16);
-		cluster32 = num(node, "cluster32", cluster32);
-		cluster64 = num(node, "cluster64", cluster64);
-		cluster65 = num(node, "cluster65", cluster65);
+		density2 = num(node, "density2", density2);
+		density5 = num(node, "density5", density5);
+		density10 = num(node, "density10", density10);
+		density30 = num(node, "density30", density30);
+		density80 = num(node, "density80", density80);
+		density81 = num(node, "density81", density81);
 		bedLinkRadius = Math.max(1, (int) num(node, "bedLinkRadius", bedLinkRadius));
+		metabolismInterval = Math.max(1, (int) num(node, "metabolismInterval", metabolismInterval));
+		comfortMetabolism = num(node, "comfortMetabolism", comfortMetabolism);
+		staminaFromSatiety = num(node, "staminaFromSatiety", staminaFromSatiety);
+		sleepLivingScale = num(node, "sleepLivingScale", sleepLivingScale);
 		effectBase = num(node, "effectBase", effectBase);
 		effectDivisor = num(node, "effectDivisor", effectDivisor);
 		if (Math.abs(effectDivisor) < 0.0001) {
@@ -146,12 +156,10 @@ public final class LivabilityRules {
 		healSatietyWeight = 0.08;
 		healComfortOrigin = 10.0;
 		healComfortWeight = 0.12;
-		loyaltyCap = num(node, "loyaltyCap", loyaltyCap);
-		loyaltySatietyOrigin = num(node, "loyaltySatietyOrigin", loyaltySatietyOrigin);
-		loyaltyStaminaOrigin = num(node, "loyaltyStaminaOrigin", loyaltyStaminaOrigin);
-		loyaltyComfortOrigin = num(node, "loyaltyComfortOrigin", loyaltyComfortOrigin);
-		loyaltyFloorMagnitude = Math.max(0.001, num(node, "loyaltyFloorMagnitude", loyaltyFloorMagnitude));
-		rebellionExponent = Math.max(0.01, num(node, "rebellionExponent", rebellionExponent));
+		rebellionCertainLoyalty = num(node, "rebellionCertainLoyalty", rebellionCertainLoyalty);
+		rebellionMidLoyalty = num(node, "rebellionMidLoyalty", rebellionMidLoyalty);
+		rebellionMidChance = clamp01(num(node, "rebellionMidChance", rebellionMidChance));
+		rebellionDecay = clamp01(num(node, "rebellionDecay", rebellionDecay));
 		initialSatiety = num(node, "initialSatiety", initialSatiety);
 		initialStamina = num(node, "initialStamina", initialStamina);
 		initialComfort = num(node, "initialComfort", initialComfort);
@@ -182,19 +190,22 @@ public final class LivabilityRules {
 		node.addProperty("comfortBase", comfortBase);
 		node.addProperty("comfortKeep", comfortKeep);
 		node.addProperty("comfortBlend", comfortBlend);
+		node.addProperty("hurtComfortScale", hurtComfortScale);
 		node.addProperty("gap0", gap0);
 		node.addProperty("gap1", gap1);
 		node.addProperty("gap2", gap2);
 		node.addProperty("gapFar", gapFar);
-		node.addProperty("cluster1", cluster1);
-		node.addProperty("cluster2", cluster2);
-		node.addProperty("cluster4", cluster4);
-		node.addProperty("cluster8", cluster8);
-		node.addProperty("cluster16", cluster16);
-		node.addProperty("cluster32", cluster32);
-		node.addProperty("cluster64", cluster64);
-		node.addProperty("cluster65", cluster65);
+		node.addProperty("density2", density2);
+		node.addProperty("density5", density5);
+		node.addProperty("density10", density10);
+		node.addProperty("density30", density30);
+		node.addProperty("density80", density80);
+		node.addProperty("density81", density81);
 		node.addProperty("bedLinkRadius", bedLinkRadius);
+		node.addProperty("metabolismInterval", metabolismInterval);
+		node.addProperty("comfortMetabolism", comfortMetabolism);
+		node.addProperty("staminaFromSatiety", staminaFromSatiety);
+		node.addProperty("sleepLivingScale", sleepLivingScale);
 		node.addProperty("effectBase", effectBase);
 		node.addProperty("effectDivisor", effectDivisor);
 		node.addProperty("laborStaminaOrigin", laborStaminaOrigin);
@@ -209,16 +220,18 @@ public final class LivabilityRules {
 		node.addProperty("healSatietyWeight", healSatietyWeight);
 		node.addProperty("healComfortOrigin", healComfortOrigin);
 		node.addProperty("healComfortWeight", healComfortWeight);
-		node.addProperty("loyaltyCap", loyaltyCap);
-		node.addProperty("loyaltySatietyOrigin", loyaltySatietyOrigin);
-		node.addProperty("loyaltyStaminaOrigin", loyaltyStaminaOrigin);
-		node.addProperty("loyaltyComfortOrigin", loyaltyComfortOrigin);
-		node.addProperty("loyaltyFloorMagnitude", loyaltyFloorMagnitude);
-		node.addProperty("rebellionExponent", rebellionExponent);
+		node.addProperty("rebellionCertainLoyalty", rebellionCertainLoyalty);
+		node.addProperty("rebellionMidLoyalty", rebellionMidLoyalty);
+		node.addProperty("rebellionMidChance", rebellionMidChance);
+		node.addProperty("rebellionDecay", rebellionDecay);
 		node.addProperty("initialSatiety", initialSatiety);
 		node.addProperty("initialStamina", initialStamina);
 		node.addProperty("initialComfort", initialComfort);
 		return node;
+	}
+
+	private static double clamp01(double value) {
+		return Math.max(0.0, Math.min(1.0, value));
 	}
 
 	private static double num(JsonObject json, String key, double fallback) {

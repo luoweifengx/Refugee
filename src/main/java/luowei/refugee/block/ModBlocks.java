@@ -21,6 +21,8 @@ public final class ModBlocks {
 	public static Block ALTAR;
 	public static Item ALTAR_ITEM;
 	public static BlockEntityType<AltarBlockEntity> ALTAR_ENTITY;
+	public static Block RELATION_DESK;
+	public static Item RELATION_DESK_ITEM;
 
 	private ModBlocks() {
 	}
@@ -33,11 +35,17 @@ public final class ModBlocks {
 				FabricBlockEntityTypeBuilder.create(AltarBlockEntity::new, ALTAR).build()
 		);
 		ALTAR_ITEM = registerBlockItem(ALTAR);
+		RELATION_DESK = registerBlock("relation_desk", Blocks.CARTOGRAPHY_TABLE, RelationDeskBlock::new);
+		RELATION_DESK_ITEM = registerBlockItem(RELATION_DESK);
 	}
 
 	private static Block registerBlock(String path, Function<BlockBehaviour.Properties, Block> factory) {
+		return registerBlock(path, Blocks.SCULK_SHRIEKER, factory);
+	}
+
+	private static Block registerBlock(String path, Block copyFrom, Function<BlockBehaviour.Properties, Block> factory) {
 		ResourceKey<Block> key = ResourceKey.create(Registries.BLOCK, Refugee.id(path));
-		BlockBehaviour.Properties props = BlockBehaviour.Properties.ofFullCopy(Blocks.SCULK_SHRIEKER).setId(key);
+		BlockBehaviour.Properties props = BlockBehaviour.Properties.ofFullCopy(copyFrom).setId(key);
 		Block block = factory.apply(props);
 		return Registry.register(BuiltInRegistries.BLOCK, key, block);
 	}

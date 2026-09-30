@@ -13,6 +13,7 @@ import net.minecraft.world.level.Level;
 import luowei.refugee.ai.EnchanterTableRoamGoal;
 import luowei.refugee.ai.RefugeeAidGoal;
 import luowei.refugee.ai.RefugeeBuildGoal;
+import luowei.refugee.ai.RefugeeDoorGoal;
 import luowei.refugee.ai.RefugeeFollowGoal;
 import luowei.refugee.ai.RefugeeGuardGoal;
 import luowei.refugee.ai.RefugeeGuardTargetGoal;
@@ -21,6 +22,7 @@ import luowei.refugee.ai.RefugeeMineGoal;
 import luowei.refugee.ai.RefugeePatrolGoal;
 import luowei.refugee.ai.RefugeeRepairGoal;
 import luowei.refugee.ai.RefugeeSmeltGoal;
+import luowei.refugee.ai.SmithAnvilRoamGoal;
 
 @Mixin(Villager.class)
 public abstract class VillagerGoalInitMixin extends AbstractVillager {
@@ -38,12 +40,14 @@ public abstract class VillagerGoalInitMixin extends AbstractVillager {
 		this.goalSelector.addGoal(0, new RefugeeAidGoal(self));
 		this.goalSelector.addGoal(1, new RefugeeFollowGoal(self));
 		this.goalSelector.addGoal(2, new RefugeeGuardGoal(self));
+		this.goalSelector.addGoal(2, new RefugeeDoorGoal(self));
 		this.goalSelector.addGoal(3, new RefugeeBuildGoal(self));
 		this.goalSelector.addGoal(4, new RefugeeHaulGoal(self));
 		this.goalSelector.addGoal(5, new RefugeeRepairGoal(self));
 		this.goalSelector.addGoal(6, new RefugeeSmeltGoal(self));
 		this.goalSelector.addGoal(7, new RefugeeMineGoal(self));
 		this.goalSelector.addGoal(8, new EnchanterTableRoamGoal(self));
+		this.goalSelector.addGoal(8, new SmithAnvilRoamGoal(self));
 		this.goalSelector.addGoal(9, new RefugeePatrolGoal(self));
 	}
 }

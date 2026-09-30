@@ -142,24 +142,8 @@ public final class StaffService {
 	}
 
 	private static void showEnterHint(ServerPlayer player, StaffPage page) {
-		if (page == StaffPage.WAREHOUSE) {
-			player.displayClientMessage(Component.translatable("message.refugee.staff.mode.warehouse"), true);
-		} else if (page == StaffPage.FOOD_WAREHOUSE) {
-			player.displayClientMessage(Component.translatable("message.refugee.staff.mode.food_warehouse"), true);
-		} else if (page == StaffPage.FARM_WAREHOUSE) {
-			player.displayClientMessage(Component.translatable("message.refugee.staff.mode.farm_warehouse"), true);
-		} else if (page == StaffPage.GEAR_WAREHOUSE) {
-			player.displayClientMessage(Component.translatable("message.refugee.staff.mode.gear_warehouse"), true);
-		} else if (page == StaffPage.SMELT_RESULT) {
-			player.displayClientMessage(Component.translatable("message.refugee.staff.mode.smelt_result"), true);
-		} else if (page == StaffPage.SMELTER) {
-			player.displayClientMessage(Component.translatable("message.refugee.staff.mode.smelt"), true);
-		} else if (page == StaffPage.ZONE) {
-			player.displayClientMessage(Component.translatable("message.refugee.staff.mode.zone"), true);
-		} else if (page == StaffPage.ZONE_ADVANCE) {
+		if (page == StaffPage.ZONE_ADVANCE) {
 			player.displayClientMessage(Component.translatable("message.refugee.staff.mode.advance"), true);
-		} else if (page == StaffPage.IMPORT) {
-			player.displayClientMessage(Component.translatable("message.refugee.staff.mode.import"), true);
 		} else if (page == StaffPage.BUILD_PREVIEW) {
 			player.displayClientMessage(Component.translatable("message.refugee.staff.mode.build"), true);
 		} else if (page == StaffPage.COMBAT_FOLLOW) {
@@ -254,16 +238,8 @@ public final class StaffService {
 			case GUARD_RALLY_NEAR -> applyGuardRallyNear(player);
 			case GUARD_RALLY_ALL -> applyGuardRallyAll(player);
 			case GUARD_REMOVE -> applyGuardRemove(player);
-			case RELATIONS -> {
-				session(player).setPages(StaffPage.RELATIONS_PIE);
-				sync(player);
-				RefugeeNetworking.openStaffPie(player, StaffPage.RELATIONS_PIE);
-			}
-			case DIPLOMACY -> {
-				session(player).setPages(StaffPage.DIPLOMACY_PIE);
-				sync(player);
-				RefugeeNetworking.openStaffPie(player, StaffPage.DIPLOMACY_PIE);
-			}
+			case RELATIONS -> RefugeeNetworking.openRelationDesk(player, luowei.refugee.staff.RelationDeskPage.PEOPLE);
+			case DIPLOMACY -> RefugeeNetworking.openRelationDesk(player, luowei.refugee.staff.RelationDeskPage.DIPLOMACY);
 			case ORG_CREATE -> RelationsService.openCreate(player);
 			case ORG_INVITE -> RelationsService.openInvite(player);
 			case ORG_INVITE_MANAGE -> RelationsService.openInviteManage(player);

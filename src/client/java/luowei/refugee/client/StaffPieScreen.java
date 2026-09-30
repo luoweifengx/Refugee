@@ -39,9 +39,7 @@ public class StaffPieScreen extends Screen {
 			new Slice(StaffPieAction.BUILD, new ItemStack(Items.CRAFTING_TABLE), 0xCCB07A2E, "screen.refugee.staff.pie.build"),
 			new Slice(StaffPieAction.COMBAT, new ItemStack(Items.IRON_SWORD), 0xCC8B3A3A, "screen.refugee.staff.pie.combat"),
 			new Slice(StaffPieAction.RALLY, new ItemStack(Items.GOAT_HORN), 0xCCC4A35A, "screen.refugee.staff.pie.rally"),
-			new Slice(StaffPieAction.GUARD, new ItemStack(Items.IRON_HELMET), 0xCC5A6E8B, "screen.refugee.staff.pie.guard"),
-			new Slice(StaffPieAction.RELATIONS, new ItemStack(Items.PLAYER_HEAD), 0xCC6E8B5A, "screen.refugee.staff.pie.relations"),
-			new Slice(StaffPieAction.DIPLOMACY, new ItemStack(Items.WHITE_BANNER), 0xCC5A7A9E, "screen.refugee.staff.pie.diplomacy")
+			new Slice(StaffPieAction.GUARD, new ItemStack(Items.IRON_HELMET), 0xCC5A6E8B, "screen.refugee.staff.pie.guard")
 	};
 	private static final Slice[] COMBAT_SLICES = {
 			new Slice(StaffPieAction.FOLLOW_ENTITY, new ItemStack(Items.LEAD), 0xCC3A6EA5, "screen.refugee.staff.pie.follow"),

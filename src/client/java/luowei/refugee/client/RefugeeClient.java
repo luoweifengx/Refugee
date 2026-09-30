@@ -1,6 +1,7 @@
 package luowei.refugee.client;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityModelLayerRegistry;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -39,6 +40,7 @@ import luowei.refugee.network.SpecialSplashAction;
 import luowei.refugee.network.SpecialSplashActionPayload;
 import luowei.refugee.network.SpecialSplashPayload;
 import luowei.refugee.network.SpecialSplashTalkPayload;
+import luowei.refugee.network.StaffInspectReplyPayload;
 import luowei.refugee.network.StaffOpenPiePayload;
 import luowei.refugee.network.StaffSyncPayload;
 import luowei.refugee.network.TerritoryMapPayload;
@@ -63,6 +65,7 @@ public class RefugeeClient implements ClientModInitializer {
 		BlueprintPreviewRenderer.register();
 		StaffOverlayRenderer.register();
 		HudRenderCallback.EVENT.register(RefugeeClient::renderPreviewHud);
+		ClientTickEvents.END_CLIENT_TICK.register(StaffInspectHud::tick);
 		UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
 			if (!level.isClientSide()) {
 				return InteractionResult.PASS;
@@ -103,6 +106,7 @@ public class RefugeeClient implements ClientModInitializer {
 			ClientBlueprintTemplates.clear();
 			ClientBlueprintSelection.clear();
 			ClientStaffState.clear();
+			StaffInspectHud.clear();
 		});
 		ClientPlayNetworking.registerGlobalReceiver(BlueprintCatalogPayload.TYPE, (payload, context) -> {
 			Minecraft client = context.client();
@@ -121,6 +125,13 @@ public class RefugeeClient implements ClientModInitializer {
 		});
 		ClientPlayNetworking.registerGlobalReceiver(BlueprintSelectionPayload.TYPE, (payload, context) -> {
 			context.client().execute(() -> ClientBlueprintSelection.apply(payload.structureId(), payload.buildOrigin()));
+		});
+		ClientPlayNetworking.registerGlobalReceiver(luowei.refugee.network.RelationDeskOpenPayload.TYPE, (payload, context) -> {
+			Minecraft client = context.client();
+			client.execute(() -> RelationDeskNav.show(client, payload.page()));
+		});
+		ClientPlayNetworking.registerGlobalReceiver(StaffInspectReplyPayload.TYPE, (payload, context) -> {
+			context.client().execute(() -> StaffInspectHud.accept(payload));
 		});
 		ClientPlayNetworking.registerGlobalReceiver(StaffOpenPiePayload.TYPE, (payload, context) -> {
 			Minecraft client = context.client();
@@ -151,6 +162,9 @@ public class RefugeeClient implements ClientModInitializer {
 						payload.resultChests()
 				);
 				StaffClientNav.applyScreenForPage(client, payload.page());
+				if (payload.page() == StaffPage.ROOT && client.screen instanceof RelationDeskScreen desk) {
+					desk.dismissSheet();
+				}
 			});
 		});
 		ClientPlayNetworking.registerGlobalReceiver(OpenImportNamePayload.TYPE, (payload, context) -> {
@@ -162,29 +176,57 @@ public class RefugeeClient implements ClientModInitializer {
 					payload.maxVolume()
 			)));
 		});
+		ClientPlayNetworking.registerGlobalReceiver(luowei.refugee.network.OpenBedMarkPayload.TYPE, (payload, context) -> {
+			Minecraft client = context.client();
+			client.execute(() -> client.setScreen(new BedMarkScreen(payload.pos(), payload.specials())));
+		});
 		ClientPlayNetworking.registerGlobalReceiver(luowei.refugee.network.RelationsOpenListPayload.TYPE, (payload, context) -> {
 			Minecraft client = context.client();
-			client.execute(() -> client.setScreen(new RelationsListScreen(payload.kind(), payload.rows())));
+			client.execute(() -> {
+				if (client.screen instanceof RelationDeskScreen desk) {
+					desk.showList(payload.kind(), payload.rows());
+					return;
+				}
+				client.setScreen(new RelationsListScreen(payload.kind(), payload.rows()));
+			});
 		});
 		ClientPlayNetworking.registerGlobalReceiver(luowei.refugee.network.RelationsOpenNamePayload.TYPE, (payload, context) -> {
 			Minecraft client = context.client();
-			client.execute(() -> client.setScreen(new RelationsNameScreen(payload.kind(), payload.suggested())));
+			client.execute(() -> {
+				if (client.screen instanceof RelationDeskScreen desk) {
+					desk.showName(payload.kind(), payload.suggested());
+					return;
+				}
+				client.setScreen(new RelationsNameScreen(payload.kind(), payload.suggested()));
+			});
 		});
 		ClientPlayNetworking.registerGlobalReceiver(luowei.refugee.network.RelationsOpenTextsPayload.TYPE, (payload, context) -> {
 			Minecraft client = context.client();
-			client.execute(() -> client.setScreen(new RelationsTextsScreen(
-					payload.selfText(),
-					payload.othersText(),
-					payload.othersEditable()
-			)));
+			client.execute(() -> {
+				if (client.screen instanceof RelationDeskScreen desk) {
+					desk.showTexts(payload.selfText(), payload.othersText(), payload.othersEditable());
+					return;
+				}
+				client.setScreen(new RelationsTextsScreen(
+						payload.selfText(),
+						payload.othersText(),
+						payload.othersEditable()
+				));
+			});
 		});
 		ClientPlayNetworking.registerGlobalReceiver(luowei.refugee.network.RelationsOpenInvitesPayload.TYPE, (payload, context) -> {
 			Minecraft client = context.client();
-			client.execute(() -> client.setScreen(new RelationsInviteScreen(
-					payload.pending(),
-					payload.orgName(),
-					payload.territoryName()
-			)));
+			client.execute(() -> {
+				if (client.screen instanceof RelationDeskScreen desk) {
+					desk.showInvites(payload.pending(), payload.orgName(), payload.territoryName());
+					return;
+				}
+				client.setScreen(new RelationsInviteScreen(
+						payload.pending(),
+						payload.orgName(),
+						payload.territoryName()
+				));
+			});
 		});
 		ClientPlayNetworking.registerGlobalReceiver(BlueprintShareTargetsPayload.TYPE, (payload, context) -> {
 			Minecraft client = context.client();
@@ -251,6 +293,7 @@ public class RefugeeClient implements ClientModInitializer {
 		if (client.options.hideGui) {
 			return;
 		}
+		StaffInspectHud.render(graphics, tickCounter);
 		StaffPage page = ClientStaffState.page();
 		Font font = client.font;
 		int width = client.getWindow().getGuiScaledWidth();
@@ -284,7 +327,33 @@ public class RefugeeClient implements ClientModInitializer {
 					height - 84,
 					0xFFAAAAAA
 			);
+			return;
 		}
+		String modeHint = worldModeHint(page);
+		if (modeHint != null) {
+			graphics.drawCenteredString(
+					font,
+					Component.translatable(modeHint),
+					width / 2,
+					height - 84,
+					0xFFAAAAAA
+			);
+		}
+	}
+
+	/** 这些页面的操作说明画在屏幕下方，离开该页才消失。 */
+	private static String worldModeHint(StaffPage page) {
+		return switch (page) {
+			case WAREHOUSE -> "message.refugee.staff.mode.warehouse";
+			case FOOD_WAREHOUSE -> "message.refugee.staff.mode.food_warehouse";
+			case FARM_WAREHOUSE -> "message.refugee.staff.mode.farm_warehouse";
+			case GEAR_WAREHOUSE -> "message.refugee.staff.mode.gear_warehouse";
+			case SMELT_RESULT -> "message.refugee.staff.mode.smelt_result";
+			case SMELTER -> "message.refugee.staff.mode.smelt";
+			case ZONE -> "message.refugee.staff.mode.zone";
+			case IMPORT -> "message.refugee.staff.mode.import";
+			default -> null;
+		};
 	}
 
 	public static void requestTerritoryRadius(int radius, int villagerEntityId) {

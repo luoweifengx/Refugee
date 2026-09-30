@@ -1,0 +1,22 @@
+{
+	"parent": "minecraft:adventure/root",
+	"display": {
+		"icon": {
+			"id": "minecraft:iron_bars"
+		},
+		"title": {
+			"translate": "advancements.refugee.tyranny.title"
+		},
+		"description": {
+			"translate": "advancements.refugee.tyranny.description"
+		},
+		"frame": "challenge",
+		"show_toast": true,
+		"announce_to_chat": true
+	},
+	"criteria": {
+		"settle": {
+			"trigger": "minecraft:impossible"
+		}
+	}
+}

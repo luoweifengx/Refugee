@@ -6,12 +6,15 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
+import luowei.refugee.ai.BedMarks;
 import luowei.refugee.item.ItemData;
 import luowei.refugee.settle.SettlementService;
 
@@ -38,5 +41,18 @@ public abstract class SettlementBannerPlaceMixin {
 			return;
 		}
 		SettlementService.settle(player, context.getClickedPos());
+	}
+
+	@Inject(method = "place", at = @At("RETURN"))
+	private void refugee$askBedMark(BlockPlaceContext context, CallbackInfoReturnable<InteractionResult> cir) {
+		InteractionResult result = cir.getReturnValue();
+		if (result == null || !result.consumesAction() || !(context.getPlayer() instanceof ServerPlayer player)) {
+			return;
+		}
+		BlockState placed = context.getLevel().getBlockState(context.getClickedPos());
+		if (!(placed.getBlock() instanceof BedBlock)) {
+			return;
+		}
+		BedMarks.openChooser(player, context.getClickedPos());
 	}
 }

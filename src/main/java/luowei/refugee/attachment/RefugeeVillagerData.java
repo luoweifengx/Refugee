@@ -111,8 +111,10 @@ public final class RefugeeVillagerData {
 	private long lastDepthCurseTick;
 	private boolean crusader;
 	private boolean hostileFaction;
-	/** 当晚开始尝试入睡的游戏时刻；-1 表示没在试。不写入存档。 */
-	private long sleepAttemptStart = -1L;
+	/** 上次搜床的游戏时刻。不写入存档。 */
+	private long bedScanAt = Long.MIN_VALUE;
+	/** 上次搜床是否找到能认的床。不写入存档。 */
+	private boolean bedScanFound;
 	/** 这段时间内不跑 Brain，留给一次性寻路。不写入存档。 */
 	private long brainHoldUntil = -1L;
 	/** 这次跟随是剧情走近玩家，对话开始或结束后要停。不写入存档。 */
@@ -131,6 +133,17 @@ public final class RefugeeVillagerData {
 	private boolean cargoIdle;
 	/** 新标了仓库，强制再试一次存仓。不写入存档。 */
 	private boolean cargoWake;
+	private static final int RANGED_LOS_INTERVAL = 5;
+	private static final int RANGED_LOS_REARM = 2;
+
+	/** 远程视线缓存的目标。不写入存档。 */
+	private UUID rangedLosTarget;
+	/** 当前目标是否允许射。挡住立刻变 false；重新允许要连续两次通畅。不写入存档。 */
+	private boolean rangedLosCanShoot;
+	/** 当前目标连续通畅的次数，最多记到重新允许射击所需的次数。不写入存档。 */
+	private int rangedLosClearStreak;
+	/** 下一次接受新射线结果的实体 tick。不写入存档。 */
+	private int rangedLosNextTick;
 
 	public RefugeeVillagerData() {
 	}
@@ -659,15 +672,49 @@ public final class RefugeeVillagerData {
 		this.hostileFaction = hostileFaction;
 	}
 
-	public void clearSleepAttempt() {
-		this.sleepAttemptStart = -1L;
+	public boolean bedScanDue(long gameTime, int intervalTicks) {
+		return bedScanAt == Long.MIN_VALUE || gameTime - bedScanAt >= intervalTicks;
 	}
 
-	public boolean continueSleepAttempt(long gameTime, int limitTicks) {
-		if (sleepAttemptStart < 0L) {
-			sleepAttemptStart = gameTime;
+	public void noteBedScan(long gameTime, boolean found) {
+		bedScanAt = gameTime;
+		bedScanFound = found;
+	}
+
+	public boolean bedScanFound() {
+		return bedScanFound;
+	}
+
+	/** 同一目标未到间隔时沿用上次结果，调用方不必再射线。 */
+	public boolean rangedLosDue(UUID targetId, int tickCount) {
+		return targetId == null || !targetId.equals(rangedLosTarget) || tickCount >= rangedLosNextTick;
+	}
+
+	public boolean rangedLosCanShoot() {
+		return this.rangedLosCanShoot;
+	}
+
+	/**
+	 * 写入一次射线结果。换目标时这一次就决定能否射。
+	 * 同一目标挡住立刻不能射；重新能射要连续 {@link #RANGED_LOS_REARM} 次通畅。
+	 */
+	public boolean applyRangedLos(UUID targetId, int tickCount, boolean clear) {
+		boolean same = targetId != null && targetId.equals(rangedLosTarget);
+		if (!same) {
+			rangedLosCanShoot = clear;
+			rangedLosClearStreak = clear ? 1 : 0;
+		} else if (!clear) {
+			rangedLosCanShoot = false;
+			rangedLosClearStreak = 0;
+		} else {
+			rangedLosClearStreak = Math.min(RANGED_LOS_REARM, rangedLosClearStreak + 1);
+			if (rangedLosClearStreak >= RANGED_LOS_REARM) {
+				rangedLosCanShoot = true;
+			}
 		}
-		return gameTime - sleepAttemptStart < limitTicks;
+		rangedLosTarget = targetId;
+		rangedLosNextTick = tickCount + RANGED_LOS_INTERVAL;
+		return rangedLosCanShoot;
 	}
 
 	public UUID guardMarkPlayerId() {

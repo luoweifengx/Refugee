@@ -104,6 +104,8 @@ public final class RefugeeConfig {
 	public static boolean warehouseMergeLight = true;
 	/** true：禁止村民被僵尸打死时转化成僵尸村民（按死亡掉落）；false：沿用原版转化。 */
 	public static boolean blockVillagerZombieConversion = true;
+	/** true：村庄中心只抽僵尸村庄；false：沿用原版，普通村庄为主、僵尸村庄极少。 */
+	public static boolean onlyZombieVillages = false;
 	/** 名册清空：旁观失败，或继续游戏。 */
 	public static EmptyRosterMode emptyRosterMode = EmptyRosterMode.SPECTATOR;
 
@@ -237,6 +239,7 @@ public final class RefugeeConfig {
 		warehouseMergeQuartz = readBoolean(json, "warehouseMergeQuartz", legacyMerge);
 		warehouseMergeLight = readBoolean(json, "warehouseMergeLight", legacyMerge);
 		blockVillagerZombieConversion = readBoolean(json, "blockVillagerZombieConversion", blockVillagerZombieConversion);
+		onlyZombieVillages = readBoolean(json, "onlyZombieVillages", onlyZombieVillages);
 		emptyRosterMode = EmptyRosterMode.parse(readString(json, "emptyRosterMode", emptyRosterMode.id()), emptyRosterMode);
 		LivabilityRules.CURRENT.copyFrom(json);
 	}
@@ -284,6 +287,7 @@ public final class RefugeeConfig {
 		json.addProperty("warehouseMergeQuartz", warehouseMergeQuartz);
 		json.addProperty("warehouseMergeLight", warehouseMergeLight);
 		json.addProperty("blockVillagerZombieConversion", blockVillagerZombieConversion);
+		json.addProperty("onlyZombieVillages", onlyZombieVillages);
 		json.addProperty("emptyRosterMode", emptyRosterMode.id());
 		json.add("livability", LivabilityRules.CURRENT.write());
 		try (Writer writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {

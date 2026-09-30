@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="utf-8">
+	<title>市政工作台 · 旗帜原型</title>
+	<style>
+		* { box-sizing: border-box; }
+		html, body { margin: 0; height: 100%; }
+		body {
+			overflow: hidden;
+			color: #f6f1e4;
+			font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+			background: #1a2414;
+		}
+		.world {
+			position: relative;
+			height: 100vh;
+			background:
+				radial-gradient(ellipse at 72% 18%, rgba(90, 120, 48, .55), transparent 28%),
+				radial-gradient(ellipse at 18% 8%, rgba(48, 72, 36, .7), transparent 26%),
+				linear-gradient(#24301c 0%, #3a3424 42%, #2a2418 100%);
+		}
+		.world::before {
+			content: "";
+			position: absolute;
+			inset: 0 0 36% 0;
+			background:
+				linear-gradient(90deg, transparent 8%, rgba(20, 16, 10, .18) 8% 14%, transparent 14% 30%, rgba(20, 16, 10, .12) 30% 36%, transparent 36%),
+				repeating-linear-gradient(90deg, rgba(0,0,0,.05) 0 16px, transparent 16px 32px);
+			pointer-events: none;
+		}
+		.situation {
+			position: absolute;
+			top: 10px;
+			left: 12px;
+			z-index: 5;
+			max-width: min(920px, calc(100vw - 24px));
+			padding: 6px 10px;
+			color: #d7cbb8;
+			font-size: 12px;
+			line-height: 1.8;
+			background: rgba(12, 10, 8, .55);
+		}
+		.situation label { margin-right: 10px; white-space: nowrap; }
+		.hud {
+			position: absolute;
+			left: 0;
+			right: 0;
+			bottom: 0;
+			height: 64%;
+			display: flex;
+			flex-direction: column;
+		}
+		.flag-zone {
+			position: relative;
+			flex: 0 0 auto;
+			min-height: 78px;
+		}
+		.pole {
+			position: absolute;
+			left: 10px;
+			right: 10px;
+			top: 6px;
+			height: 8px;
+			border-radius: 4px;
+			background: linear-gradient(#e0b56a, #c4894e 18%, #7a4a28 55%, #3a2414);
+			box-shadow: 0 1px 0 #f0d7a4 inset, 0 2px 0 #2a160c;
+			z-index: 2;
+			pointer-events: none;
+		}
+		.pole::before, .pole::after {
+			content: "";
+			position: absolute;
+			top: -3px;
+			width: 10px;
+			height: 14px;
+			border-radius: 2px;
+			background: linear-gradient(#f0d7a4, #a67c3d);
+		}
+		.pole::before { left: -2px; }
+		.pole::after { right: -2px; }
+		.banner {
+			position: absolute;
+			top: 4px;
+			padding: 0;
+			border: 0;
+			background: transparent;
+			color: #f6f1e4;
+			cursor: pointer;
+			transition: left .36s cubic-bezier(.22,.8,.28,1);
+		}
+		.loop {
+			display: block;
+			width: 100%;
+			height: 8px;
+			border-radius: 2px;
+			background: linear-gradient(rgba(255,255,255,.22), rgba(0,0,0,.28)), var(--c);
+			box-shadow: inset 0 3px 0 rgba(0,0,0,.25);
+			position: relative;
+			z-index: 3;
+		}
+		.cloth {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: 100%;
+			height: 92px;
+			margin-top: -2px;
+			writing-mode: vertical-rl;
+			text-orientation: upright;
+			letter-spacing: 0.12em;
+			font-size: 14px;
+			line-height: 1;
+			background:
+				linear-gradient(90deg, rgba(0,0,0,.2), transparent 22%, transparent 78%, rgba(0,0,0,.18)),
+				var(--c);
+			clip-path: polygon(0 0, 100% 0, 100% 78%, 50% 100%, 0 78%);
+			text-shadow: 0 1px 0 rgba(0,0,0,.45);
+		}
+		.bar {
+			position: absolute;
+			width: 108px;
+			height: 20px;
+			padding: 0 8px;
+			border: 0;
+			background: linear-gradient(180deg, rgba(255,255,255,.16), transparent 46%), var(--c);
+			color: #f6f1e4;
+			font: inherit;
+			font-size: 12px;
+			text-align: left;
+			cursor: pointer;
+			box-shadow: 0 2px 0 rgba(0,0,0,.28);
+			transform-origin: left center;
+			transition: left .36s cubic-bezier(.22,.8,.28,1), top .2s linear, transform .32s cubic-bezier(.22,.8,.28,1);
+			z-index: 4;
+		}
+		.bar:hover { filter: brightness(1.12); }
+		.bar.dark { background: var(--dark); }
+		.page-zone {
+			flex: 1;
+			min-height: 0;
+			display: flex;
+			margin: 4px 16px 6px;
+		}
+		.page {
+			flex: 1;
+			min-height: 0;
+			overflow: auto;
+			padding: 10px 14px 12px;
+			background: rgba(16, 16, 16, .62);
+			border: 2px solid rgba(0, 0, 0, .72);
+			box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+		}
+		.page.idle { background: rgba(16, 16, 16, .28); }
+		.page h2 {
+			margin: 0 0 6px;
+			font-size: 16px;
+			font-weight: 600;
+			text-align: center;
+		}
+		.page .hint, .page .empty {
+			margin: 0 0 8px;
+			color: #c8c8c8;
+			font-size: 13px;
+			line-height: 1.6;
+			text-align: center;
+		}
+		.page-msg {
+			margin: 0 0 8px;
+			padding: 6px 8px;
+			text-align: center;
+			font-size: 13px;
+			line-height: 1.6;
+			background: rgba(0,0,0,.35);
+		}
+		.page-msg.warn { color: #f0c9a0; }
+		.page-msg.ok { color: #d7ecdc; }
+		.field { display: block; margin: 8px auto 0; max-width: 420px; }
+		.field span { display: block; margin-bottom: 4px; color: #c8c8c8; font-size: 13px; }
+		.field input[type="text"] {
+			width: 100%;
+			padding: 4px 8px;
+			color: #f6f1e4;
+			font: inherit;
+			background: rgba(0,0,0,.45);
+			border: 2px solid #1a1a1a;
+			box-shadow: inset 1px 1px 0 #3a3a3a;
+		}
+		.field input:disabled { color: #8d8d8d; }
+		.choices { max-width: 520px; margin: 0 auto; }
+		.choice {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			margin: 3px 0;
+			padding: 5px 8px;
+			background: rgba(0,0,0,.35);
+			border: 1px solid rgba(255,255,255,.06);
+			cursor: pointer;
+		}
+		.choice:has(input:checked) {
+			background: rgba(90, 90, 90, .5);
+			border-color: rgba(255,255,255,.4);
+		}
+		.kv {
+			display: grid;
+			grid-template-columns: 72px 1fr;
+			gap: 6px 12px;
+			max-width: 460px;
+			margin: 8px auto 0;
+			font-size: 14px;
+			line-height: 1.5;
+		}
+		.kv dt { color: #bdbdbd; }
+		.kv dd { margin: 0; }
+		.actions { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
+		.mc {
+			min-width: 96px;
+			padding: 4px 12px;
+			color: #fff;
+			font: inherit;
+			font-size: 13px;
+			background: #6d6d6d;
+			border: 2px solid #1a1a1a;
+			box-shadow: inset 2px 2px 0 #8d8d8d, inset -2px -2px 0 #373737;
+			cursor: pointer;
+		}
+		.mc:hover { filter: brightness(1.08); }
+		.hotbar {
+			position: relative;
+			flex: 0 0 52px;
+			display: flex;
+			align-items: flex-end;
+			justify-content: center;
+			padding-bottom: 6px;
+		}
+		.slots { display: flex; gap: 2px; }
+		.slot {
+			width: 36px;
+			height: 36px;
+			background: rgba(20, 20, 20, .72);
+			border: 2px solid rgba(0,0,0,.8);
+			box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
+		}
+		.slot:nth-child(1) { background: rgba(92, 58, 36, .85); }
+		.slot:nth-child(5) { background: rgba(70, 48, 28, .85); }
+		.caption {
+			position: absolute;
+			left: 0;
+			right: 0;
+			bottom: 40px;
+			margin: 0;
+			text-align: center;
+			color: #e7e7e7;
+			font-size: 14px;
+			text-shadow: 1px 1px 0 #000;
+			pointer-events: none;
+		}
+	</style>
+</head>
+<body>
+	<div class="world">
+		<div class="situation" id="situation"></div>
+		<div class="hud">
+			<div class="flag-zone" id="rail">
+				<div class="pole" id="pole"></div>
+			</div>
+			<div class="page-zone" id="work"></div>
+			<div class="hotbar">
+				<p class="caption">Esc返回上一层</p>
+				<div class="slots">
+					<i class="slot"></i><i class="slot"></i><i class="slot"></i><i class="slot"></i><i class="slot"></i>
+					<i class="slot"></i><i class="slot"></i><i class="slot"></i><i class="slot"></i>
+				</div>
+			</div>
+		</div>
+	</div>
+	<script>
+		const MAX_ROWS = 3;
+		const flags = [
+			{
+				id: "people",
+				name: "人员关系",
+				color: "#2f6b4f",
+				options: [
+					{ id: "create", name: "创建组织", color: "#3d8b4a" },
+					{ id: "invite", name: "组织邀请", color: "#3a6ea5" },
+					{ id: "invites", name: "邀请管理", color: "#c4a35a" },
+					{
+						id: "manage",
+						name: "组织管理",
+						color: "#8b5a9e",
+						options: [
+							{ id: "info", name: "组织信息", color: "#3a6ea5" },
+							{ id: "leave", name: "离开组织", color: "#8b5a3a" },
+							{ id: "kick", name: "踢出成员", color: "#8b3a3a" },
+							{ id: "transfer", name: "移交主人", color: "#c4a35a" }
+						]
+					},
+					{ id: "territory", name: "领地文字", color: "#2e8b8b" },
+					{ id: "rescue", name: "人员救助", color: "#8b3a3a" }
+				]
+			},
+			{
+				id: "diplomacy",
+				name: "外交",
+				color: "#3d5f8a",
+				options: [
+					{ id: "list", name: "关系列表", color: "#3a6ea5" },
+					{ id: "war", name: "宣战", color: "#8b3a3a" },
+					{ id: "peace", name: "和解", color: "#8fa3b0" },
+					{ id: "ally", name: "结盟", color: "#3d8b4a" },
+					{ id: "inbox", name: "和解处理", color: "#c4a35a" }
+				]
+			}
+		];
+
+		const LEFT = 16;
+		const FLAG_W = 40;
+		const FLAG_H = 92;
+		const GAP = 8;
+		const BAR_W = 108;
+		const COL_GAP = 6;
+		const ROW_H = 20;
+		const ROW_GAP = 4;
+		const CLOTH_TOP = 16;
+		const NUDGE = 8;
+		const SHIFT = 120;
+
+		const rail = document.getElementById("rail");
+		const nodes = new Map();
+
+		let openId = null;
+		let phase = "rest";
+		let selectedId = null;
+		let nestedId = null;
+		let timer = 0;
+		let activeId = null;
+		let pageMsg = null;
+
+		const world = {
+			inOrg: false,
+			owner: true,
+			orgName: "北岸",
+			members: ["你", "阿禾"],
+			altar: true,
+			villagers: 2,
+			invite: false,
+			ghost: true,
+			selfEnter: "回到营地",
+			othersEnter: "北岸",
+			personalTerritory: "你的营地",
+			knownOrg: "西市",
+			onlinePlayers: [
+				{ id: "traveler", name: "旅人" },
+				{ id: "mason", name: "石匠" },
+				{ id: "south", name: "南客" }
+			],
+			targets: [
+				{ id: "west", name: "西市", kind: "org", stance: "neutral", pending: "ally", fromThem: true },
+				{ id: "east", name: "东岸", kind: "org", stance: "hostile", pending: null, fromThem: false },
+				{ id: "traveler", name: "旅人", kind: "player", stance: "neutral", pending: null, fromThem: false },
+				{ id: "mason", name: "石匠", kind: "player", stance: "neutral", pending: null, fromThem: false },
+				{ id: "south", name: "南客", kind: "player", stance: "allied", pending: null, fromThem: false }
+			]
+		};
+
+		function esc(text) {
+			return String(text).replace(/[&<>"']/g, (ch) => ({
+				"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+			}[ch]));
+		}
+
+		function darken(hex) {
+			const value = parseInt(hex.slice(1), 16);
+			const channel = (shift) => Math.max(0, Math.round(((value >> shift) & 255) * 0.42));
+			return "rgb(" + channel(16) + "," + channel(8) + "," + channel(0) + ")";
+		}
+
+		function restX(index) {
+			return LEFT + index * (FLAG_W + GAP);
+		}
+
+		function onRight(index) {
+			return index > (flags.length - 1) / 2;
+		}
+
+		function findOption(id) {
+			for (const flag of flags) {
+				for (const option of flag.options) {
+					if (option.id === id) return option;
+					if (option.options) {
+						for (const sub of option.options) {
+							if (sub.id === id) return sub;
+						}
+					}
+				}
+			}
+			return null;
+		}
+
+		function shownOptions(flag) {
+			if (nestedId) {
+				const parent = flag.options.find((option) => option.id === nestedId);
+				if (parent && parent.options) return parent.options;
+			}
+			return flag.options;
+		}
+
+		function layout() {
+			const openIndex = flags.findIndex((flag) => flag.id === openId);
+			const flagX = flags.map((_, index) => restX(index));
+			if (openIndex >= 0 && phase !== "rest") {
+				if (onRight(openIndex)) {
+					for (let index = 0; index <= openIndex; index++) flagX[index] -= SHIFT;
+				} else {
+					flagX[openIndex] -= NUDGE;
+				}
+				const minX = Math.min(...flagX.slice(0, openIndex + 1));
+				if (minX < 8) {
+					const fix = 8 - minX;
+					for (let index = 0; index <= openIndex; index++) flagX[index] += fix;
+				}
+			}
+			const items = flags.map((flag, index) => ({
+				key: flag.id,
+				name: flag.name,
+				color: flag.color,
+				kind: "flag",
+				x: flagX[index],
+				w: FLAG_W
+			}));
+			let gridRows = 0;
+			if (phase === "open" && openIndex >= 0) {
+				const options = shownOptions(flags[openIndex]);
+				const cols = Math.max(1, Math.ceil(options.length / MAX_ROWS));
+				const originX = flagX[openIndex] + FLAG_W + 4;
+				options.forEach((option, index) => {
+					const col = Math.floor(index / MAX_ROWS);
+					const row = index % MAX_ROWS;
+					items.push({
+						key: option.id,
+						name: option.name,
+						color: option.color,
+						kind: "bar",
+						x: originX + col * (BAR_W + COL_GAP),
+						y: CLOTH_TOP + row * (ROW_H + ROW_GAP),
+						w: BAR_W
+					});
+				});
+				gridRows = Math.min(MAX_ROWS, options.length);
+				const gridW = cols * BAR_W + Math.max(0, cols - 1) * COL_GAP;
+				let cursor = originX + gridW + GAP;
+				for (let index = openIndex + 1; index < flags.length; index++) {
+					items.find((item) => item.key === flags[index].id).x = cursor;
+					cursor += FLAG_W + GAP;
+				}
+			}
+			const gridH = gridRows === 0 ? 0 : gridRows * ROW_H + (gridRows - 1) * ROW_GAP;
+			const height = Math.max(CLOTH_TOP + FLAG_H, CLOTH_TOP + gridH) + 10;
+			return { items, height };
+		}
+
+		function ensureNode(item) {
+			let node = nodes.get(item.key);
+			if (node) return node;
+			node = document.createElement("button");
+			node.type = "button";
+			node.dataset.key = item.key;
+			if (item.kind === "flag") {
+				node.className = "banner";
+				node.innerHTML = '<span class="loop"></span><span class="cloth"></span>';
+				node.querySelector(".cloth").textContent = item.name;
+				node.style.setProperty("--c", item.color);
+				node.style.width = item.w + "px";
+				node.style.left = item.x + "px";
+				node.addEventListener("click", () => clickFlag(item.key));
+			} else {
+				node.className = "bar";
+				node.textContent = item.name;
+				node.style.setProperty("--c", item.color);
+				node.style.setProperty("--dark", darken(item.color));
+				node.style.left = item.x + "px";
+				node.style.top = item.y + "px";
+				node.style.transform = "scaleX(0.06)";
+				node.addEventListener("click", () => clickOption(item.key));
+				requestAnimationFrame(() => requestAnimationFrame(() => {
+					const current = nodes.get(item.key);
+					if (current) current.style.transform = "scaleX(1)";
+				}));
+			}
+			rail.appendChild(node);
+			nodes.set(item.key, node);
+			return node;
+		}
+
+		function paint() {
+			const { items, height } = layout();
+			rail.style.height = height + "px";
+			const keep = new Set(items.map((item) => item.key));
+			items.forEach((item) => {
+				const fresh = !nodes.has(item.key);
+				const node = ensureNode(item);
+				if (!fresh) node.style.left = item.x + "px";
+				if (item.kind === "bar") {
+					node.style.top = item.y + "px";
+					node.classList.toggle("dark", item.key === selectedId);
+				}
+			});
+			nodes.forEach((node, key) => {
+				if (keep.has(key)) return;
+				node.remove();
+				nodes.delete(key);
+			});
+		}
+
+		function say(text, tone) {
+			pageMsg = { text, tone };
+			const node = document.querySelector(".page-msg");
+			if (node && activeId) {
+				node.textContent = text;
+				node.className = "page-msg" + (tone ? " " + tone : "");
+				return;
+			}
+			renderSheet();
+		}
+
+		function stanceName(stance) {
+			if (stance === "hostile") return "敌对";
+			if (stance === "allied") return "结盟";
+			return "中立";
+		}
+
+		function kindName(kind) {
+			return kind === "org" ? "组织" : "玩家";
+		}
+
+		function buttons(okLabel, extra) {
+			return `<div class="actions"><button type="button" class="mc" data-act="cancel">取消</button><button type="button" class="mc" data-act="ok">${okLabel}</button>${extra || ""}</div>`;
+		}
+
+		function choiceList(rows, multi) {
+			const type = multi ? "checkbox" : "radio";
+			return `<div class="choices">${rows.map((row) =>
+				`<label class="choice"><input type="${type}" name="pick" value="${esc(row.id)}"> ${esc(row.label)}</label>`
+			).join("")}</div>`;
+		}
+
+		function pageShell(title, hint, body, actions) {
+			const msg = pageMsg ? `<p class="page-msg ${pageMsg.tone || ""}">${esc(pageMsg.text)}</p>` : "";
+			const hintHtml = hint ? `<p class="hint">${hint}</p>` : "";
+			return `<div class="page"><h2>${esc(title)}</h2>${msg}${hintHtml}${body || ""}${actions || ""}</div>`;
+		}
+
+		function othersText() {
+			return world.inOrg ? world.othersEnter : world.personalTerritory;
+		}
+
+		function othersLocked() {
+			return world.inOrg && !world.owner;
+		}
+
+		function inviteRows() {
+			const taken = new Set(world.inOrg ? world.members : []);
+			return world.onlinePlayers
+				.filter((player) => !taken.has(player.name))
+				.map((player) => ({ id: player.id, label: player.name }));
+		}
+
+		function memberRows() {
+			return world.members.filter((name) => name !== "你").map((name) => ({ id: name, label: name }));
+		}
+
+		function relationRows(filter) {
+			return world.targets
+				.filter((target) => !filter || filter(target))
+				.map((target) => ({
+					id: target.id,
+					label: target.name + " · " + kindName(target.kind) + " · " + stanceName(target.stance)
+				}));
+		}
+
+		function renderSheet() {
+			const work = document.getElementById("work");
+			if (!activeId) {
+				work.innerHTML = '<div class="page idle"></div>';
+				return;
+			}
+			work.innerHTML = bodyOf(activeId);
+		}
+
+		function bodyOf(id) {
+			if (id === "create") {
+				if (world.inOrg) {
+					return pageShell("创建组织", "组织名称，最多 32 字", `<p class="empty">你已经在组织里，要先离开才能再建。</p>`);
+				}
+				return pageShell(
+					"创建组织",
+					"组织名称，最多 32 字",
+					`<label class="field"><span>名称</span><input id="name-field" type="text" maxlength="32"></label>`,
+					buttons("确认")
+				);
+			}
+			if (id === "invite") {
+				if (!world.inOrg) return pageShell("邀请玩家", "", `<p class="empty">你还没有加入组织。</p>`);
+				if (!world.owner) return pageShell("邀请玩家", "", `<p class="empty">只有组织主人可以这样做。</p>`);
+				const rows = inviteRows();
+				if (!rows.length) return pageShell("邀请玩家", "", `<p class="empty">没有可邀请的在线玩家。已在组织中的人不会出现在这里。</p>`, `<div class="actions"><button type="button" class="mc" data-act="cancel">完成</button></div>`);
+				return pageShell("邀请玩家", "勾选在线玩家，可以一次邀请多人。已在组织中的人不会出现。", choiceList(rows, true), buttons("确认"));
+			}
+			if (id === "invites") {
+				if (!world.invite) {
+					return pageShell("邀请管理", "", `<p class="empty">没有未处理的组织邀请。</p>`, `<div class="actions"><button type="button" class="mc" data-act="cancel">完成</button></div>`);
+				}
+				return pageShell(
+					"邀请管理",
+					"",
+					`<p class="hint">组织「西市」邀请你加入</p><p class="hint">领地：西市码头</p>`,
+					`<div class="actions"><button type="button" class="mc" data-act="deny">拒绝</button><button type="button" class="mc" data-act="ok">接受</button></div>`
+				);
+			}
+			if (id === "manage") {
+				return pageShell("组织管理", "", `<p class="empty">你还没有加入组织。</p>`);
+			}
+			if (id === "info") {
+				if (!world.inOrg) return pageShell("组织信息", "", `<p class="empty">你还没有加入组织。</p>`);
+				const names = world.members.map((name) => name + (name === "你" && world.owner ? "（主人）" : "")).join("、");
+				return pageShell("组织信息", "", `<dl class="kv">
+					<dt>组织</dt><dd>${esc(world.orgName)}</dd>
+					<dt>领地</dt><dd>${esc(world.othersEnter)}</dd>
+					<dt>成员</dt><dd>${world.members.length}（在线 ${world.members.length}）</dd>
+					<dt>身份</dt><dd>${world.owner ? "主人" : "成员"}</dd>
+					<dt>名单</dt><dd>${esc(names)}</dd>
+				</dl>`);
+			}
+			if (id === "leave") {
+				if (!world.inOrg) return pageShell("离开组织", "", `<p class="empty">你还没有加入组织。</p>`);
+				if (world.owner && world.members.length > 1) {
+					return pageShell("离开组织", "", `<p class="empty">主人要先移交，或等只剩自己时再离开以解散。</p>`);
+				}
+				const hint = world.owner
+					? "离开后组织会解散。原有领地仍留在组织账上。"
+					: "离开后你不再属于这个组织。原有领地仍归组织。";
+				return pageShell("离开组织", hint, "", `<div class="actions"><button type="button" class="mc" data-act="cancel">取消</button><button type="button" class="mc" data-act="ok">离开</button></div>`);
+			}
+			if (id === "kick" || id === "transfer") {
+				const title = id === "kick" ? "踢出成员" : "移交主人";
+				if (!world.inOrg) return pageShell(title, "", `<p class="empty">你还没有加入组织。</p>`);
+				if (!world.owner) return pageShell(title, "", `<p class="empty">只有组织主人可以这样做。</p>`);
+				const rows = memberRows();
+				const empty = id === "kick" ? "没有其他在线成员。离线成员需要上线后才能踢出。" : "没有其他在线成员可以移交。";
+				if (!rows.length) return pageShell(title, "", `<p class="empty">${empty}</p>`, `<div class="actions"><button type="button" class="mc" data-act="cancel">完成</button></div>`);
+				const hint = id === "kick" ? "选择一名在线成员，确认后移出组织。" : "选择一名在线成员，确认后把主人交给对方。";
+				return pageShell(title, hint, choiceList(rows, false), buttons("确认"));
+			}
+			if (id === "territory") {
+				const locked = othersLocked();
+				return pageShell(
+					"领地文字",
+					locked ? "只有组织主人能改别人看到的文字" : "自己走进领地时看到的，以及别人看到的，各一条。",
+					`<label class="field"><span>自己看到的</span><input id="text-self" type="text" maxlength="32" value="${esc(world.selfEnter)}"></label>
+					<label class="field"><span>别人看到的</span><input id="text-others" type="text" maxlength="32" value="${esc(othersText())}" ${locked ? "disabled" : ""}></label>`,
+					buttons("确认")
+				);
+			}
+			if (id === "rescue") {
+				if (world.villagers <= 0) return pageShell("人员救助", "每次救助献祭一名自己的居民，并送到你的祭坛旁边。", `<p class="empty">你没有可献祭的居民。</p>`);
+				if (!world.altar) return pageShell("人员救助", "每次救助献祭一名自己的居民，并送到你的祭坛旁边。", `<p class="empty">找不到你的祭坛，无法把人送回去。</p>`);
+				if (!world.ghost) return pageShell("人员救助", "", `<p class="empty">当前没有处于亡魂状态的在线玩家。</p>`, `<div class="actions"><button type="button" class="mc" data-act="cancel">完成</button></div>`);
+				return pageShell("人员救助", "每次救助献祭一名自己的居民，并送到你的祭坛旁边。当前居民 " + world.villagers + " 人。", choiceList([{ id: "ghost", label: "亡魂甲" }], false), buttons("救助"));
+			}
+			if (id === "list" || id === "war" || id === "peace" || id === "ally") {
+				const titles = { list: "关系列表", war: "宣战", peace: "和解", ally: "结盟" };
+				const hints = {
+					list: "选一个对象，确认后查看当前关系。",
+					war: "宣战后对方也会变成敌对，要双方都同意才能回到中立。",
+					peace: "只有敌对时才能提出和解，等对方在和解处理里同意。",
+					ally: "敌对时不能直接结盟。对方同意后才生效。"
+				};
+				const empties = {
+					list: "还没有其他组织，也没有未入组的在线玩家。",
+					war: "没有可以宣战的对象。",
+					peace: "当前没有处于敌对的对象。",
+					ally: "没有可以结盟的对象。"
+				};
+				const rows = relationRows(id === "peace" ? (target) => target.stance === "hostile" : null);
+				if (!rows.length) return pageShell(titles[id], "", `<p class="empty">${empties[id]}</p>`, `<div class="actions"><button type="button" class="mc" data-act="cancel">完成</button></div>`);
+				return pageShell(titles[id], hints[id], choiceList(rows, false), buttons("确认"));
+			}
+			if (id === "inbox") {
+				const rows = world.targets
+					.filter((target) => target.pending && target.fromThem)
+					.map((target) => ({
+						id: target.id,
+						label: target.name + " · " + (target.pending === "peace" ? "请求和解" : "请求结盟")
+					}));
+				if (!rows.length) return pageShell("和解处理", "", `<p class="empty">没有待处理的和解或结盟。</p>`, `<div class="actions"><button type="button" class="mc" data-act="cancel">完成</button></div>`);
+				return pageShell(
+					"和解处理",
+					"同意后，和解回到中立，结盟变为盟友。拒绝则这条请求作废。",
+					choiceList(rows, false),
+					`<div class="actions"><button type="button" class="mc" data-act="deny">拒绝</button><button type="button" class="mc" data-act="ok">同意</button></div>`
+				);
+			}
+			return pageShell("市政工作台", "", "");
+		}
+
+		function pickedIds() {
+			return [...document.querySelectorAll(".page input[name='pick']:checked")].map((node) => node.value);
+		}
+
+		function finishOk(text) {
+			pageMsg = { text, tone: "ok" };
+			selectedId = null;
+			renderSheet();
+			paintSituation();
+			paint();
+		}
+
+		function submitActive(reject) {
+			const id = activeId;
+			if (id === "create") {
+				const name = (document.getElementById("name-field").value || "").trim();
+				if (!name) return say("名称不能为空。", "warn");
+				if (name.length > 32) return say("名称太长，最多 32 字。", "warn");
+				if (/[\u0000-\u001f]/.test(name)) return say("名称里不能有控制字符。", "warn");
+				if (name === world.knownOrg) return say("已经有同名组织。", "warn");
+				world.inOrg = true;
+				world.owner = true;
+				world.orgName = name;
+				world.members = ["你"];
+				world.othersEnter = name;
+				finishOk("已创建组织「" + name + "」。");
+				return;
+			}
+			if (id === "invites") {
+				if (reject) {
+					world.invite = false;
+					finishOk("已拒绝组织「西市」的邀请。");
+					return;
+				}
+				if (world.inOrg) return say("你已经在组织里，要先离开才能再建。", "warn");
+				world.inOrg = true;
+				world.owner = false;
+				world.orgName = "西市";
+				world.members = ["你", "市主"];
+				world.invite = false;
+				world.othersEnter = "西市码头";
+				finishOk("已加入组织「西市」。");
+				return;
+			}
+			if (id === "leave") {
+				if (world.owner && world.members.length > 1) return say("主人要先移交，或等只剩自己时再离开以解散。", "warn");
+				const dissolved = world.owner;
+				world.inOrg = false;
+				world.owner = true;
+				finishOk(dissolved ? "你已离开并解散组织。原有领地仍留在组织账上。" : "你已离开组织。原有领地仍归组织。");
+				return;
+			}
+			if (id === "territory") {
+				const self = document.getElementById("text-self").value.trim();
+				const othersBox = document.getElementById("text-others");
+				const others = othersBox.value.trim();
+				if (!self || (!othersBox.disabled && !others)) return say("名称不能为空。", "warn");
+				world.selfEnter = self;
+				if (!othersBox.disabled) {
+					if (world.inOrg) world.othersEnter = others;
+					else world.personalTerritory = others;
+				}
+				finishOk("领地文字已保存。");
+				return;
+			}
+			const ids = pickedIds();
+			if (!ids.length) return say("还没有选中玩家。", "warn");
+			if (id === "invite") {
+				const names = ids.map((picked) => world.onlinePlayers.find((player) => player.id === picked).name);
+				finishOk("已邀请 " + names.join("、") + "（" + names.length + " 人）。对方可在邀请管理里接受或拒绝。");
+				return;
+			}
+			if (id === "kick") {
+				world.members = world.members.filter((name) => name !== ids[0]);
+				finishOk("已将 " + ids[0] + " 移出组织。");
+				return;
+			}
+			if (id === "transfer") {
+				world.owner = false;
+				finishOk("已把组织主人交给 " + ids[0] + "。");
+				return;
+			}
+			if (id === "rescue") {
+				if (world.villagers <= 0) return say("你没有可献祭的居民。", "warn");
+				if (!world.altar) return say("找不到你的祭坛，无法把人送回去。", "warn");
+				world.villagers -= 1;
+				world.ghost = false;
+				finishOk("已救助 亡魂甲，献祭了一名居民（剩余 " + world.villagers + "）。");
+				return;
+			}
+			const row = world.targets.find((entry) => entry.id === ids[0]);
+			if (!row) return;
+			if (id === "list") {
+				say("与 " + row.name + " 的关系：" + stanceName(row.stance) + "。", "ok");
+				return;
+			}
+			if (id === "war") {
+				row.stance = "hostile";
+				row.pending = null;
+				finishOk("你 与 " + row.name + " 进入敌对。双方都会保持敌对，直到一起和解。");
+				return;
+			}
+			if (id === "peace") {
+				if (row.stance !== "hostile") return say("只有敌对时才能和解。", "warn");
+				row.pending = "peace";
+				row.fromThem = false;
+				finishOk("已向 " + row.name + " 提出和解，等对方同意。");
+				return;
+			}
+			if (id === "ally") {
+				if (row.stance === "hostile") return say("敌对时不能结盟，要先和解。", "warn");
+				if (row.stance === "allied") return say("已经是盟友。", "warn");
+				row.pending = "ally";
+				row.fromThem = false;
+				finishOk("已向 " + row.name + " 提出结盟，等对方同意。");
+				return;
+			}
+			if (id === "inbox") {
+				if (!row.pending || !row.fromThem) return say("没有来自对方的待处理请求。", "warn");
+				if (reject) {
+					row.pending = null;
+					finishOk("已拒绝 " + row.name + " 的请求。");
+				} else if (row.pending === "peace") {
+					row.stance = "neutral";
+					row.pending = null;
+					finishOk("你 与 " + row.name + " 已和解，关系回到中立。");
+				} else {
+					row.stance = "allied";
+					row.pending = null;
+					finishOk("你 与 " + row.name + " 结为盟友。");
+				}
+			}
+		}
+
+		function openBusiness(id) {
+			pageMsg = null;
+			activeId = id;
+			renderSheet();
+		}
+
+		function runOption(id) {
+			if (id === "manage") {
+				if (!world.inOrg) {
+					selectedId = id;
+					openBusiness("manage");
+					paint();
+					return;
+				}
+				nestedId = "manage";
+				selectedId = "manage";
+				activeId = null;
+				pageMsg = null;
+				renderSheet();
+				paint();
+				return;
+			}
+			selectedId = id;
+			openBusiness(id);
+			paint();
+		}
+
+		function clickFlag(id) {
+			clearTimeout(timer);
+			activeId = null;
+			pageMsg = null;
+			renderSheet();
+			if (openId === id && phase === "open" && nestedId) {
+				nestedId = null;
+				selectedId = null;
+				paint();
+				return;
+			}
+			if (openId === id && phase === "open") {
+				openId = null;
+				phase = "rest";
+				selectedId = null;
+				nestedId = null;
+				paint();
+				return;
+			}
+			openId = id;
+			phase = "left";
+			selectedId = null;
+			nestedId = null;
+			paint();
+			timer = setTimeout(() => {
+				if (openId !== id) return;
+				phase = "open";
+				paint();
+			}, 380);
+		}
+
+		function clickOption(id) {
+			const option = findOption(id);
+			if (!option) return;
+			runOption(id);
+		}
+
+		function goBack() {
+			if (activeId) {
+				activeId = null;
+				pageMsg = null;
+				selectedId = nestedId ? "manage" : null;
+				renderSheet();
+				paint();
+				return;
+			}
+			if (nestedId) {
+				nestedId = null;
+				selectedId = null;
+				paint();
+				return;
+			}
+			if (phase !== "rest") {
+				clearTimeout(timer);
+				openId = null;
+				phase = "rest";
+				selectedId = null;
+				paint();
+			}
+		}
+
+		function paintSituation() {
+			const box = document.getElementById("situation");
+			const item = (key, label) => `<label><input type="checkbox" data-world="${key}" ${world[key] ? "checked" : ""}> ${label}</label>`;
+			box.innerHTML = "局面（仅原型）：" + [
+				item("inOrg", "已加入组织"),
+				item("owner", "我是主人"),
+				item("altar", "有祭坛"),
+				item("invite", "有未处理的组织邀请"),
+				item("ghost", "有亡魂在线")
+			].join("") + `<label>居民 <input type="number" min="0" max="20" value="${world.villagers}" data-villagers style="width:48px"></label>`;
+		}
+
+		document.addEventListener("keydown", (event) => {
+			if (event.key !== "Escape") return;
+			event.preventDefault();
+			goBack();
+		});
+
+		document.getElementById("work").addEventListener("click", (event) => {
+			const button = event.target.closest("[data-act]");
+			if (!button) return;
+			if (button.dataset.act === "cancel") goBack();
+			else if (button.dataset.act === "deny") submitActive(true);
+			else if (button.dataset.act === "ok") submitActive(false);
+		});
+
+		document.getElementById("situation").addEventListener("change", (event) => {
+			const box = event.target.closest("[data-world]");
+			if (box) world[box.dataset.world] = box.checked;
+			if (event.target.matches("[data-villagers]")) world.villagers = Math.max(0, Number(event.target.value) || 0);
+			if (activeId) renderSheet();
+		});
+
+		window.addEventListener("resize", paint);
+		paintSituation();
+		renderSheet();
+		paint();
+	</script>
+</body>
+</html>

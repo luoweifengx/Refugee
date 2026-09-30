@@ -48,6 +48,7 @@ public final class ModItems {
 						.displayItems((params, output) -> {
 							output.accept(COMMAND_STAFF);
 							output.accept(ModBlocks.ALTAR_ITEM);
+							output.accept(ModBlocks.RELATION_DESK_ITEM);
 							output.accept(LEATHER_KIT);
 							output.accept(CHAIN_KIT);
 							output.accept(IRON_KIT);
@@ -59,6 +60,7 @@ public final class ModItems {
 		ItemGroupEvents.modifyEntriesEvent(TAB_KEY).register(entries -> {
 			entries.accept(COMMAND_STAFF);
 			entries.accept(ModBlocks.ALTAR_ITEM);
+			entries.accept(ModBlocks.RELATION_DESK_ITEM);
 			entries.accept(LEATHER_KIT);
 			entries.accept(CHAIN_KIT);
 			entries.accept(IRON_KIT);

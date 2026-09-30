@@ -1,6 +1,5 @@
 package luowei.refugee.ai;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -9,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.google.common.collect.ImmutableList;
 import com.mojang.datafixers.util.Pair;
 
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.PathfinderMob;
@@ -16,22 +16,19 @@ import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.entity.ai.behavior.AcquirePoi;
 import net.minecraft.world.entity.ai.behavior.BehaviorControl;
-import net.minecraft.world.entity.ai.behavior.DoNothing;
 import net.minecraft.world.entity.ai.behavior.InteractWithDoor;
 import net.minecraft.world.entity.ai.behavior.LookAtTargetSink;
 import net.minecraft.world.entity.ai.behavior.MoveToTargetSink;
-import net.minecraft.world.entity.ai.behavior.RunOne;
-import net.minecraft.world.entity.ai.behavior.SetEntityLookTarget;
-import net.minecraft.world.entity.ai.behavior.SetWalkTargetFromBlockMemory;
-import net.minecraft.world.entity.ai.behavior.SetWalkTargetFromLookTarget;
-import net.minecraft.world.entity.ai.behavior.SleepInBed;
-import net.minecraft.world.entity.ai.behavior.UpdateActivityFromSchedule;
-import net.minecraft.world.entity.ai.behavior.ValidateNearbyPoi;
-import net.minecraft.world.entity.ai.behavior.VillageBoundRandomStroll;
+import net.minecraft.world.entity.ai.behavior.ReactToBell;
+import net.minecraft.world.entity.ai.behavior.Swim;
+import net.minecraft.world.entity.ai.behavior.VillagerGoalPackages;
+import net.minecraft.world.entity.ai.behavior.VillagerPanicTrigger;
 import net.minecraft.world.entity.ai.behavior.WakeUp;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+import net.minecraft.world.entity.ai.memory.MemoryStatus;
 import net.minecraft.world.entity.ai.village.poi.PoiTypes;
 import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.npc.VillagerProfession;
 import net.minecraft.world.entity.schedule.Activity;
 import net.minecraft.world.entity.schedule.Schedule;
 import net.minecraft.world.entity.schedule.ScheduleBuilder;
@@ -40,14 +37,22 @@ import luowei.refugee.Refugee;
 import luowei.refugee.interact.RefugeeRoles;
 
 /**
- * 难民空闲时只跑走动、看向和睡觉。不认工作方块，不改职业，不捡东西。
+ * 难民和特殊居民空闲时跑原版村民的闲逛、聚会、睡觉和恐慌。
+ * 不放入找工作方块、走向职业方块、让出职业方块、改职业和重置职业。
+ * 认床时额外检查床标记。不捡东西。
  */
 public final class RefugeeIdleBrain {
 	private static final float SPEED = 0.5F;
+	/** 白天闲逛。原版干活的时段也闲逛。傍晚聚会，晚上睡觉。 */
 	private static final Schedule SCHEDULE = new ScheduleBuilder(new Schedule())
 			.changeActivityAt(10, Activity.IDLE)
+			.changeActivityAt(9000, Activity.MEET)
+			.changeActivityAt(11000, Activity.IDLE)
 			.changeActivityAt(WorkerSleep.REST_START, Activity.REST)
 			.build();
+	private static final Set<Pair<MemoryModuleType<?>, MemoryStatus>> MEETING_PRESENT = Set.of(
+			Pair.of(MemoryModuleType.MEETING_POINT, MemoryStatus.VALUE_PRESENT)
+	);
 	private static final Set<UUID> IDLE = ConcurrentHashMap.newKeySet();
 	private static final ConcurrentHashMap<UUID, IdleTrace> TRACES = new ConcurrentHashMap<>();
 
@@ -118,18 +123,18 @@ public final class RefugeeIdleBrain {
 		if (!(villager.level() instanceof ServerLevel level)) {
 			return false;
 		}
+		Holder<VillagerProfession> profession = villager.getVillagerData().profession();
 		brain.stopAll(level, villager);
 		brain.removeAllBehaviors();
 		brain.setSchedule(SCHEDULE);
 		brain.setCoreActivities(Set.of(Activity.CORE));
 		brain.setDefaultActivity(Activity.IDLE);
-		brain.addActivity(Activity.CORE, core());
-		brain.addActivity(Activity.IDLE, idle());
-		brain.addActivity(Activity.REST, rest());
-		brain.eraseMemory(MemoryModuleType.JOB_SITE);
-		brain.eraseMemory(MemoryModuleType.POTENTIAL_JOB_SITE);
-		brain.eraseMemory(MemoryModuleType.MEETING_POINT);
-		brain.setActiveActivityIfPossible(Activity.IDLE);
+		brain.addActivity(Activity.CORE, core(villager));
+		brain.addActivity(Activity.IDLE, VillagerGoalPackages.getIdlePackage(profession, SPEED));
+		brain.addActivity(Activity.REST, VillagerGoalPackages.getRestPackage(profession, SPEED));
+		brain.addActivityWithConditions(Activity.MEET, VillagerGoalPackages.getMeetPackage(profession, SPEED), MEETING_PRESENT);
+		brain.addActivity(Activity.PANIC, VillagerGoalPackages.getPanicPackage(profession, SPEED));
+		brain.updateActivityFromSchedule(level.getDayTime(), level.getGameTime());
 		villager.setCanPickUpLoot(false);
 		return true;
 	}
@@ -195,39 +200,36 @@ public final class RefugeeIdleBrain {
 		}
 	}
 
-	private static ImmutableList<Pair<Integer, ? extends BehaviorControl<? super Villager>>> core() {
+	private static ImmutableList<Pair<Integer, ? extends BehaviorControl<? super Villager>>> core(Villager villager) {
 		return ImmutableList.of(
-				Pair.of(0, new LookAtTargetSink(45, 90)),
-				Pair.of(0, new MoveToTargetSink()),
+				Pair.of(0, new Swim<>(0.8F)),
 				Pair.of(0, InteractWithDoor.create()),
-				Pair.of(99, UpdateActivityFromSchedule.create())
+				Pair.of(0, new LookAtTargetSink(45, 90)),
+				Pair.of(0, new VillagerPanicTrigger()),
+				Pair.of(0, WakeUp.create()),
+				Pair.of(0, ReactToBell.create()),
+				Pair.of(1, new MoveToTargetSink()),
+				Pair.of(10, homePoi(villager)),
+				Pair.of(10, meetingPoi())
 		);
 	}
 
-	private static ImmutableList<Pair<Integer, ? extends BehaviorControl<? super Villager>>> idle() {
-		return ImmutableList.of(
-				Pair.of(1, homePoi()),
-				Pair.of(2, SetEntityLookTarget.create(8.0F)),
-				Pair.of(3, new RunOne<>(List.of(
-						Pair.of(VillageBoundRandomStroll.create(SPEED), 2),
-						Pair.of(SetWalkTargetFromLookTarget.create(SPEED, 2), 2),
-						Pair.of(new DoNothing(30, 60), 1)
-				))),
-				Pair.of(99, UpdateActivityFromSchedule.create())
+	private static BehaviorControl<PathfinderMob> homePoi(Villager villager) {
+		return AcquirePoi.create(
+				poi -> poi.is(PoiTypes.HOME),
+				MemoryModuleType.HOME,
+				false,
+				Optional.of((byte) 14),
+				(level, pos) -> BedClaim.canTake(level, villager, pos)
 		);
 	}
 
-	private static ImmutableList<Pair<Integer, ? extends BehaviorControl<? super Villager>>> rest() {
-		return ImmutableList.of(
-				Pair.of(2, SetWalkTargetFromBlockMemory.create(MemoryModuleType.HOME, SPEED, 1, 150, 1200)),
-				Pair.of(3, ValidateNearbyPoi.create(poi -> poi.is(PoiTypes.HOME), MemoryModuleType.HOME)),
-				Pair.of(3, new SleepInBed()),
-				Pair.of(5, WakeUp.create()),
-				Pair.of(99, UpdateActivityFromSchedule.create())
+	private static BehaviorControl<PathfinderMob> meetingPoi() {
+		return AcquirePoi.create(
+				poi -> poi.is(PoiTypes.MEETING),
+				MemoryModuleType.MEETING_POINT,
+				true,
+				Optional.of((byte) 14)
 		);
-	}
-
-	private static BehaviorControl<PathfinderMob> homePoi() {
-		return AcquirePoi.create(poi -> poi.is(PoiTypes.HOME), MemoryModuleType.HOME, false, Optional.empty());
 	}
 }

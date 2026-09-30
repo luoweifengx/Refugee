@@ -1,0 +1,191 @@
+package luowei.refugee.ai;
+
+import java.util.EnumSet;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.level.block.AnvilBlock;
+
+import luowei.refugee.attachment.RefugeeAttachments;
+import luowei.refugee.attachment.RefugeeVillagerData;
+import luowei.refugee.config.RefugeeConfig;
+import luowei.refugee.settle.StandableFinder;
+import luowei.refugee.special.RefugeeSpecialRole;
+
+/**
+ * 铁匠留在附近铁砧周围走动。晚上、睡觉、跟随、对话和给人修装备时让路。
+ */
+public class SmithAnvilRoamGoal extends Goal {
+	private static final int SEARCH_RADIUS = 24;
+	private static final int SEARCH_Y = 8;
+	private static final int ROAM_RADIUS = 6;
+	private static final int MIN_ANVIL_DISTANCE_SQ = 4;
+	private static final int RESEARCH_INTERVAL = 80;
+	private static final int WANDER_MIN = 40;
+	private static final int WANDER_MAX = 100;
+
+	private final Villager villager;
+	private BlockPos anvilPos;
+	private BlockPos roamTarget;
+	private int searchCooldown;
+	private int wanderCooldown;
+	private int lookCooldown;
+
+	public SmithAnvilRoamGoal(Villager villager) {
+		this.villager = villager;
+		this.setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.LOOK));
+	}
+
+	@Override
+	public boolean canUse() {
+		if (villager.isBaby() || !RefugeeSpecialRole.is(villager, RefugeeSpecialRole.SMITH)) {
+			return false;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		long now = villager.level().getGameTime();
+		if (data.isFollowing() || data.isFollowingEntity() || data.isPatrolling() || villager.getTradingPlayer() != null) {
+			return false;
+		}
+		if (villager.isSleeping() || data.isLookingAtPlayer(now) || data.holdsBrain(now)
+				|| Math.floorMod(villager.level().getDayTime(), 24000L) >= WorkerSleep.REST_START) {
+			return false;
+		}
+		if (RefugeeCombat.isEating(villager)) {
+			return false;
+		}
+		return findAnvil() != null;
+	}
+
+	@Override
+	public boolean canContinueToUse() {
+		return canUse();
+	}
+
+	@Override
+	public void start() {
+		wanderCooldown = 0;
+		lookCooldown = 0;
+		pickRoamTarget();
+	}
+
+	@Override
+	public void stop() {
+		anvilPos = null;
+		roamTarget = null;
+		villager.getNavigation().stop();
+	}
+
+	@Override
+	public void tick() {
+		if (!(villager.level() instanceof ServerLevel)) {
+			return;
+		}
+		BlockPos anvil = findAnvil();
+		if (anvil == null) {
+			villager.getNavigation().stop();
+			return;
+		}
+		if (lookCooldown > 0) {
+			lookCooldown--;
+		} else {
+			villager.getLookControl().setLookAt(
+					anvil.getX() + 0.5,
+					anvil.getY() + 1.0,
+					anvil.getZ() + 0.5,
+					10.0f,
+					villager.getMaxHeadXRot()
+			);
+			lookCooldown = 20 + villager.getRandom().nextInt(40);
+		}
+		if (wanderCooldown > 0) {
+			wanderCooldown--;
+			if (roamTarget != null && villager.distanceToSqr(roamTarget.getX() + 0.5, roamTarget.getY(), roamTarget.getZ() + 0.5) > 1.0) {
+				villager.getNavigation().moveTo(
+						roamTarget.getX() + 0.5,
+						roamTarget.getY(),
+						roamTarget.getZ() + 0.5,
+						RefugeeConfig.followSpeed
+				);
+			}
+			return;
+		}
+		pickRoamTarget();
+	}
+
+	private BlockPos findAnvil() {
+		if (!(villager.level() instanceof ServerLevel level)) {
+			return null;
+		}
+		if (anvilPos != null && level.getBlockState(anvilPos).getBlock() instanceof AnvilBlock) {
+			return anvilPos;
+		}
+		anvilPos = null;
+		if (searchCooldown > 0) {
+			searchCooldown--;
+			return null;
+		}
+		searchCooldown = RESEARCH_INTERVAL;
+		BlockPos origin = villager.blockPosition();
+		BlockPos closest = null;
+		int best = SEARCH_RADIUS * SEARCH_RADIUS + 1;
+		for (BlockPos pos : BlockPos.betweenClosed(
+				origin.offset(-SEARCH_RADIUS, -SEARCH_Y, -SEARCH_RADIUS),
+				origin.offset(SEARCH_RADIUS, SEARCH_Y, SEARCH_RADIUS)
+		)) {
+			if (!(level.getBlockState(pos).getBlock() instanceof AnvilBlock)) {
+				continue;
+			}
+			int dx = pos.getX() - origin.getX();
+			int dy = pos.getY() - origin.getY();
+			int dz = pos.getZ() - origin.getZ();
+			int dist = dx * dx + dy * dy + dz * dz;
+			if (dist < best) {
+				best = dist;
+				closest = pos.immutable();
+			}
+		}
+		anvilPos = closest;
+		return anvilPos;
+	}
+
+	private void pickRoamTarget() {
+		if (!(villager.level() instanceof ServerLevel level) || anvilPos == null) {
+			return;
+		}
+		RandomSource random = villager.getRandom();
+		BlockPos chosen = null;
+		for (int i = 0; i < 12; i++) {
+			int dx = random.nextInt(ROAM_RADIUS * 2 + 1) - ROAM_RADIUS;
+			int dz = random.nextInt(ROAM_RADIUS * 2 + 1) - ROAM_RADIUS;
+			if (dx * dx + dz * dz < MIN_ANVIL_DISTANCE_SQ) {
+				continue;
+			}
+			int x = anvilPos.getX() + dx;
+			int z = anvilPos.getZ() + dz;
+			for (int dy = 1; dy >= -2; dy--) {
+				BlockPos candidate = new BlockPos(x, anvilPos.getY() + dy, z);
+				if (StandableFinder.isStandable(level, candidate)) {
+					chosen = candidate;
+					break;
+				}
+			}
+			if (chosen != null) {
+				break;
+			}
+		}
+		if (chosen == null) {
+			chosen = anvilPos.north();
+		}
+		roamTarget = chosen;
+		wanderCooldown = WANDER_MIN + random.nextInt(Math.max(1, WANDER_MAX - WANDER_MIN));
+		villager.getNavigation().moveTo(
+				roamTarget.getX() + 0.5,
+				StandableFinder.standY(level, roamTarget),
+				roamTarget.getZ() + 0.5,
+				RefugeeConfig.followSpeed
+		);
+	}
+}

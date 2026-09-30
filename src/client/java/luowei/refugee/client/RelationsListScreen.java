@@ -107,7 +107,7 @@ public class RelationsListScreen extends Screen {
 			return;
 		}
 		ClientPlayNetworking.send(new RelationsPickPayload(kind, false, List.of()));
-		StaffClientNav.resetToRoot();
+		RelationDeskNav.returnHere();
 	}
 
 	private void toggle(UUID id) {

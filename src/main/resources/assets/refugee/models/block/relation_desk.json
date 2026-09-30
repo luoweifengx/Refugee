@@ -1,0 +1,12 @@
+{
+	"parent": "minecraft:block/cube",
+	"textures": {
+		"particle": "refugee:block/relation_desk_top",
+		"down": "refugee:block/relation_desk_bottom",
+		"up": "refugee:block/relation_desk_top",
+		"north": "refugee:block/relation_desk_front",
+		"south": "refugee:block/relation_desk_side",
+		"east": "refugee:block/relation_desk_side",
+		"west": "refugee:block/relation_desk_side"
+	}
+}

@@ -7,19 +7,25 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.food.FoodProperties;
+import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 
+import luowei.refugee.ai.BedClaim;
 import luowei.refugee.attachment.RefugeeAttachments;
 
 /**
- * 白天记下睡觉、劳动和进食。第二天清晨用前一天的记录结算饱食、体力和舒适。
- * 卸载期间错过的天数只结算一次，不把空日子叠加上去。
+ * 饱食和体力按游戏时间每 3000 tick 结算一次，只在居民加载时走表。
+ * 舒适在睡觉时按床的居住分逐 tick 增加。没睡过的人在天数变化时减 1。卸载错过的天数只结算一次。
  */
 public final class LivabilityService {
 	private static long settledDay = Long.MIN_VALUE;
@@ -36,6 +42,7 @@ public final class LivabilityService {
 	}
 
 	public static void markDirty(Villager villager, LivabilityData data) {
+		CensusService.onLoyaltyChanged(villager, data);
 		villager.setAttached(RefugeeAttachments.LIVABILITY, data);
 	}
 
@@ -44,7 +51,7 @@ public final class LivabilityService {
 		return data != null && data.rebelling();
 	}
 
-	/** 体力已经耗到 0，不再劳作、不再出手。 */
+	/** 体力已经耗到 0。此时会挂上挖掘疲劳 III 和虚弱 III。 */
 	public static boolean isSpent(Villager villager) {
 		if (villager == null || !RefugeeAttachments.isRefugee(villager)) {
 			return false;
@@ -63,6 +70,20 @@ public final class LivabilityService {
 		LivabilityData data = villager.getAttached(RefugeeAttachments.LIVABILITY);
 		double efficiency = data == null ? 0.5 : LivabilityMath.appliedEfficiency(data.healEfficiency());
 		return (float) (baseHeal * efficiency);
+	}
+
+	/** 实际掉血立刻扣舒适。睡觉中的加算和没睡的扣减另走。 */
+	public static void noteHurt(Villager villager, float damageTaken) {
+		if (villager == null || damageTaken <= 0.0f || !RefugeeAttachments.isRefugee(villager)) {
+			return;
+		}
+		double loss = damageTaken * LivabilityRules.CURRENT.hurtComfortScale;
+		if (loss == 0.0) {
+			return;
+		}
+		LivabilityData data = get(villager);
+		data.addComfort(-loss);
+		markDirty(villager, data);
 	}
 
 	public static void noteFood(Villager villager, FoodProperties properties) {
@@ -106,7 +127,70 @@ public final class LivabilityService {
 			return;
 		}
 		LivabilityData data = get(villager);
-		data.markSlept();
+		data.beginSleep(villager.level().getGameTime());
+		markDirty(villager, data);
+	}
+
+	public static void noteWake(Villager villager) {
+		if (!RefugeeAttachments.isRefugee(villager)) {
+			return;
+		}
+		LivabilityData data = get(villager);
+		data.endSleep(villager.level().getGameTime());
+		markDirty(villager, data);
+	}
+
+	/** 加载着的居民，距上次结算满间隔就做一次饱食和体力。 */
+	public static void tickMetabolism(Villager villager) {
+		if (villager == null || !RefugeeAttachments.isRefugee(villager)) {
+			return;
+		}
+		LivabilityRules rules = LivabilityRules.CURRENT;
+		LivabilityData data = get(villager);
+		long now = villager.level().getGameTime();
+		int interval = Math.max(1, rules.metabolismInterval);
+		if (data.metabolismAt() < 0L) {
+			data.setMetabolismAt(now);
+			markDirty(villager, data);
+			return;
+		}
+		long elapsed = now - data.metabolismAt();
+		if (elapsed < interval) {
+			return;
+		}
+		if (elapsed > interval + 100L) {
+			data.setMetabolismAt(now);
+			markDirty(villager, data);
+			return;
+		}
+		metabolize(villager, data, rules, now);
+	}
+
+	/** 躺着时每个 tick 加 0.0001 × 所认床的居住分。没有床或已经到顶则不加。 */
+	public static void tickSleepComfort(Villager villager) {
+		if (villager == null || !villager.isSleeping() || !RefugeeAttachments.isRefugee(villager)) {
+			return;
+		}
+		LivabilityRules rules = LivabilityRules.CURRENT;
+		double bed = livingAt(villager, rules);
+		if (bed <= 0.0) {
+			return;
+		}
+		LivabilityData data = get(villager);
+		if (data.comfort() >= rules.statMax) {
+			return;
+		}
+		data.addComfort(bed * 0.0001);
+		markDirty(villager, data);
+	}
+
+	private static void metabolize(Villager villager, LivabilityData data, LivabilityRules rules, long now) {
+		double satiety = data.satiety();
+		double stamina = data.stamina();
+		double comfort = data.comfort();
+		data.addSatiety(LivabilityMath.metabolizedSatiety(satiety, comfort, rules) - satiety);
+		data.addStamina(LivabilityMath.metabolizedStamina(stamina, satiety, comfort, rules) - stamina);
+		data.setMetabolismAt(now);
 		markDirty(villager, data);
 	}
 
@@ -127,6 +211,7 @@ public final class LivabilityService {
 		for (ServerLevel level : server.getAllLevels()) {
 			settleLevel(level, day);
 		}
+		LivabilityAchievements.check(server);
 	}
 
 	private static void settleLevel(ServerLevel level, long day) {
@@ -150,28 +235,94 @@ public final class LivabilityService {
 			return;
 		}
 		LivabilityRules rules = LivabilityRules.CURRENT;
-		Map<Villager, LivabilityBeds.Housing> housing = LivabilityBeds.score(level, due, rules);
 		for (Villager villager : due) {
-			LivabilityData data = get(villager);
-			double taken = data.satiety() * rules.satietyToStaminaRate;
-			double satiety = LivabilityMath.clampStat(data.satiety() - taken, rules.statMin, rules.statMax);
-			double stamina = data.stamina() + rules.dawnStaminaGain + taken;
-			if (!data.slept()) {
-				stamina -= rules.missedSleepStamina;
-			}
-			stamina = LivabilityMath.clampStat(stamina, rules.statMin, rules.statMax);
-			LivabilityBeds.Housing home = housing.get(villager);
-			double living = LivabilityMath.livingComfort(
-					home != null && home.hasBed(),
-					home == null ? 0 : home.gap(),
-					home == null ? 0 : home.clusterSize(),
-					rules
-			);
-			double comfort = LivabilityMath.nextComfort(data.comfort(), living, rules);
-			data.applyDay(satiety, stamina, comfort, day, false);
-			markDirty(villager, data);
+			settleOne(villager, day, rules);
 		}
 		spreadRebellion(level, due, rules);
+	}
+
+	/**
+	 * 调试：对已经加载的居民各执行一次饱食和体力结算，并重置下次结算的计时。
+	 */
+	public static List<ForcedRecovery> forceStaminaRecovery(ServerLevel level, List<Villager> villagers) {
+		List<ForcedRecovery> results = new ArrayList<>();
+		if (level == null || villagers == null || villagers.isEmpty()) {
+			return results;
+		}
+		LivabilityRules rules = LivabilityRules.CURRENT;
+		long now = level.getGameTime();
+		for (Villager villager : villagers) {
+			if (villager == null || !villager.isAlive() || villager.level() != level || !RefugeeAttachments.isRefugee(villager)) {
+				continue;
+			}
+			LivabilityData data = get(villager);
+			double staminaBefore = data.stamina();
+			double satietyBefore = data.satiety();
+			metabolize(villager, data, rules, now);
+			LivabilityData after = get(villager);
+			results.add(new ForcedRecovery(
+					villager,
+					false,
+					staminaBefore,
+					after.stamina(),
+					satietyBefore,
+					after.satiety()
+			));
+		}
+		return results;
+	}
+
+	public record ForcedRecovery(
+			Villager villager,
+			boolean slept,
+			double staminaBefore,
+			double staminaAfter,
+			double satietyBefore,
+			double satietyAfter
+	) {
+	}
+
+	/** 清晨不重算舒适。这一晚没躺下就减 1；躺过或此刻还在睡的保持睡觉期间加上的值。 */
+	private static void settleOne(Villager villager, long day, LivabilityRules rules) {
+		LivabilityData data = get(villager);
+		double comfort = data.comfort();
+		if (!data.slept() && !villager.isSleeping()) {
+			comfort = LivabilityMath.clampStat(comfort - 1.0, rules.statMin, rules.statMax);
+		}
+		data.applyDay(data.satiety(), data.stamina(), comfort, day, false);
+		markDirty(villager, data);
+	}
+
+	private static double livingAt(Villager villager, LivabilityRules rules) {
+		if (!(villager.level() instanceof ServerLevel level)) {
+			return 0.0;
+		}
+		BlockPos bed = claimedBed(level, villager);
+		if (bed == null) {
+			return 0.0;
+		}
+		BedLayout.Stats stats = BedLayout.stats(level, bed);
+		return LivabilityMath.livingComfort(true, stats.gap(), stats.density(), rules);
+	}
+
+	private static BlockPos claimedBed(ServerLevel level, Villager villager) {
+		GlobalPos home = villager.getBrain().getMemory(MemoryModuleType.HOME).orElse(null);
+		if (home != null && home.dimension().equals(level.dimension()) && BedClaim.keeps(level, villager, home.pos())) {
+			return BedClaim.head(level, home.pos());
+		}
+		if (!villager.isSleeping()) {
+			return null;
+		}
+		BlockPos sleeping = villager.getSleepingPos().orElse(null);
+		if (sleeping == null) {
+			return null;
+		}
+		BlockPos head = BedClaim.head(level, sleeping);
+		BlockState state = level.getBlockState(head);
+		if (!(state.getBlock() instanceof BedBlock)) {
+			return null;
+		}
+		return head;
 	}
 
 	/**

@@ -70,7 +70,7 @@ public class RelationsTextsScreen extends Screen {
 
 	private void cancel() {
 		ClientPlayNetworking.send(new RelationsTextsPayload(false, "", ""));
-		StaffClientNav.resetToRoot();
+		RelationDeskNav.returnHere();
 	}
 
 	@Override

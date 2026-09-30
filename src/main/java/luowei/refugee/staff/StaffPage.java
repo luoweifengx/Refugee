@@ -30,12 +30,7 @@ package luowei.refugee.staff;
  *       近战 / 远程 / 工人 / 散人 / 特殊 / 全部
  *     GUARD → GUARD_PIE
  *       添加 / 范围召集 / 全部召集 / 除名
- *     RELATIONS → RELATIONS_PIE
- *       创建组织 / 邀请 / 邀请管理 / 组织管理 / 领地文字 / 人员救助
- *       ORG_MANAGE → ORG_MANAGE_PIE
- *         信息 / 离开 / 踢人 / 移交 / 改领地名
- *     DIPLOMACY → DIPLOMACY_PIE
- *       关系列表 / 宣战 / 和解 / 结盟 / 和解处理
+ * 人员关系和外交在关系管理台，不在这根杖上。
  * </pre>
  *
  * {@link #BUILD_HUB} 已弃用，保留以免网络 ordinal 错位。新页只追加。

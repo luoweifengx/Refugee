@@ -1,0 +1,22 @@
+{
+	"parent": "minecraft:adventure/root",
+	"display": {
+		"icon": {
+			"id": "minecraft:white_bed"
+		},
+		"title": {
+			"translate": "advancements.refugee.hamlet.title"
+		},
+		"description": {
+			"translate": "advancements.refugee.hamlet.description"
+		},
+		"frame": "task",
+		"show_toast": true,
+		"announce_to_chat": true
+	},
+	"criteria": {
+		"settle": {
+			"trigger": "minecraft:impossible"
+		}
+	}
+}

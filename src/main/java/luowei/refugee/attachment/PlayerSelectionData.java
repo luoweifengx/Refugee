@@ -56,6 +56,7 @@ public final class PlayerSelectionData {
 	private UUID enchanterId;
 	private UUID smithId;
 	private boolean hadLapis;
+	private boolean hadAnvil;
 	private boolean nurseGranted;
 	private boolean cartographerGranted;
 	private boolean enchanterGranted;
@@ -391,6 +392,14 @@ public final class PlayerSelectionData {
 		this.hadLapis = hadLapis;
 	}
 
+	public boolean hadAnvil() {
+		return hadAnvil;
+	}
+
+	public void setHadAnvil(boolean hadAnvil) {
+		this.hadAnvil = hadAnvil;
+	}
+
 	public boolean isNurseGranted() {
 		return nurseGranted;
 	}
@@ -583,6 +592,7 @@ public final class PlayerSelectionData {
 		enchanterGranted = enchanterGranted || keeper.enchanterGranted || keeper.enchanterId != null;
 		smithGranted = smithGranted || keeper.smithGranted || keeper.smithId != null;
 		hadLapis = hadLapis || keeper.hadLapis;
+		hadAnvil = hadAnvil || keeper.hadAnvil;
 	}
 
 	public int specialBindingCount() {
@@ -619,6 +629,7 @@ public final class PlayerSelectionData {
 				false,
 				false,
 				false,
+				false,
 				false
 		);
 		public static final Codec<SpecialBindings> CODEC = RecordCodecBuilder.create(instance -> instance.group(
@@ -628,6 +639,7 @@ public final class PlayerSelectionData {
 				UUIDUtil.CODEC.optionalFieldOf("enchanter").forGetter(SpecialBindings::enchanter),
 				UUIDUtil.CODEC.optionalFieldOf("smith").forGetter(SpecialBindings::smith),
 				Codec.BOOL.optionalFieldOf("had_lapis", false).forGetter(SpecialBindings::hadLapis),
+				Codec.BOOL.optionalFieldOf("had_anvil", false).forGetter(SpecialBindings::hadAnvil),
 				Codec.BOOL.optionalFieldOf("nurse_granted", false).forGetter(SpecialBindings::nurseGranted),
 				Codec.BOOL.optionalFieldOf("cartographer_granted", false).forGetter(SpecialBindings::cartographerGranted),
 				Codec.BOOL.optionalFieldOf("enchanter_granted", false).forGetter(SpecialBindings::enchanterGranted),
@@ -640,6 +652,7 @@ public final class PlayerSelectionData {
 		private final Optional<UUID> enchanter;
 		private final Optional<UUID> smith;
 		private final boolean hadLapis;
+		private final boolean hadAnvil;
 		private final boolean nurseGranted;
 		private final boolean cartographerGranted;
 		private final boolean enchanterGranted;
@@ -652,6 +665,7 @@ public final class PlayerSelectionData {
 				Optional<UUID> enchanter,
 				Optional<UUID> smith,
 				boolean hadLapis,
+				boolean hadAnvil,
 				boolean nurseGranted,
 				boolean cartographerGranted,
 				boolean enchanterGranted,
@@ -663,6 +677,7 @@ public final class PlayerSelectionData {
 			this.enchanter = enchanter;
 			this.smith = smith;
 			this.hadLapis = hadLapis;
+			this.hadAnvil = hadAnvil;
 			this.nurseGranted = nurseGranted;
 			this.cartographerGranted = cartographerGranted;
 			this.enchanterGranted = enchanterGranted;
@@ -677,6 +692,7 @@ public final class PlayerSelectionData {
 					Optional.ofNullable(data.enchanterId),
 					Optional.ofNullable(data.smithId),
 					data.hadLapis,
+					data.hadAnvil,
 					data.nurseGranted,
 					data.cartographerGranted,
 					data.enchanterGranted,
@@ -691,6 +707,7 @@ public final class PlayerSelectionData {
 			data.enchanterId = enchanter.orElse(null);
 			data.smithId = smith.orElse(null);
 			data.hadLapis = hadLapis;
+			data.hadAnvil = hadAnvil;
 			data.nurseGranted = nurseGranted;
 			data.cartographerGranted = cartographerGranted;
 			data.enchanterGranted = enchanterGranted;
@@ -719,6 +736,10 @@ public final class PlayerSelectionData {
 
 		private boolean hadLapis() {
 			return hadLapis;
+		}
+
+		private boolean hadAnvil() {
+			return hadAnvil;
 		}
 
 		private boolean nurseGranted() {

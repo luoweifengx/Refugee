@@ -44,9 +44,6 @@ public class RefugeeRepairGoal extends Goal {
 		if (villager.isBaby() || !RefugeeRoles.isBuilder(villager) || WorkerSleep.yields(villager)) {
 			return false;
 		}
-		if (luowei.refugee.livability.LivabilityService.isSpent(villager)) {
-			return false;
-		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		if (!data.isRepairerDuty() || data.isFollowing() || data.isFollowingEntity() || data.isPatrolling()) {
 			return false;
@@ -144,6 +141,7 @@ public class RefugeeRepairGoal extends Goal {
 		if (speed > 1.0f && villager.getAttributes().hasAttribute(Attributes.MINING_EFFICIENCY)) {
 			speed += (float) villager.getAttributeValue(Attributes.MINING_EFFICIENCY);
 		}
+		speed = luowei.refugee.livability.LivabilityExhaustion.scaleBreakSpeed(villager, speed);
 		boolean canHarvest = !state.requiresCorrectToolForDrops() || tool.isCorrectToolForDrops(state);
 		float perTick = speed / hardness / (canHarvest ? 30.0f : 100.0f);
 		if (perTick >= 1.0f) {

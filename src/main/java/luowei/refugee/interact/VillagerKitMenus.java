@@ -61,7 +61,7 @@ public final class VillagerKitMenus {
 						villager.getId(),
 						(float) data.satiety(),
 						(float) data.stamina(),
-						(float) data.comfort(),
+						(float) data.effectiveComfort(),
 						(float) data.loyalty()
 				);
 			}

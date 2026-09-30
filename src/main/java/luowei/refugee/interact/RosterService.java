@@ -29,6 +29,8 @@ import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameType;
 
 import luowei.refugee.Refugee;
@@ -39,6 +41,8 @@ import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.config.RefugeeConfig;
 import luowei.refugee.config.RefugeeConfig.EmptyRosterMode;
 import luowei.refugee.config.RefugeePlayDifficulty;
+import luowei.refugee.item.ArmorKitItem;
+import luowei.refugee.item.ModItems;
 import luowei.refugee.settle.StandableFinder;
 import luowei.refugee.pbs.PbsAdapter;
 import luowei.refugee.pbs.OrgMergeService;
@@ -67,6 +71,7 @@ public final class RosterService {
 		});
 		ServerLivingEntityEvents.MOB_CONVERSION.register((previous, converted, conversionContext) -> {
 			if (previous instanceof Villager villager && previous.level() instanceof ServerLevel level) {
+				luowei.refugee.livability.ExecutionService.onVillagerRemoved(villager);
 				if (RefugeeSpecialRole.isSpecial(villager)) {
 					SpecialRefugeeService.markSpecialGone(level.getServer(), villager.getUUID());
 				}
@@ -224,6 +229,8 @@ public final class RosterService {
 		if (!villager.isAlive() || villager.isRemoved()) {
 			return;
 		}
+		luowei.refugee.effect.ModEffects.sync(villager);
+		luowei.refugee.livability.CensusService.ensureMember(villager);
 		UUID subjectId = RefugeeAttachments.get(villager).subjectId();
 		if (subjectId == null) {
 			SelectionService.markClaimableIfInVillage(villager, level);
@@ -282,18 +289,20 @@ public final class RosterService {
 		selection.setStarterGranted(true);
 		RefugeePlayDifficulty difficulty = RefugeePlayDifficulty.of(level);
 		int wanted = difficulty.starterRefugeeCount();
+		List<ArmorKitItem.Kind> guards = difficulty.starterGuardKits();
 		boolean wantGuide = difficulty.spawnGuide();
 		int spawned = 0;
 		BlockPos origin = player.blockPosition();
 		Refugee.LOGGER.debug(
-				"[refugee starter] grant player={} difficulty={} wanted={} guide={} origin={}",
+				"[refugee starter] grant player={} difficulty={} wanted={} guards={} guide={} origin={}",
 				player.getGameProfile().getName(),
 				difficulty,
 				wanted,
+				guards.size(),
 				wantGuide,
 				origin.toShortString()
 		);
-		int needed = wanted + (wantGuide ? 1 : 0);
+		int needed = wanted + guards.size() + (wantGuide ? 1 : 0);
 		if (needed <= 0) {
 			RefugeeAttachments.markDirty(player, selection);
 			Refugee.LOGGER.debug(
@@ -310,15 +319,26 @@ public final class RosterService {
 				spots.isEmpty() ? "none" : spots.getFirst().toShortString(),
 				spots.isEmpty() ? "none" : spots.getLast().toShortString()
 		);
+		int cursor = 0;
 		int genericSpots = Math.min(wanted, spots.size());
 		for (int i = 0; i < genericSpots; i++) {
-			if (spawnStarter(player, level, selection, spots.get(i))) {
+			if (spawnStarter(player, level, selection, spots.get(i), null)) {
 				spawned++;
 			}
+			cursor++;
+		}
+		for (ArmorKitItem.Kind kind : guards) {
+			if (cursor >= spots.size()) {
+				break;
+			}
+			if (spawnStarter(player, level, selection, spots.get(cursor), kind)) {
+				spawned++;
+			}
+			cursor++;
 		}
 		BlockPos guideFeet = null;
 		if (wantGuide) {
-			guideFeet = spots.size() > genericSpots ? spots.get(genericSpots) : null;
+			guideFeet = spots.size() > cursor ? spots.get(cursor) : null;
 			if (guideFeet == null && !spots.isEmpty()) {
 				Set<BlockPos> reserved = new HashSet<>(spots);
 				reserved.add(origin);
@@ -373,7 +393,13 @@ public final class RosterService {
 		return StandableFinder.findStandable(level, origin, reserved, needed);
 	}
 
-	private static boolean spawnStarter(ServerPlayer player, ServerLevel level, PlayerSelectionData selection, BlockPos feet) {
+	private static boolean spawnStarter(
+			ServerPlayer player,
+			ServerLevel level,
+			PlayerSelectionData selection,
+			BlockPos feet,
+			ArmorKitItem.Kind kit
+	) {
 		Villager villager = EntityType.VILLAGER.create(level, EntitySpawnReason.MOB_SUMMONED);
 		if (villager == null) {
 			return false;
@@ -383,6 +409,9 @@ public final class RosterService {
 		data.setSubjectId(player.getUUID());
 		data.startFollowing(player.getUUID());
 		RefugeeAttachments.markDirty(villager, data);
+		if (kit != null) {
+			ArmorKitItem.equip(villager, new ItemStack(kitItem(kit)));
+		}
 		if (!level.addFreshEntity(villager)) {
 			Refugee.LOGGER.debug(
 					"[refugee starter] spawn-failed feet={}",
@@ -393,11 +422,21 @@ public final class RosterService {
 		selection.addSelected(villager.getUUID());
 		selection.addRoster(villager);
 		Refugee.LOGGER.debug(
-				"[refugee starter] spawn id={} feet={} follow=true",
+				"[refugee starter] spawn id={} feet={} follow=true kit={}",
 				villager.getUUID().toString().substring(0, 8),
-				feet.toShortString()
+				feet.toShortString(),
+				kit == null ? "none" : kit.name()
 		);
 		return true;
+	}
+
+	private static Item kitItem(ArmorKitItem.Kind kind) {
+		return switch (kind) {
+			case LEATHER -> ModItems.LEATHER_KIT;
+			case CHAIN -> ModItems.CHAIN_KIT;
+			case IRON -> ModItems.IRON_KIT;
+			case DIAMOND -> ModItems.DIAMOND_KIT;
+		};
 	}
 
 	private static void queueLoadedPendingKills(ServerPlayer player) {

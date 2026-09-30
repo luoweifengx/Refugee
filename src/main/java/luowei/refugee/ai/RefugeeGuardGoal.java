@@ -3,16 +3,22 @@ package luowei.refugee.ai;
 import java.util.EnumSet;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
+import luowei.refugee.ai.BedClaim;
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.config.RefugeeConfig;
@@ -21,12 +27,21 @@ import luowei.refugee.logistics.OrgLogisticsData;
 
 /**
  * 守卫与战斗总控：战斗圈看村民自身；IDLE 才按距离回岗；慌乱不回岗。
+ * 站在岗上时会扭头，偏得大时身体跟着转。
  */
 public class RefugeeGuardGoal extends Goal {
+	public static final double WATCH_RADIUS = 50.0;
 	private static final double ARRIVED_AT_CENTER_DISTANCE = 1.5;
+	private static final double IDLE_LOOK_RANGE = 8.0;
+	private static final float IDLE_LOOK_CHANCE = 0.02F;
 
 	private final Villager villager;
 	private boolean returningToCenter;
+	private int idleLookTime;
+	private LivingEntity idleLookEntity;
+	private double idleLookX;
+	private double idleLookY;
+	private double idleLookZ;
 
 	public RefugeeGuardGoal(Villager villager) {
 		this.villager = villager;
@@ -40,6 +55,9 @@ public class RefugeeGuardGoal extends Goal {
 		}
 		if (RefugeeAttachments.get(villager).isHostileFaction()) {
 			return true;
+		}
+		if (WorkerSleep.seeksBed(villager) || WorkerSleep.yields(villager)) {
+			return false;
 		}
 		if (!RefugeeRoles.isGuard(villager)) {
 			return RefugeeCombat.mood(villager) == RefugeeCombat.Mood.FLEE;
@@ -90,6 +108,7 @@ public class RefugeeGuardGoal extends Goal {
 	@Override
 	public void stop() {
 		returningToCenter = false;
+		clearIdleLook();
 		villager.getNavigation().stop();
 		RefugeeCombat.tickShield(villager, false);
 	}
@@ -99,19 +118,6 @@ public class RefugeeGuardGoal extends Goal {
 		RefugeeSwim.tick(villager);
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		data.tickCombatCooldowns();
-		if (luowei.refugee.livability.LivabilityService.isSpent(villager)) {
-			villager.setTarget(null);
-			RefugeeCombat.stopRangedDraw(villager);
-			RefugeeCombat.tickShield(villager, false);
-			RefugeeCombat.Mood spentMood = data.combatMood();
-			if (spentMood == RefugeeCombat.Mood.COMBAT || spentMood == RefugeeCombat.Mood.LAST_STAND) {
-				RefugeeCombat.setMood(villager, RefugeeCombat.Mood.IDLE);
-			}
-			if (data.isHostileFaction()) {
-				villager.getNavigation().stop();
-				return;
-			}
-		}
 		if (data.isHostileFaction()) {
 			tickHostileFaction(data);
 			return;
@@ -140,7 +146,7 @@ public class RefugeeGuardGoal extends Goal {
 			tickCombat(false);
 			return;
 		}
-		if (hostiles && !luowei.refugee.livability.LivabilityService.isSpent(villager)) {
+		if (hostiles) {
 			RefugeeCombat.setMood(villager, RefugeeCombat.Mood.COMBAT);
 			tickCombat(false);
 			return;
@@ -149,13 +155,14 @@ public class RefugeeGuardGoal extends Goal {
 	}
 
 	private void tickHostileFaction(RefugeeVillagerData data) {
-		LivingEntity target = RefugeeCombat.nearestOutsider(villager, villager.position(), RefugeeConfig.guardRadius);
+		LivingEntity target = RefugeeCombat.nearestOutsider(villager, watchCenter(villager), WATCH_RADIUS);
 		if (target == null) {
 			RefugeeCombat.setMood(villager, RefugeeCombat.Mood.IDLE);
 			villager.setTarget(null);
 			tickIdle(data);
 			return;
 		}
+		clearIdleLook();
 		RefugeeCombat.setMood(villager, RefugeeCombat.Mood.COMBAT);
 		villager.setTarget(target);
 		villager.getLookControl().setLookAt(target, 30.0f, 30.0f);
@@ -183,6 +190,7 @@ public class RefugeeGuardGoal extends Goal {
 
 	private void tickPanic(RefugeeCombat.Mood mood) {
 		returningToCenter = false;
+		clearIdleLook();
 		if (RefugeeCombat.leavePanicIfHealthy(villager)) {
 			return;
 		}
@@ -210,19 +218,12 @@ public class RefugeeGuardGoal extends Goal {
 	}
 
 	private void tickCombat(boolean lastStand) {
-		if (luowei.refugee.livability.LivabilityService.isSpent(villager)) {
-			villager.setTarget(null);
-			villager.getNavigation().stop();
-			RefugeeCombat.stopRangedDraw(villager);
-			RefugeeCombat.tickShield(villager, false);
-			RefugeeCombat.setMood(villager, RefugeeCombat.Mood.IDLE);
-			return;
-		}
+		clearIdleLook();
 		LivingEntity target = villager.getTarget();
-		Vec3 center = RefugeeCombat.combatCenter(villager);
+		Vec3 center = watchCenter(villager);
 		if (target == null || !target.isAlive() || !RefugeeGuardGoal.isWithinGuardRadius(target, center)
 				|| (target instanceof Villager other && !RefugeeAttachments.get(other).isHostileFaction())) {
-			target = RefugeeCombat.nearestCombatTarget(villager, center, RefugeeConfig.guardRadius);
+			target = RefugeeCombat.nearestCombatTarget(villager, center, WATCH_RADIUS);
 			villager.setTarget(target);
 		}
 		if (target == null || !target.isAlive()) {
@@ -332,6 +333,7 @@ public class RefugeeGuardGoal extends Goal {
 	}
 
 	private void tickFollowLiving(LivingEntity target) {
+		clearIdleLook();
 		villager.getLookControl().setLookAt(target, 10.0f, villager.getMaxHeadXRot());
 		double distSq = villager.distanceToSqr(target);
 		double teleport = RefugeeConfig.guardReturnTeleportDistance;
@@ -358,6 +360,7 @@ public class RefugeeGuardGoal extends Goal {
 			villager.teleportTo(cx, cy, cz);
 			returningToCenter = false;
 			villager.getNavigation().stop();
+			tickIdleLook();
 			return;
 		}
 		if (distSq > walk * walk) {
@@ -367,12 +370,78 @@ public class RefugeeGuardGoal extends Goal {
 			if (distSq <= ARRIVED_AT_CENTER_DISTANCE * ARRIVED_AT_CENTER_DISTANCE) {
 				returningToCenter = false;
 				villager.getNavigation().stop();
+				tickIdleLook();
 				return;
 			}
+			clearIdleLook();
 			villager.getNavigation().moveTo(cx, cy, cz, RefugeeConfig.guardWalkSpeed);
 			return;
 		}
 		villager.getNavigation().stop();
+		tickIdleLook();
+	}
+
+	/** 站岗时偶尔看向旁边的人，否则把头转到身后，身体会跟着拧。 */
+	private void tickIdleLook() {
+		if (idleLookTime <= 0) {
+			if (villager.getRandom().nextFloat() >= IDLE_LOOK_CHANCE) {
+				return;
+			}
+			idleLookEntity = nearestIdleLookTarget();
+			if (idleLookEntity != null) {
+				idleLookX = idleLookEntity.getX();
+				idleLookY = idleLookEntity.getEyeY();
+				idleLookZ = idleLookEntity.getZ();
+			} else {
+				float delta = 90.0F + villager.getRandom().nextFloat() * 180.0F;
+				if (villager.getRandom().nextBoolean()) {
+					delta = -delta;
+				}
+				double rad = Math.toRadians(villager.yBodyRot + delta);
+				idleLookX = villager.getX() - Math.sin(rad);
+				idleLookY = villager.getEyeY();
+				idleLookZ = villager.getZ() + Math.cos(rad);
+			}
+			idleLookTime = 20 + villager.getRandom().nextInt(21);
+		}
+		idleLookTime--;
+		if (idleLookEntity != null) {
+			if (!idleLookEntity.isAlive()
+					|| villager.distanceToSqr(idleLookEntity) > IDLE_LOOK_RANGE * IDLE_LOOK_RANGE
+					|| !villager.hasLineOfSight(idleLookEntity)) {
+				clearIdleLook();
+				return;
+			}
+			idleLookX = idleLookEntity.getX();
+			idleLookY = idleLookEntity.getEyeY();
+			idleLookZ = idleLookEntity.getZ();
+		}
+		villager.getLookControl().setLookAt(idleLookX, idleLookY, idleLookZ);
+	}
+
+	private LivingEntity nearestIdleLookTarget() {
+		AABB box = villager.getBoundingBox().inflate(IDLE_LOOK_RANGE, 3.0, IDLE_LOOK_RANGE);
+		double rangeSq = IDLE_LOOK_RANGE * IDLE_LOOK_RANGE;
+		LivingEntity nearest = null;
+		double nearestSq = rangeSq;
+		for (LivingEntity candidate : villager.level().getEntitiesOfClass(LivingEntity.class, box, entity ->
+				entity != villager
+						&& entity.isAlive()
+						&& !entity.isSpectator()
+						&& (entity instanceof Player || entity instanceof Mob)
+						&& villager.hasLineOfSight(entity))) {
+			double distSq = villager.distanceToSqr(candidate);
+			if (distSq <= nearestSq) {
+				nearest = candidate;
+				nearestSq = distSq;
+			}
+		}
+		return nearest;
+	}
+
+	private void clearIdleLook() {
+		idleLookTime = 0;
+		idleLookEntity = null;
 	}
 
 	static ServerPlayer resolveFollowPlayer(Villager villager, RefugeeVillagerData data) {
@@ -396,6 +465,47 @@ public class RefugeeGuardGoal extends Goal {
 		return null;
 	}
 
+	/**
+	 * 晚上有床时，警戒圆心是这张床；否则是守卫中心。跟随玩家时圆心跟着人。
+	 */
+	public static Vec3 watchCenter(Villager villager) {
+		if (villager == null) {
+			return null;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (villager.level() instanceof ServerLevel level
+				&& !data.isFollowing()
+				&& !data.isFollowingEntity()
+				&& isNight(level)) {
+			BlockPos bed = sleepBed(level, villager);
+			if (bed != null) {
+				return Vec3.atBottomCenterOf(bed);
+			}
+		}
+		Vec3 post = resolveGuardCenter(villager);
+		return post != null ? post : villager.position();
+	}
+
+	private static boolean isNight(ServerLevel level) {
+		long time = Math.floorMod(level.getDayTime(), 24000L);
+		return time >= WorkerSleep.REST_START || time < 10L;
+	}
+
+	private static BlockPos sleepBed(ServerLevel level, Villager villager) {
+		GlobalPos home = villager.getBrain().getMemory(MemoryModuleType.HOME).orElse(null);
+		if (home != null && home.dimension().equals(level.dimension()) && BedClaim.keeps(level, villager, home.pos())) {
+			return BedClaim.head(level, home.pos());
+		}
+		if (!villager.isSleeping()) {
+			return null;
+		}
+		BlockPos sleeping = villager.getSleepingPos().orElse(null);
+		if (sleeping == null) {
+			return null;
+		}
+		return BedClaim.head(level, sleeping);
+	}
+
 	static Vec3 resolveGuardCenter(Villager villager) {
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		if (data.isFollowing()) {
@@ -414,7 +524,6 @@ public class RefugeeGuardGoal extends Goal {
 	}
 
 	static boolean isWithinGuardRadius(LivingEntity entity, Vec3 center) {
-		double radius = RefugeeConfig.guardRadius;
-		return entity.distanceToSqr(center) <= radius * radius;
+		return center != null && entity.distanceToSqr(center) <= WATCH_RADIUS * WATCH_RADIUS;
 	}
 }

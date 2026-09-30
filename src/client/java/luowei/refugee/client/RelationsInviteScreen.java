@@ -34,7 +34,7 @@ public class RelationsInviteScreen extends Screen {
 	protected void init() {
 		int y = height / 2 + 24;
 		if (!pending) {
-			addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> StaffClientNav.resetToRoot())
+			addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> RelationDeskNav.returnHere())
 					.bounds(width / 2 - 75, y, 150, 20)
 					.build());
 			return;

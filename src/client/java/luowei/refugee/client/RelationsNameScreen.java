@@ -86,7 +86,7 @@ public class RelationsNameScreen extends Screen {
 
 	private void cancel() {
 		ClientPlayNetworking.send(new RelationsNamePayload(kind, false, ""));
-		StaffClientNav.resetToRoot();
+		RelationDeskNav.returnHere();
 	}
 
 	@Override

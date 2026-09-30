@@ -1,9 +1,12 @@
 package luowei.refugee.crusader;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
@@ -24,6 +27,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.entity.EntityTypeTest;
 
+import luowei.player_block_status.lib.api.TerritoryQueries;
 import luowei.refugee.Refugee;
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.attachment.RefugeeVillagerData;
@@ -33,7 +37,8 @@ import luowei.refugee.pbs.PbsAdapter;
 import luowei.refugee.settle.StandableFinder;
 
 /**
- * 入侵集群数超过在线玩家 × 8 时，在组织领土中心刷十字军；白天 4000 消失。
+ * 入侵集群数超过在线玩家 × 8 时刷十字军。编制人数再乘该组织在线人数。
+ * 从领土中心向外，在占领格和边界格上找落点；白天 4000 消失。
  */
 public final class CrusaderService {
 	public static final int CLUSTER_PER_PLAYER = 8;
@@ -97,7 +102,7 @@ public final class CrusaderService {
 			if (data.hasSquad(key.level().dimension(), key.subjectId())) {
 				continue;
 			}
-			int spawned = spawnSquad(key.level(), key.subjectId());
+			int spawned = spawnSquad(key.level(), key.subjectId(), players);
 			if (spawned > 0) {
 				data.markSquad(key.level().dimension(), key.subjectId(), dayTime);
 				notify(server, key.subjectId(), spawned);
@@ -105,12 +110,12 @@ public final class CrusaderService {
 		}
 	}
 
-	private static int spawnSquad(ServerLevel level, UUID subjectId) {
+	private static int spawnSquad(ServerLevel level, UUID subjectId, int onlinePlayers) {
 		ChunkPos center = PbsAdapter.territoryCenter(level, subjectId).orElse(null);
 		if (center == null) {
 			return 0;
 		}
-		level.getChunk(center.x, center.z);
+		int copies = Math.max(1, onlinePlayers);
 		MinecraftServer server = level.getServer();
 		SiegeCompat.refreshProgression(server, subjectId);
 		CrusaderLoadout.Stage stage = CrusaderLoadout.resolve(
@@ -118,8 +123,8 @@ public final class CrusaderService {
 				SiegeCompat.hasDiamond(server, subjectId),
 				PbsAdapter.hasDemonChunks(level)
 		);
-		List<CrusaderLoadout.Kit> kits = CrusaderLoadout.kits(stage);
-		List<BlockPos> spots = StandableFinder.findInChunk(level, center, null, kits.size());
+		List<CrusaderLoadout.Kit> kits = scaleKits(CrusaderLoadout.kits(stage), copies);
+		List<BlockPos> spots = findSquadSpots(level, subjectId, center, kits.size());
 		int spawned = 0;
 		int limit = Math.min(kits.size(), spots.size());
 		for (int i = 0; i < limit; i++) {
@@ -129,14 +134,80 @@ public final class CrusaderService {
 		}
 		if (spawned == 0) {
 			Refugee.LOGGER.debug(
-					"[refugee crusader] spawn failed subject={} dim={} chunk={} wanted={}",
+					"[refugee crusader] spawn failed subject={} dim={} chunk={} online={} wanted={}",
 					subjectId,
 					level.dimension().location(),
 					center.x + "," + center.z,
+					copies,
 					kits.size()
 			);
 		}
 		return spawned;
+	}
+
+	/** 整队编制重复 {@code copies} 次，各装备比例不变。 */
+	private static List<CrusaderLoadout.Kit> scaleKits(List<CrusaderLoadout.Kit> base, int copies) {
+		if (base == null || base.isEmpty() || copies <= 1) {
+			return base == null ? List.of() : base;
+		}
+		List<CrusaderLoadout.Kit> scaled = new ArrayList<>(base.size() * copies);
+		for (int i = 0; i < copies; i++) {
+			scaled.addAll(base);
+		}
+		return scaled;
+	}
+
+	/**
+	 * 从领土中心向外，在占领格和边界格里找可站立落点，找满 {@code needed} 即停。
+	 */
+	private static List<BlockPos> findSquadSpots(ServerLevel level, UUID subjectId, ChunkPos center, int needed) {
+		List<BlockPos> spots = new ArrayList<>();
+		if (needed <= 0) {
+			return spots;
+		}
+		Set<BlockPos> reserved = new HashSet<>();
+		for (ChunkPos chunk : squadChunks(level, subjectId, center)) {
+			if (spots.size() >= needed) {
+				break;
+			}
+			level.getChunk(chunk.x, chunk.z);
+			List<BlockPos> found = StandableFinder.findInChunk(level, chunk, reserved, needed - spots.size());
+			for (BlockPos feet : found) {
+				if (reserved.add(feet)) {
+					spots.add(feet);
+				}
+			}
+		}
+		return spots;
+	}
+
+	private static List<ChunkPos> squadChunks(ServerLevel level, UUID subjectId, ChunkPos center) {
+		Set<Long> seen = new HashSet<>();
+		List<ChunkPos> chunks = new ArrayList<>();
+		addChunk(chunks, seen, center);
+		TerritoryQueries.OrgTerritoryChunks territory = PbsAdapter.territory(level, subjectId);
+		if (territory != null) {
+			for (ChunkPos chunk : territory.occupied()) {
+				addChunk(chunks, seen, chunk);
+			}
+			for (ChunkPos chunk : territory.border()) {
+				addChunk(chunks, seen, chunk);
+			}
+		}
+		chunks.sort(Comparator.comparingInt(chunk -> chunkDistanceSquared(chunk, center)));
+		return chunks;
+	}
+
+	private static void addChunk(List<ChunkPos> chunks, Set<Long> seen, ChunkPos chunk) {
+		if (chunk != null && seen.add(chunk.toLong())) {
+			chunks.add(chunk);
+		}
+	}
+
+	private static int chunkDistanceSquared(ChunkPos chunk, ChunkPos center) {
+		int dx = chunk.x - center.x;
+		int dz = chunk.z - center.z;
+		return dx * dx + dz * dz;
 	}
 
 	private static boolean spawnOne(ServerLevel level, UUID subjectId, BlockPos feet, CrusaderLoadout.Kit kit) {

@@ -58,9 +58,6 @@ public class RefugeeSmeltGoal extends Goal {
 		if (villager.isBaby() || !RefugeeRoles.isBuilder(villager) || WorkerSleep.yields(villager)) {
 			return false;
 		}
-		if (luowei.refugee.livability.LivabilityService.isSpent(villager)) {
-			return false;
-		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		if (!data.isSmelterDuty() || data.isFollowing() || data.isFollowingEntity() || data.isPatrolling()) {
 			return false;

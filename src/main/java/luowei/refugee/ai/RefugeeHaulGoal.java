@@ -45,12 +45,12 @@ public class RefugeeHaulGoal extends Goal {
 
 	@Override
 	public boolean canUse() {
-		return !luowei.refugee.livability.LivabilityService.isSpent(villager) && WorkerCargo.wantsHaul(villager);
+		return WorkerCargo.wantsHaul(villager);
 	}
 
 	@Override
 	public boolean canContinueToUse() {
-		return !luowei.refugee.livability.LivabilityService.isSpent(villager) && WorkerCargo.continueHaul(villager);
+		return WorkerCargo.continueHaul(villager);
 	}
 
 	@Override

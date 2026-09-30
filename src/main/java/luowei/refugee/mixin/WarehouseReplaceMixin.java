@@ -39,5 +39,6 @@ public abstract class WarehouseReplaceMixin {
 		}
 		WarehouseService.onBlockReplaced(serverLevel, pos, cir.getReturnValue(), newState);
 		BuildHealth.onBlockChanged(serverLevel, pos, cir.getReturnValue(), newState);
+		luowei.refugee.livability.BedLayout.onBlockReplaced(serverLevel, pos, cir.getReturnValue(), newState);
 	}
 }

@@ -29,6 +29,7 @@ import net.minecraft.world.entity.npc.Villager;
 import luowei.refugee.attachment.PlayerSelectionData;
 import luowei.refugee.attachment.RefugeeVillagerData;
 import luowei.refugee.livability.LivabilityService;
+import luowei.refugee.livability.LivabilityService.ForcedRecovery;
 import luowei.refugee.attachment.PlayerSelectionData.RosterEntry;
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.blueprint.BlueprintRegistry;
@@ -77,7 +78,9 @@ public final class RefugeeCommands {
 								.then(Commands.literal("rebel")
 										.executes(RefugeeCommands::rebelForce)
 										.then(Commands.literal("try")
-												.executes(RefugeeCommands::rebelTry))))
+												.executes(RefugeeCommands::rebelTry)))
+								.then(Commands.literal("stamina")
+										.executes(RefugeeCommands::recoverStamina)))
 		);
 	}
 
@@ -241,6 +244,46 @@ public final class RefugeeCommands {
 				true
 		);
 		return rebelled;
+	}
+
+	private static int recoverStamina(CommandContext<CommandSourceStack> context) {
+		ServerLevel level = context.getSource().getLevel();
+		List<Villager> loaded = new ArrayList<>();
+		for (Villager villager : level.getEntities(EntityType.VILLAGER, Entity::isAlive)) {
+			if (RefugeeAttachments.isRefugee(villager)) {
+				loaded.add(villager);
+			}
+		}
+		List<ForcedRecovery> results = LivabilityService.forceStaminaRecovery(level, loaded);
+		if (results.isEmpty()) {
+			context.getSource().sendFailure(Component.translatable("message.refugee.debug.stamina.none"));
+			return 0;
+		}
+		CommandSourceStack source = context.getSource();
+		for (ForcedRecovery recovery : results) {
+			Component name = recovery.villager().getDisplayName();
+			String before = String.format(Locale.ROOT, "%.1f", recovery.staminaBefore());
+			String after = String.format(Locale.ROOT, "%.1f", recovery.staminaAfter());
+			String satietyBefore = String.format(Locale.ROOT, "%.1f", recovery.satietyBefore());
+			String satietyAfter = String.format(Locale.ROOT, "%.1f", recovery.satietyAfter());
+			source.sendSuccess(
+					() -> Component.translatable(
+							"message.refugee.debug.stamina.line",
+							name,
+							before,
+							after,
+							satietyBefore,
+							satietyAfter
+					),
+					false
+			);
+		}
+		int count = results.size();
+		source.sendSuccess(
+				() -> Component.translatable("message.refugee.debug.stamina.done", count),
+				true
+		);
+		return count;
 	}
 
 	private static List<Villager> following(ServerPlayer player) {

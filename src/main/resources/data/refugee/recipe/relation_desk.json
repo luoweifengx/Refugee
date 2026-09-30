@@ -1,0 +1,16 @@
+{
+	"type": "minecraft:crafting_shaped",
+	"category": "misc",
+	"key": {
+		"P": "#minecraft:planks",
+		"S": "refugee:command_staff"
+	},
+	"pattern": [
+		" S ",
+		"PPP"
+	],
+	"result": {
+		"count": 1,
+		"id": "refugee:relation_desk"
+	}
+}

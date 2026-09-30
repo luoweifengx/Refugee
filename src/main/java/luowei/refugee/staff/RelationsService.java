@@ -120,8 +120,7 @@ public final class RelationsService {
 			fail(player, "message.refugee.staff.relations.not_in_org");
 			return;
 		}
-		StaffService.showRelations(player, StaffPage.ORG_MANAGE_PIE);
-		RefugeeNetworking.openStaffPie(player, StaffPage.ORG_MANAGE_PIE);
+		RefugeeNetworking.openRelationDesk(player, RelationDeskPage.ORG);
 	}
 
 	public static void showInfo(ServerPlayer player) {

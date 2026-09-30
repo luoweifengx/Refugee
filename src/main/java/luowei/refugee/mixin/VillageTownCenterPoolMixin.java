@@ -18,9 +18,11 @@ import net.minecraft.world.level.levelgen.structure.pools.SinglePoolElement;
 import net.minecraft.world.level.levelgen.structure.pools.StructurePoolElement;
 import net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool;
 
+import luowei.refugee.config.RefugeeConfig;
+
 /**
  * 原版 village/biome/town_centers 同一池里普通中心权重约 50、僵尸中心约 1。
- * 抽选时只保留 location 含 /zombie/ 的 element，后续 jigsaw 会接到 zombie/streets。
+ * {@code onlyZombieVillages} 为 true 时只保留 location 含 /zombie/ 的 element，后续 jigsaw 会接到 zombie/streets。
  */
 @Mixin(StructureTemplatePool.class)
 public abstract class VillageTownCenterPoolMixin {
@@ -29,6 +31,9 @@ public abstract class VillageTownCenterPoolMixin {
 
 	@Inject(method = "getRandomTemplate", at = @At("HEAD"), cancellable = true)
 	private void refugee$zombieTownCenter(RandomSource random, CallbackInfoReturnable<StructurePoolElement> cir) {
+		if (!RefugeeConfig.onlyZombieVillages) {
+			return;
+		}
 		List<StructurePoolElement> zombieOnly = zombieTownCenters();
 		if (zombieOnly == null || zombieOnly.isEmpty()) {
 			return;
@@ -38,6 +43,9 @@ public abstract class VillageTownCenterPoolMixin {
 
 	@Inject(method = "getShuffledTemplates", at = @At("HEAD"), cancellable = true)
 	private void refugee$zombieTownCentersShuffled(RandomSource random, CallbackInfoReturnable<List<StructurePoolElement>> cir) {
+		if (!RefugeeConfig.onlyZombieVillages) {
+			return;
+		}
 		List<StructurePoolElement> zombieOnly = zombieTownCenters();
 		if (zombieOnly == null || zombieOnly.isEmpty()) {
 			return;

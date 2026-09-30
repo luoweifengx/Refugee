@@ -460,6 +460,10 @@ public final class SpecialRefugeeService {
 			data.setHadLapis(true);
 			RefugeeAttachments.markDirty(player, data);
 		}
+		if (!data.hadAnvil() && hasAnvil(player)) {
+			data.setHadAnvil(true);
+			RefugeeAttachments.markDirty(player, data);
+		}
 		adoptMissingOrgSpecials(player);
 	}
 
@@ -493,7 +497,7 @@ public final class SpecialRefugeeService {
 					|| PbsAdapter.territoryCounts(level, subjectId).owned() > CARTOGRAPHER_OWNED_THRESHOLD;
 			case ENCHANTER -> isEnchanterEligible(level, members);
 			case GUIDE -> isGuideEligible(level, members);
-			case SMITH -> true;
+			case SMITH -> isSmithEligible(members);
 		};
 	}
 
@@ -504,6 +508,15 @@ public final class SpecialRefugeeService {
 		}
 		for (ServerPlayer member : members) {
 			if (RefugeeAttachments.get(member).hadLapis()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean isSmithEligible(List<ServerPlayer> members) {
+		for (ServerPlayer member : members) {
+			if (RefugeeAttachments.get(member).hadAnvil()) {
 				return true;
 			}
 		}
@@ -632,6 +645,16 @@ public final class SpecialRefugeeService {
 		return false;
 	}
 
+	private static boolean hasAnvil(ServerPlayer player) {
+		for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+			var stack = player.getInventory().getItem(i);
+			if (stack.is(Items.ANVIL) || stack.is(Items.CHIPPED_ANVIL) || stack.is(Items.DAMAGED_ANVIL)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static void pruneSubject(MinecraftServer server, UUID subjectId) {
 		for (ServerPlayer member : playersOfSubject(server, subjectId)) {
 			pruneStaleSpecials(server, member);
@@ -718,6 +741,23 @@ public final class SpecialRefugeeService {
 
 	private static boolean orgRoleTaken(MinecraftServer server, UUID subjectId, RefugeeSpecialRole role) {
 		return findOrgSpecialId(server, subjectId, role) != null;
+	}
+
+	/** 这个组织里现在还在的特殊居民，按角色枚举顺序。 */
+	public static List<String> presentRoleIds(ServerPlayer player) {
+		if (player == null) {
+			return List.of();
+		}
+		MinecraftServer server = player.level().getServer();
+		UUID subjectId = PbsAdapter.resolveSubject(player);
+		pruneSubject(server, subjectId);
+		List<String> ids = new ArrayList<>();
+		for (RefugeeSpecialRole role : RefugeeSpecialRole.values()) {
+			if (findOrgSpecialId(server, subjectId, role) != null) {
+				ids.add(role.id());
+			}
+		}
+		return ids;
 	}
 
 	private static UUID findOrgSpecialId(MinecraftServer server, UUID subjectId, RefugeeSpecialRole role) {

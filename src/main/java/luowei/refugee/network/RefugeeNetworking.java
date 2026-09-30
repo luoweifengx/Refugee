@@ -23,6 +23,10 @@ import net.minecraft.world.phys.AABB;
 
 import luowei.refugee.attachment.PlayerSelectionData;
 import luowei.refugee.attachment.RefugeeAttachments;
+import luowei.refugee.attachment.RefugeeVillagerData;
+import luowei.refugee.livability.LivabilityData;
+import luowei.refugee.livability.LivabilityRules;
+import luowei.refugee.livability.LivabilityService;
 import luowei.refugee.blueprint.BlueprintRegistry;
 import luowei.refugee.config.RefugeeConfig;
 import luowei.refugee.pbs.PbsAdapter;
@@ -57,8 +61,11 @@ public final class RefugeeNetworking {
 		PayloadTypeRegistry.playS2C().register(SpecialSplashPayload.TYPE, SpecialSplashPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playS2C().register(SpecialSplashTalkPayload.TYPE, SpecialSplashTalkPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playS2C().register(StaffOpenPiePayload.TYPE, StaffOpenPiePayload.STREAM_CODEC);
+		PayloadTypeRegistry.playS2C().register(RelationDeskOpenPayload.TYPE, RelationDeskOpenPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playS2C().register(StaffSyncPayload.TYPE, StaffSyncPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playS2C().register(OpenImportNamePayload.TYPE, OpenImportNamePayload.STREAM_CODEC);
+		PayloadTypeRegistry.playS2C().register(OpenBedMarkPayload.TYPE, OpenBedMarkPayload.STREAM_CODEC);
+		PayloadTypeRegistry.playC2S().register(BedMarkPayload.TYPE, BedMarkPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playS2C().register(BlueprintShareTargetsPayload.TYPE, BlueprintShareTargetsPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(BlueprintSelectPayload.TYPE, BlueprintSelectPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(BlueprintDeletePayload.TYPE, BlueprintDeletePayload.STREAM_CODEC);
@@ -72,6 +79,8 @@ public final class RefugeeNetworking {
 		PayloadTypeRegistry.playC2S().register(ImportNamePayload.TYPE, ImportNamePayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(StaffNavPayload.TYPE, StaffNavPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playC2S().register(StaffBuildPlacePayload.TYPE, StaffBuildPlacePayload.STREAM_CODEC);
+		PayloadTypeRegistry.playC2S().register(StaffInspectPayload.TYPE, StaffInspectPayload.STREAM_CODEC);
+		PayloadTypeRegistry.playS2C().register(StaffInspectReplyPayload.TYPE, StaffInspectReplyPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playS2C().register(RelationsOpenListPayload.TYPE, RelationsOpenListPayload.STREAM_CODEC);
 		PayloadTypeRegistry.playS2C().register(RelationsOpenNamePayload.TYPE, RelationsOpenNamePayload.STREAM_CODEC);
 		PayloadTypeRegistry.playS2C().register(RelationsOpenInvitesPayload.TYPE, RelationsOpenInvitesPayload.STREAM_CODEC);
@@ -130,6 +139,10 @@ public final class RefugeeNetworking {
 			ServerPlayer player = context.player();
 			context.server().execute(() -> StaffService.handleImportName(player, payload.confirm(), payload.name()));
 		});
+		ServerPlayNetworking.registerGlobalReceiver(BedMarkPayload.TYPE, (payload, context) -> {
+			ServerPlayer player = context.player();
+			context.server().execute(() -> luowei.refugee.ai.BedMarks.assign(player, payload.pos(), payload.role()));
+		});
 		ServerPlayNetworking.registerGlobalReceiver(StaffNavPayload.TYPE, (payload, context) -> {
 			ServerPlayer player = context.player();
 			context.server().execute(() -> StaffService.handleNav(player, payload.action()));
@@ -159,6 +172,10 @@ public final class RefugeeNetworking {
 		ServerPlayNetworking.registerGlobalReceiver(RelationsInviteReplyPayload.TYPE, (payload, context) -> {
 			ServerPlayer player = context.player();
 			context.server().execute(() -> RelationsService.handleInviteReply(player, payload.accept()));
+		});
+		ServerPlayNetworking.registerGlobalReceiver(StaffInspectPayload.TYPE, (payload, context) -> {
+			ServerPlayer player = context.player();
+			context.server().execute(() -> replyInspect(player, payload.entityId()));
 		});
 		ServerPlayNetworking.registerGlobalReceiver(StaffBuildPlacePayload.TYPE, (payload, context) -> {
 			ServerPlayer player = context.player();
@@ -372,6 +389,13 @@ public final class RefugeeNetworking {
 		syncCatalog(player, true, hand, selected);
 	}
 
+	public static void openBedMark(ServerPlayer player, net.minecraft.core.BlockPos pos, java.util.List<String> specials) {
+		if (player == null || pos == null) {
+			return;
+		}
+		ServerPlayNetworking.send(player, new OpenBedMarkPayload(pos, specials == null ? java.util.List.of() : specials));
+	}
+
 	public static void openImportName(ServerPlayer player, AreaBox box) {
 		if (player == null || box == null) {
 			return;
@@ -410,6 +434,15 @@ public final class RefugeeNetworking {
 			return;
 		}
 		ServerPlayNetworking.send(player, new RelationsOpenInvitesPayload(pending, orgName, territoryName));
+	}
+
+	public static void openRelationDesk(ServerPlayer player, luowei.refugee.staff.RelationDeskPage page) {
+		if (player == null) {
+			return;
+		}
+		ServerPlayNetworking.send(player, new RelationDeskOpenPayload(
+				page == null ? luowei.refugee.staff.RelationDeskPage.HOME : page
+		));
 	}
 
 	public static void openStaffPie(ServerPlayer player) {
@@ -513,6 +546,66 @@ public final class RefugeeNetworking {
 		selection.setBuildOrigin(null);
 		RefugeeAttachments.markDirty(player, selection);
 		StaffService.enterPreview(player, id);
+	}
+
+	private static void replyInspect(ServerPlayer player, int entityId) {
+		if (player == null) {
+			return;
+		}
+		if (!holdingStaff(player) || !(player.level() instanceof ServerLevel level)) {
+			sendInspect(player, entityId, false, 0.0f, 0.0f, 0.0f, 0.0f, 20.0f);
+			return;
+		}
+		Entity entity = level.getEntity(entityId);
+		if (!(entity instanceof Villager villager)
+				|| !villager.isAlive()
+				|| player.distanceToSqr(villager) > 16.0 * 16.0) {
+			sendInspect(player, entityId, false, 0.0f, 0.0f, 0.0f, 0.0f, 20.0f);
+			return;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		UUID subjectId = data.subjectId();
+		UUID self = PbsAdapter.resolveSubject(player);
+		boolean owned = subjectId != null
+				&& !data.isCrusader()
+				&& (subjectId.equals(player.getUUID()) || subjectId.equals(self));
+		if (!owned) {
+			sendInspect(player, entityId, false, 0.0f, 0.0f, 0.0f, 0.0f, 20.0f);
+			return;
+		}
+		LivabilityData live = LivabilityService.get(villager);
+		float statMax = (float) Math.max(1.0, LivabilityRules.CURRENT.statMax);
+		sendInspect(
+				player,
+				entityId,
+				true,
+				(float) live.satiety(),
+				(float) live.stamina(),
+				(float) live.effectiveComfort(),
+				(float) live.loyalty(),
+				statMax
+		);
+	}
+
+	private static void sendInspect(
+			ServerPlayer player,
+			int entityId,
+			boolean allowed,
+			float satiety,
+			float stamina,
+			float comfort,
+			float loyalty,
+			float statMax
+	) {
+		ServerPlayNetworking.send(player, new StaffInspectReplyPayload(
+				entityId,
+				allowed,
+				satiety,
+				stamina,
+				comfort,
+				loyalty,
+				statMax
+		));
 	}
 
 	private static boolean holdingStaff(ServerPlayer player) {

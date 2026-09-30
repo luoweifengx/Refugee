@@ -1,8 +1,12 @@
 package luowei.refugee.config;
 
+import java.util.List;
+
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.Difficulty;
+
+import luowei.refugee.item.ArmorKitItem;
 
 /**
  * 难民开局人数绑定原版难度；入境人数在档位区间上抽完后再乘难度乘数。
@@ -33,12 +37,22 @@ public enum RefugeePlayDifficulty {
 		};
 	}
 
+	/** 开局普通居民人数，不含额外守卫和向导。 */
 	public int starterRefugeeCount() {
 		return switch (this) {
 			case HARDCORE -> 0;
 			case HARD -> 1;
 			case NORMAL -> 4;
 			case EASY, PEACEFUL -> 8;
+		};
+	}
+
+	/** 在普通居民之外追加的制式守卫。困难、和平、极限不加。 */
+	public List<ArmorKitItem.Kind> starterGuardKits() {
+		return switch (this) {
+			case EASY -> List.of(ArmorKitItem.Kind.IRON, ArmorKitItem.Kind.CHAIN);
+			case NORMAL -> List.of(ArmorKitItem.Kind.CHAIN, ArmorKitItem.Kind.LEATHER);
+			default -> List.of();
 		};
 	}
 
