@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -24,6 +25,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.npc.Villager;
 
 import luowei.refugee.attachment.PlayerSelectionData;
@@ -33,6 +35,7 @@ import luowei.refugee.livability.LivabilityService.ForcedRecovery;
 import luowei.refugee.attachment.PlayerSelectionData.RosterEntry;
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.blueprint.BlueprintRegistry;
+import luowei.refugee.livability.LivabilityData;
 import luowei.refugee.interact.RosterService;
 import luowei.refugee.network.RefugeeNetworking;
 import luowei.refugee.pbs.PbsAdapter;
@@ -80,7 +83,13 @@ public final class RefugeeCommands {
 										.then(Commands.literal("try")
 												.executes(RefugeeCommands::rebelTry)))
 								.then(Commands.literal("stamina")
-										.executes(RefugeeCommands::recoverStamina)))
+										.executes(RefugeeCommands::recoverStamina))
+								.then(Commands.literal("set")
+										.then(statArgument("health", DebugStat.HEALTH))
+										.then(statArgument("satiety", DebugStat.SATIETY))
+										.then(statArgument("stamina", DebugStat.STAMINA))
+										.then(statArgument("comfort", DebugStat.COMFORT))
+										.then(statArgument("loyalty", DebugStat.LOYALTY))))
 		);
 	}
 
@@ -284,6 +293,95 @@ public final class RefugeeCommands {
 				true
 		);
 		return count;
+	}
+
+	private static LiteralArgumentBuilder<CommandSourceStack> statArgument(String name, DebugStat stat) {
+		return Commands.literal(name)
+				.then(Commands.argument("value", DoubleArgumentType.doubleArg())
+						.executes(context -> setStat(context, stat)));
+	}
+
+	private static int setStat(CommandContext<CommandSourceStack> context, DebugStat stat) {
+		ServerPlayer player = context.getSource().getPlayer();
+		if (player == null) {
+			context.getSource().sendFailure(Component.translatable("message.refugee.roster.no_player"));
+			return 0;
+		}
+		List<Villager> followers = following(player);
+		if (followers.isEmpty()) {
+			context.getSource().sendFailure(Component.translatable("message.refugee.debug.rebel.none"));
+			return 0;
+		}
+		double requested = DoubleArgumentType.getDouble(context, "value");
+		CommandSourceStack source = context.getSource();
+		Component label = Component.translatable(stat.translationKey());
+		for (Villager villager : followers) {
+			double applied = applyStat(villager, stat, requested);
+			Component name = villager.getDisplayName();
+			String number = String.format(Locale.ROOT, "%.1f", applied);
+			source.sendSuccess(
+					() -> Component.translatable("message.refugee.debug.set.line", name, label, number),
+					false
+			);
+		}
+		int count = followers.size();
+		String summary = stat == DebugStat.LOYALTY
+				? "message.refugee.debug.set.loyalty"
+				: "message.refugee.debug.set.done";
+		source.sendSuccess(() -> Component.translatable(summary, count), true);
+		return count;
+	}
+
+	private static double applyStat(Villager villager, DebugStat stat, double value) {
+		if (stat == DebugStat.HEALTH) {
+			return applyHealth(villager, value);
+		}
+		LivabilityData data = LivabilityService.get(villager);
+		switch (stat) {
+			case SATIETY -> data.setSatiety(value);
+			case STAMINA -> data.setStamina(value);
+			case COMFORT -> data.setComfort(value);
+			case LOYALTY -> data.setLoyalty(value);
+			default -> {
+				return value;
+			}
+		}
+		LivabilityService.markDirty(villager, data);
+		return switch (stat) {
+			case SATIETY -> data.satiety();
+			case STAMINA -> data.stamina();
+			case COMFORT -> data.comfort();
+			case LOYALTY -> data.loyalty();
+			default -> value;
+		};
+	}
+
+	private static double applyHealth(Villager villager, double value) {
+		float next = (float) Math.max(0.0, value);
+		var maxHealth = villager.getAttribute(Attributes.MAX_HEALTH);
+		if (maxHealth != null && next > maxHealth.getBaseValue()) {
+			maxHealth.setBaseValue(next);
+		}
+		villager.setHealth(Math.min(next, villager.getMaxHealth()));
+		return villager.getHealth();
+	}
+
+	private enum DebugStat {
+		HEALTH("message.refugee.debug.set.health"),
+		SATIETY("message.refugee.debug.set.satiety"),
+		STAMINA("message.refugee.debug.set.stamina"),
+		COMFORT("message.refugee.debug.set.comfort"),
+		LOYALTY("message.refugee.debug.set.loyalty.stat");
+
+		private final String translationKey;
+
+		DebugStat(String translationKey) {
+			this.translationKey = translationKey;
+		}
+
+		private String translationKey() {
+			return translationKey;
+		}
 	}
 
 	private static List<Villager> following(ServerPlayer player) {

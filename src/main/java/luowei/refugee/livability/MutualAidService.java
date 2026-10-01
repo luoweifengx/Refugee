@@ -1,19 +1,24 @@
 package luowei.refugee.livability;
 
+import java.util.UUID;
+
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 
 import luowei.refugee.attachment.RefugeeAttachments;
 import luowei.refugee.interact.RefugeeRoles;
+import luowei.refugee.pbs.PbsAdapter;
+import luowei.refugee.staff.DiplomacyService;
 
 /**
- * 饥饿低于三成时，向半径 16 格内手上食物超过 8 个的最近村民要一半。
+ * 饥饿低于三成时，向半径 16 格内手上食物超过 8 个、且与自己不是敌对关系的最近村民要一半。
  */
 public final class MutualAidService {
 	public static final double HUNGER_LINE = 6.0;
@@ -67,12 +72,16 @@ public final class MutualAidService {
 		shareFromNearest(level, player, null);
 	}
 
-	private static void shareFromNearest(ServerLevel level, net.minecraft.world.entity.Entity hungry, Villager exclude) {
+	private static void shareFromNearest(ServerLevel level, Entity hungry, Villager exclude) {
+		UUID hungrySubject = subjectOf(hungry);
 		AABB box = hungry.getBoundingBox().inflate(RADIUS);
 		Villager donor = null;
 		double best = RADIUS * RADIUS;
 		for (Villager candidate : level.getEntitiesOfClass(Villager.class, box, Villager::isAlive)) {
 			if (candidate == exclude || candidate.isRemoved()) {
+				continue;
+			}
+			if (DiplomacyService.areHostile(level.getServer(), hungrySubject, RefugeeAttachments.get(candidate).subjectId())) {
 				continue;
 			}
 			ItemStack food = RefugeeRoles.logicalFood(candidate);
@@ -102,6 +111,16 @@ public final class MutualAidService {
 		if (hungry instanceof Villager villager) {
 			giveToVillager(level, villager, gift);
 		}
+	}
+
+	private static UUID subjectOf(Entity hungry) {
+		if (hungry instanceof Villager villager) {
+			return RefugeeAttachments.get(villager).subjectId();
+		}
+		if (hungry instanceof ServerPlayer player) {
+			return PbsAdapter.resolveSubject(player);
+		}
+		return null;
 	}
 
 	private static void giveToPlayer(ServerLevel level, ServerPlayer player, ItemStack gift) {

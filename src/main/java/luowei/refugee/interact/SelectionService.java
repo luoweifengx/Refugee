@@ -40,7 +40,7 @@ public final class SelectionService {
 			return false;
 		}
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
-		if (data.isCrusader()) {
+		if (data.isCrusader() || data.isHostileFaction() || luowei.refugee.livability.RebelFaction.is(data.subjectId())) {
 			return false;
 		}
 		UUID subjectId = data.subjectId();

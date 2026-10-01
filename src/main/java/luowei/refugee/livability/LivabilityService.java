@@ -6,11 +6,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
@@ -21,7 +23,10 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 
 import luowei.refugee.ai.BedClaim;
+import luowei.refugee.attachment.PlayerSelectionData;
 import luowei.refugee.attachment.RefugeeAttachments;
+import luowei.refugee.attachment.RefugeeVillagerData;
+import luowei.refugee.interact.SelectionService;
 
 /**
  * 饱食和体力按游戏时间每 3000 tick 结算一次，只在居民加载时走表。
@@ -44,6 +49,7 @@ public final class LivabilityService {
 	public static void markDirty(Villager villager, LivabilityData data) {
 		CensusService.onLoyaltyChanged(villager, data);
 		villager.setAttached(RefugeeAttachments.LIVABILITY, data);
+		considerRebellion(villager, data);
 	}
 
 	public static boolean isRebelling(Villager villager) {
@@ -400,14 +406,82 @@ public final class LivabilityService {
 		return LivabilityMath.rebellionChance(get(villager).loyalty(), LivabilityRules.CURRENT);
 	}
 
+	/** 忠诚不超过必叛线时立刻叛乱，不必等到换日。 */
+	private static void considerRebellion(Villager villager, LivabilityData data) {
+		if (villager == null || data == null || data.rebelling() || villager.isBaby() || !villager.isAlive()) {
+			return;
+		}
+		if (!RefugeeAttachments.isRefugee(villager) || RefugeeAttachments.get(villager).isCrusader()) {
+			return;
+		}
+		if (data.loyalty() > LivabilityRules.CURRENT.rebellionCertainLoyalty) {
+			return;
+		}
+		joinHostileFaction(villager);
+	}
+
+	/**
+	 * 已经在敌对阵营、但还留着旧归属或跟随的人，收进叛乱阵营。
+	 * 十字军不收。
+	 */
+	public static void syncRebel(Villager villager) {
+		if (villager == null || !villager.isAlive() || !RefugeeAttachments.isRefugee(villager)) {
+			return;
+		}
+		RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		if (data.isCrusader() || !data.isHostileFaction()) {
+			return;
+		}
+		adoptRebel(villager, data);
+	}
+
 	private static void joinHostileFaction(Villager villager) {
+		if (RefugeeAttachments.get(villager).isCrusader()) {
+			return;
+		}
 		LivabilityData live = get(villager);
 		live.setRebelling(true);
 		markDirty(villager, live);
-		luowei.refugee.attachment.RefugeeVillagerData data = RefugeeAttachments.get(villager);
+		adoptRebel(villager, RefugeeAttachments.get(villager));
+	}
+
+	private static void adoptRebel(Villager villager, RefugeeVillagerData data) {
+		boolean changed = false;
 		if (!data.isHostileFaction()) {
 			data.setHostileFaction(true);
-			RefugeeAttachments.markDirty(villager, data);
+			changed = true;
+		}
+		if (data.isFollowing() || data.isFollowingEntity() || data.isPatrolling()) {
+			data.stopFollowing();
+			changed = true;
+		}
+		if (!RebelFaction.is(data.subjectId())) {
+			data.setSubjectId(RebelFaction.SUBJECT);
+			changed = true;
+		}
+		if (!changed) {
+			return;
+		}
+		RefugeeAttachments.markDirty(villager, data);
+		CensusService.ensureMember(villager);
+		releaseCommand(villager);
+	}
+
+	private static void releaseCommand(Villager villager) {
+		MinecraftServer server = villager.level().getServer();
+		if (server == null) {
+			return;
+		}
+		UUID villagerId = villager.getUUID();
+		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+			PlayerSelectionData selection = RefugeeAttachments.get(player);
+			boolean changed = selection.removeSelected(villagerId);
+			changed |= selection.removeRoster(villagerId);
+			if (!changed) {
+				continue;
+			}
+			RefugeeAttachments.markDirty(player, selection);
+			SelectionService.collectBannersIfEmpty(player);
 		}
 	}
 }

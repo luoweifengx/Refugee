@@ -191,6 +191,37 @@ public final class LivabilityData {
 		refreshEffects();
 	}
 
+	public void setSatiety(double value) {
+		LivabilityRules rules = LivabilityRules.CURRENT;
+		satiety = LivabilityMath.clampStat(value, rules.statMin, rules.statMax);
+		refreshEffects();
+	}
+
+	public void setStamina(double value) {
+		LivabilityRules rules = LivabilityRules.CURRENT;
+		stamina = LivabilityMath.clampStat(value, rules.statMin, rules.statMax);
+		refreshEffects();
+	}
+
+	public void setComfort(double value) {
+		LivabilityRules rules = LivabilityRules.CURRENT;
+		comfort = LivabilityMath.clampStat(value, rules.statMin, rules.statMax);
+		refreshEffects();
+	}
+
+	/**
+	 * 忠诚是饱食、体力和有效舒适里较低两项的平均，改单项会被下一拍盖掉。
+	 * 三项一起拨到目标值，忠诚才会停在这里。舒适要扣掉心情偏移。
+	 */
+	public void setLoyalty(double value) {
+		LivabilityRules rules = LivabilityRules.CURRENT;
+		double target = LivabilityMath.clampStat(value, rules.statMin, rules.statMax);
+		satiety = target;
+		stamina = target;
+		comfort = LivabilityMath.clampStat(target - moodOffset, rules.statMin, rules.statMax);
+		refreshEffects();
+	}
+
 	/** 挖、放或催熟记 1，共用一条计数。满阈值立刻扣 1 点体力和一笔饱食，余数留下。 */
 	public void noteBlockWork() {
 		worked = true;

@@ -30,11 +30,25 @@ public final class DiplomacyService {
 	}
 
 	public static boolean areAllied(MinecraftServer server, UUID left, UUID right) {
-		if (server == null || left == null || right == null || left.equals(right)) {
+		return stance(server, left, right) == STANCE_ALLIED;
+	}
+
+	public static boolean areHostile(MinecraftServer server, UUID left, UUID right) {
+		if (left == null || right == null || left.equals(right)) {
 			return false;
 		}
+		if (luowei.refugee.livability.RebelFaction.is(left) || luowei.refugee.livability.RebelFaction.is(right)) {
+			return true;
+		}
+		return stance(server, left, right) == STANCE_HOSTILE;
+	}
+
+	private static int stance(MinecraftServer server, UUID left, UUID right) {
+		if (server == null || left == null || right == null || left.equals(right)) {
+			return 0;
+		}
 		Bond bond = DiplomacyData.get(server).find(left, right);
-		return bond != null && bond.stance() == STANCE_ALLIED;
+		return bond == null ? 0 : bond.stance();
 	}
 
 	public static void openList(ServerPlayer player) {
@@ -228,7 +242,7 @@ public final class DiplomacyService {
 			return rows;
 		}
 		for (OrganizationRecord record : OrganizationData.get(server).getOrganizations().values()) {
-			if (record.id().equals(self)) {
+			if (record.id().equals(self) || luowei.refugee.livability.RebelFaction.is(record.id())) {
 				continue;
 			}
 			addRow(rows, server, self, record.id(), hostileOnly);
@@ -238,7 +252,8 @@ public final class DiplomacyService {
 				continue;
 			}
 			UUID subject = PbsAdapter.resolveSubject(other);
-			if (subject == null || subject.equals(self) || !subject.equals(other.getUUID())) {
+			if (subject == null || subject.equals(self) || !subject.equals(other.getUUID())
+					|| luowei.refugee.livability.RebelFaction.is(subject)) {
 				continue;
 			}
 			addRow(rows, server, self, subject, hostileOnly);

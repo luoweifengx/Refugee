@@ -41,6 +41,7 @@ public abstract class VillagerBubbleMixin {
 		}
 		luowei.refugee.effect.ModEffects.sync(villager);
 		luowei.refugee.livability.CensusService.ensureMember(villager);
+		LivabilityService.syncRebel(villager);
 		luowei.refugee.livability.MutualAidService.tickResident(villager);
 		RefugeeDepthCurse.tick(villager);
 		LivabilityExhaustion.tick(villager);

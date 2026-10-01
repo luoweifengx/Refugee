@@ -32,6 +32,7 @@ public class RefugeeFollowGoal extends Goal {
 	public boolean canUse() {
 		RefugeeVillagerData data = RefugeeAttachments.get(villager);
 		return (data.isFollowing() || data.isFollowingEntity())
+				&& !data.isHostileFaction()
 				&& !villager.isBaby()
 				&& !WorkerSleep.yields(villager)
 				&& !RefugeeRoles.isGuard(villager)

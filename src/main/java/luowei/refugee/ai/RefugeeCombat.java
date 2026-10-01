@@ -288,7 +288,9 @@ public final class RefugeeCombat {
 		if (data.mainAttackCooldown() > 0) {
 			return;
 		}
-		melee(villager, target, InteractionHand.MAIN_HAND);
+		if (!melee(villager, target, InteractionHand.MAIN_HAND)) {
+			return;
+		}
 		setHandCooldown(villager, data, InteractionHand.MAIN_HAND, RefugeeConfig.meleeAttackIntervalTicks);
 	}
 
@@ -714,7 +716,9 @@ public final class RefugeeCombat {
 		if (villager.distanceTo(target) >= 2.2) {
 			return;
 		}
-		melee(villager, target, hand);
+		if (!melee(villager, target, hand)) {
+			return;
+		}
 		LivabilityService.noteAttack(villager);
 		setHandCooldown(villager, data, hand, RefugeeConfig.meleeAttackIntervalTicks);
 	}
@@ -728,12 +732,17 @@ public final class RefugeeCombat {
 		RefugeeAttachments.markDirty(villager, data);
 	}
 
-	private static void melee(Villager villager, LivingEntity target, InteractionHand hand) {
+	/** 眼睛到对方眼睛没有方块挡住才出手。挡住时不挥击、不进冷却。 */
+	private static boolean melee(Villager villager, LivingEntity target, InteractionHand hand) {
+		if (!villager.getSensing().hasLineOfSight(target)) {
+			return false;
+		}
 		villager.getLookControl().setLookAt(target, 30.0f, 30.0f);
 		if (villager instanceof Mob mob && villager.level() instanceof ServerLevel level) {
 			mob.doHurtTarget(level, target);
 		}
 		villager.swing(hand);
+		return true;
 	}
 
 	private static void drawOrShoot(
